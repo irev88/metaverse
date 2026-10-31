@@ -26,6 +26,23 @@ function displace(geo: THREE.BufferGeometry, amp: number, freq: number, seed: nu
   geo.computeVertexNormals();
 }
 
+/**
+ * Merge helper that normalizes every part to non-indexed first.
+ * Polyhedron geometries (icosahedron etc.) are non-indexed while
+ * cylinders/cones are indexed — mergeGeometries() returns null when
+ * they are mixed, which would crash the renderer's frustum culler.
+ */
+function mergeAll(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const normalized = parts.map((p) => (p.index ? p.toNonIndexed() : p));
+  const merged = mergeGeometries(normalized, false);
+  if (!merged) {
+    console.warn("mergeAll failed — falling back to first part");
+    return normalized[0];
+  }
+  merged.computeBoundingSphere();
+  return merged;
+}
+
 function paintByHeight(geo: THREE.BufferGeometry, bottom: THREE.Color, top: THREE.Color, variance = 0.14, seed = 1) {
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const colors = new Float32Array(pos.count * 3);
@@ -112,7 +129,7 @@ function buildTree(kind: TreeKind, seed: number): THREE.BufferGeometry {
     crown.translate(0, 3.15, 0);
     parts.push(crown);
   }
-  const merged = mergeGeometries(parts, false)!;
+  const merged = mergeAll(parts);
   parts.forEach((p) => p.dispose());
   return merged;
 }
@@ -221,7 +238,7 @@ function makeBushGeometry(seed: number): THREE.BufferGeometry {
     blob.translate((hash2(seed, i) - 0.5) * 0.6, 0.32 + (i % 2) * 0.22, (hash2(i, seed) - 0.5) * 0.6);
     parts.push(blob);
   }
-  const merged = mergeGeometries(parts, false)!;
+  const merged = mergeAll(parts);
   parts.forEach((p) => p.dispose());
   return merged;
 }
@@ -271,7 +288,7 @@ function makeFernGeometry(seed: number): THREE.BufferGeometry {
     paintByHeight(leaf, dark, light, 0.08, seed + i);
     parts.push(leaf);
   }
-  const merged = mergeGeometries(parts, false)!;
+  const merged = mergeAll(parts);
   parts.forEach((p) => p.dispose());
   return merged;
 }

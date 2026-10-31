@@ -17,7 +17,9 @@ function makeBladeGeometry(): THREE.BufferGeometry {
   a.translate(0, 0.31, 0);
   const b = a.clone();
   b.rotateY(Math.PI / 2);
-  const merged = mergeGeometries([a, b], false)!;
+  // normalize index state before merging (defensive; both are indexed today)
+  const merged = mergeGeometries([a.index ? a.toNonIndexed() : a, b.index ? b.toNonIndexed() : b], false)!;
+  merged.computeBoundingSphere();
   return merged;
 }
 
