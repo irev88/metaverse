@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+:root {
+  --teal: #5eead4;
+  --violet: #a78bfa;
+  --gold: #fbbf24;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.world-root {
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+.world-root:active {
+  cursor: grabbing;
+}
+
+.glass {
+  background: rgba(14, 17, 40, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(167, 139, 250, 0.22);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+}
+
+.tag3d {
+  pointer-events: none;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 9px;
+  border-radius: 9999px;
+  background: rgba(10, 12, 30, 0.55);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  white-space: nowrap;
+  color: #e8e6ff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  transform: translateY(-4px);
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.anim-fade-up {
+  animation: fadeUp 0.3s ease both;
+}
+
+@keyframes respawnFlash {
+  0% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.92;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.respawn-flash {
+  animation: respawnFlash 1.1s ease both;
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+.anim-floaty {
+  animation: floaty 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.shimmer-text {
+  background: linear-gradient(
+    100deg,
+    #a78bfa 20%,
+    #5eead4 40%,
+    #fbbf24 50%,
+    #5eead4 60%,
+    #a78bfa 80%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 3.2s linear infinite;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.anim-toast {
+  animation: toastIn 0.25s ease both;
+}

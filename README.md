@@ -8,7 +8,7 @@ Runs in the browser (desktop + mobile) as a PWA. Two accounts. No one else. Ever
 
 - **[BLUEPRINT.md](BLUEPRINT.md)** — the full design & plan: vision, features, world design,
   technical architecture, data model, netcode, art direction, roadmap, and costs.
-- **[docs/concept/](docs/concept/)** — concept art for the Hub, the Memory Planetarium, and the game arena.
+- **[design/concept/](design/concept/)** — concept art for the Hub, the Memory Planetarium, and the game arena.
 
 ## 🧱 Planned stack
 

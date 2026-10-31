@@ -6,7 +6,7 @@
 >
 > **Codename:** `ORBIT` · **World name:** *The Hearth* (rename freely — it's yours)
 
-![Concept — the Hub island](docs/concept/hub-the-hearth.png)
+![Concept — the Hub island](design/concept/hub-the-hearth.png)
 
 ---
 
@@ -68,7 +68,7 @@ emote, or hang out for an evening stargazing and playing a game.
 - **Shared calendar:** important dates, timezone-aware (shows in *both* your local times).
 - **Memory Planetarium** (`/memories`): upload photos + stories; each becomes a **star in a private constellation** inside a dome scene. Click a star → the memory opens.
 
-![Concept — Memory Planetarium](docs/concept/memory-planetarium.png)
+![Concept — Memory Planetarium](design/concept/memory-planetarium.png)
 
 - **Wish tree:** leave wishes; the tree glows brighter as wishes accumulate.
 
@@ -82,7 +82,7 @@ emote, or hang out for an evening stargazing and playing a game.
 | **Astro Putt** — mini golf on asteroids (physics) | versus | physics, host-authoritative | 5 |
 | **Ring Race** — rocket race through checkpoint rings | versus | physics, host-authoritative | 5+ |
 
-![Concept — game arena](docs/concept/game-arena.png)
+![Concept — game arena](design/concept/game-arena.png)
 
 - Scores persist; a **trophy shelf** in the hub shows all-time records.
 
