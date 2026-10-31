@@ -31,17 +31,17 @@ export function Hud() {
     <div className="pointer-events-none fixed inset-0 z-10">
       {/* top bar */}
       <div className="absolute left-3 right-3 top-3 flex items-start justify-between gap-2">
-        <div className="glass pointer-events-auto rounded-2xl px-4 py-2">
-          <div className="text-sm font-semibold tracking-wide">🌌 The Hearth</div>
-          <div className="text-[11px] text-violet-300/80">a private corner of the cosmos · solo for now</div>
+        <div className="glass pointer-events-auto rounded-2xl px-5 py-2.5">
+          <div className="font-display gold-text text-lg font-semibold tracking-[0.14em]">✦ THE HEARTH ✦</div>
+          <div className="font-display text-[12px] italic tracking-wide text-rose-200/80">a private corner of the cosmos, for two</div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="glass pointer-events-auto rounded-2xl px-3 py-2 text-sm">
-            ✨ {stardust}/{STARDUST.length}
+          <div className="glass pointer-events-auto rounded-2xl px-3.5 py-2 font-display text-[15px] tracking-wider text-amber-100">
+            ✧ {stardust} <span className="text-slate-400">/ {STARDUST.length}</span>
           </div>
           <button
             onClick={toggleAudio}
-            className="glass pointer-events-auto rounded-2xl px-3 py-2 text-sm transition active:scale-90"
+            className="glass pointer-events-auto rounded-2xl px-3.5 py-2 text-sm transition active:scale-90"
             aria-label="toggle sound"
           >
             {audio ? "🔊" : "🔇"}
@@ -53,14 +53,14 @@ export function Hud() {
       {prompt && !overlay && (
         <div className="absolute bottom-44 left-1/2 -translate-x-1/2 md:bottom-24">
           <button
-            className="glass pointer-events-auto anim-fade-up rounded-full px-5 py-2.5 text-sm font-medium text-amber-200 transition active:scale-95"
+            className="glass font-display pointer-events-auto anim-fade-up rounded-full px-6 py-2.5 text-[17px] italic tracking-wide text-amber-200 transition active:scale-95"
             onClick={() => {
               input.interact = true;
               sfx.ui();
             }}
           >
             {prompt}
-            {!coarse && <kbd className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px]">E</kbd>}
+            {!coarse && <kbd className="ml-2.5 rounded bg-white/10 px-1.5 py-0.5 font-sans text-[10px] not-italic">E</kbd>}
           </button>
         </div>
       )}
@@ -68,8 +68,8 @@ export function Hud() {
       {/* emotes + jump */}
       <div className="absolute bottom-3 right-3 flex flex-col items-end gap-2">
         {!coarse && (
-          <div className="glass rounded-xl px-3 py-1.5 text-[11px] text-slate-300/80">
-            WASD move · drag to look · Space jump · 1/2/3 emotes
+          <div className="glass font-display rounded-xl px-3 py-1.5 text-[12px] italic tracking-wide text-slate-300/80">
+            wander · run · leap · the isles are yours
           </div>
         )}
         <div className="flex gap-2">
@@ -107,7 +107,8 @@ export function Hud() {
       {coarse && <Joystick />}
 
       {/* overlays */}
-      {overlay === "telescope" && <TelescopeOverlay onClose={() => setOverlay(null)} />}
+      {overlay === "telescope" && <TelescopeOverlay title="✧ Tonight's sky — over you" onClose={() => setOverlay(null)} />}
+      {overlay === "observatory" && <TelescopeOverlay title="✧ Through the great telescope" onClose={() => setOverlay(null)} observatory />}
       {overlay === "wishes" && <WishesOverlay onClose={() => setOverlay(null)} />}
       {overlay === "fire" && <FireOverlay onClose={() => setOverlay(null)} />}
 
@@ -117,7 +118,7 @@ export function Hud() {
       {/* toasts */}
       <div className="absolute bottom-60 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2 md:bottom-36">
         {toasts.map((t) => (
-          <div key={t.id} className="glass anim-toast rounded-full px-4 py-2 text-xs text-slate-100">
+          <div key={t.id} className="glass font-display anim-toast rounded-full px-5 py-2 text-center text-[15px] italic tracking-wide text-rose-100">
             {t.text}
           </div>
         ))}
@@ -176,8 +177,8 @@ function Joystick() {
       onPointerUp={end}
       onPointerCancel={end}
     >
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] text-slate-400/70">move</div>
-      <div ref={knob} className="pointer-events-none absolute left-1/2 top-1/2 -ml-7 -mt-7 h-14 w-14 rounded-full border border-violet-300/40 bg-violet-400/30 backdrop-blur" />
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center font-display text-[11px] italic text-slate-400/70">wander</div>
+      <div ref={knob} className="pointer-events-none absolute left-1/2 top-1/2 -ml-7 -mt-7 h-14 w-14 rounded-full border border-rose-300/30 bg-violet-400/25 backdrop-blur" />
     </div>
   );
 }
@@ -196,16 +197,13 @@ function LoadingScreen() {
     return () => window.clearInterval(iv);
   }, []);
 
-  // The world is fully procedural (no external assets), so the loading
-  // manager may never report progress — treat "no assets" as done, and
-  // force-dismiss after 8 s no matter what.
   const assetsDone = progress.total === 0 || progress.progress >= 100;
-  const minShowover = elapsed > 1.4;
+  const minShowover = elapsed > 1.6;
   const done = loaded && minShowover && (assetsDone || elapsed > 8);
 
   useEffect(() => {
     if (done) {
-      const t = window.setTimeout(() => setGone(true), 650);
+      const t = window.setTimeout(() => setGone(true), 750);
       return () => window.clearTimeout(t);
     }
   }, [done]);
@@ -213,16 +211,17 @@ function LoadingScreen() {
   if (gone) return null;
   return (
     <div
-      className={`absolute inset-0 z-50 flex flex-col items-center justify-center bg-[radial-gradient(ellipse_at_center,#141b40_0%,#070a18_72%)] transition-opacity duration-500 ${
+      className={`absolute inset-0 z-50 flex flex-col items-center justify-center bg-[radial-gradient(ellipse_at_center,#141b40_0%,#070a18_72%)] transition-opacity duration-700 ${
         done ? "opacity-0" : "opacity-100"
       }`}
     >
-      <div className="anim-floaty text-5xl">🌌</div>
-      <div className="shimmer-text mt-4 text-2xl font-bold tracking-[0.35em]">THE HEARTH</div>
-      <div className="mt-2 text-xs text-violet-300/80">a private corner of the cosmos, for two</div>
-      <div className="mt-6 h-1 w-40 overflow-hidden rounded-full bg-white/10">
-        <div className="h-full w-1/2 animate-pulse rounded-full bg-gradient-to-r from-violet-400 to-teal-300" />
+      <div className="anim-heartbeat text-4xl">💗</div>
+      <div className="font-display shimmer-text mt-5 text-[34px] font-semibold tracking-[0.42em]">THE HEARTH</div>
+      <div className="font-display mt-2 text-sm italic tracking-[0.18em] text-violet-300/85">two souls · one sky</div>
+      <div className="mt-7 h-px w-44 overflow-hidden bg-white/10">
+        <div className="h-full w-1/2 animate-pulse bg-gradient-to-r from-transparent via-rose-300 to-transparent" />
       </div>
+      <div className="font-display mt-6 text-[11px] italic text-slate-500">gathering stardust…</div>
     </div>
   );
 }
@@ -232,23 +231,28 @@ function LoadingScreen() {
 function HintCard({ onDismiss, coarse }: { onDismiss: () => void; coarse: boolean }) {
   return (
     <div className="absolute bottom-24 left-1/2 w-[92%] max-w-md -translate-x-1/2 md:bottom-20">
-      <div className="glass pointer-events-auto anim-fade-up rounded-2xl p-4 text-sm leading-relaxed">
-        <div className="mb-1 font-semibold text-violet-200">Welcome home ✨</div>
-        <p className="text-slate-300">
+      <div className="glass pointer-events-auto anim-fade-up rounded-2xl p-5 text-sm leading-relaxed">
+        <div className="font-display gold-text mb-1 text-lg font-semibold tracking-wide">Welcome home, wanderer ✦</div>
+        <p className="font-display text-[15px] italic leading-relaxed text-slate-300">
+          Three isles are yours — the Hearth, Everbloom with its gardens, and Starfall with its observatory. Cross the lantern bridges and
+          collect every falling star.
+        </p>
+        <p className="mt-2 text-xs text-slate-400">
           {coarse ? (
-            <>Drag anywhere to look around · joystick to walk · walk into glowing ✨ to collect stardust · tap prompts to interact.</>
+            <>Drag to look · joystick to wander · walk into glowing ✧ · tap prompts to interact.</>
           ) : (
             <>
-              <b>WASD</b> to walk · <b>drag</b> to look · <b>Space</b> to jump · walk into glowing ✨ stardust · <b>E</b> or the button to
-              interact.
+              <b className="text-slate-300">WASD</b> wander · <b className="text-slate-300">Shift</b> run · <b className="text-slate-300">Space</b>{" "}
+              leap · <b className="text-slate-300">drag</b> to look · <b className="text-slate-300">E</b> interact ·{" "}
+              <b className="text-slate-300">1/2/3</b> emotes
             </>
           )}
         </p>
         <button
           onClick={onDismiss}
-          className="mt-3 rounded-full bg-violet-500/80 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-400 active:scale-95"
+          className="font-display mt-3.5 rounded-full bg-gradient-to-r from-rose-400/80 to-violet-500/80 px-5 py-1.5 text-[13px] font-semibold tracking-wider text-white transition hover:from-rose-400 hover:to-violet-400 active:scale-95"
         >
-          Got it
+          Take my first step
         </button>
       </div>
     </div>
@@ -260,21 +264,22 @@ function HintCard({ onDismiss, coarse }: { onDismiss: () => void; coarse: boolea
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center p-4">
-      <div className="pointer-events-auto absolute inset-0 bg-black/55" onClick={onClose} />
-      <div className="glass pointer-events-auto anim-fade-up relative w-full max-w-sm rounded-3xl p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-base font-semibold">{title}</div>
+      <div className="pointer-events-auto absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="glass pointer-events-auto anim-fade-up relative w-full max-w-sm rounded-3xl p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="font-display gold-text text-xl font-semibold tracking-wide">{title}</div>
           <button onClick={onClose} className="h-8 w-8 rounded-full bg-white/10 text-sm transition active:scale-90">
             ✕
           </button>
         </div>
+        <div className="mb-4 h-px w-full bg-gradient-to-r from-transparent via-rose-200/30 to-transparent" />
         {children}
       </div>
     </div>
   );
 }
 
-/* ================= telescope ================= */
+/* ================= telescope / observatory ================= */
 
 function moonPhase(d: Date) {
   const synodic = 29.53058867;
@@ -285,7 +290,7 @@ function moonPhase(d: Date) {
   return { p, name: names[Math.round(p * 8) % 8] };
 }
 
-function TelescopeOverlay({ onClose }: { onClose: () => void }) {
+function TelescopeOverlay({ title, onClose, observatory = false }: { title: string; onClose: () => void; observatory?: boolean }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const t = window.setInterval(() => setNow(new Date()), 1000);
@@ -294,8 +299,19 @@ function TelescopeOverlay({ onClose }: { onClose: () => void }) {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const moon = moonPhase(now);
   return (
-    <Modal title="🔭 Tonight's sky — over you" onClose={onClose}>
+    <Modal title={title} onClose={onClose}>
       <div className="space-y-2.5 text-sm text-slate-300">
+        {observatory && (
+          <>
+            <div className="rounded-xl bg-gradient-to-br from-amber-400/10 to-rose-400/10 px-4 py-3 text-center font-display text-[15px] italic leading-relaxed text-amber-100">
+              Tonight the rings of Saturn tilt a graceful 26° toward us — the great telescope has been waiting for you all evening. 🪐
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-white/5 px-3 py-2">
+              <span>Milky Way core</span>
+              <span className="text-teal-200">high · in the west</span>
+            </div>
+          </>
+        )}
         <div className="flex items-center justify-between rounded-xl bg-white/5 px-3 py-2">
           <span>Local time</span>
           <span className="font-mono text-amber-200">{now.toLocaleTimeString()}</span>
@@ -310,9 +326,8 @@ function TelescopeOverlay({ onClose }: { onClose: () => void }) {
             {moon.name} <span className="text-slate-400">({Math.round(moon.p * 100)}%)</span>
           </span>
         </div>
-        <p className="pt-1 text-xs leading-relaxed text-violet-300/90">
-          Soon, when this becomes a portal for two, you'll see <i>her sky</i> here too — her local time, her moon, her weather. The
-          telescope is waiting. 🌙
+        <p className="font-display pt-1 text-[13px] italic leading-relaxed text-rose-200/90">
+          Soon, this sky will show <i>hers</i> too — her hours, her moonrise, her weather. Two skies, one dome. 🌙
         </p>
       </div>
     </Modal>
@@ -335,7 +350,7 @@ function WishesOverlay({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal title="🌟 Leave a wish" onClose={onClose}>
+    <Modal title="✦ Leave a wish" onClose={onClose}>
       <div className="flex gap-2">
         <input
           value={text}
@@ -345,22 +360,29 @@ function WishesOverlay({ onClose }: { onClose: () => void }) {
           }}
           placeholder="I wish…"
           maxLength={140}
-          className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none placeholder:text-slate-500 focus:border-violet-400/60"
+          className="font-display min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-[15px] italic outline-none placeholder:text-slate-500 focus:border-rose-300/50"
         />
-        <button onClick={submit} className="rounded-xl bg-violet-500/80 px-4 py-2 text-sm font-semibold transition hover:bg-violet-400 active:scale-95">
+        <button
+          onClick={submit}
+          className="font-display rounded-xl bg-gradient-to-r from-rose-400/80 to-violet-500/80 px-4 py-2 text-sm font-semibold tracking-wide transition hover:from-rose-400 hover:to-violet-400 active:scale-95"
+        >
           Wish
         </button>
       </div>
-      <p className="mt-2 text-[11px] text-slate-400">
+      <p className="font-display mt-2 text-[12px] italic text-slate-400">
         Every wish becomes glowing fruit on the tree. (Synced between you two in a future phase.)
       </p>
       <div className="mt-3 max-h-52 space-y-2 overflow-y-auto pr-1">
-        {wishes.length === 0 && <div className="rounded-xl bg-white/5 px-3 py-4 text-center text-xs text-slate-500">No wishes yet — be the first star.</div>}
+        {wishes.length === 0 && (
+          <div className="font-display rounded-xl bg-white/5 px-3 py-4 text-center text-[13px] italic text-slate-500">
+            No wishes yet — be the first star.
+          </div>
+        )}
         {[...wishes].reverse().map((w, i) => (
-          <div key={wishes.length - i} className="rounded-xl bg-white/5 px-3 py-2 text-sm">
+          <div key={wishes.length - i} className="font-display rounded-xl bg-white/5 px-3 py-2 text-[15px] italic">
             <span className="mr-1.5">💫</span>
             {w.text}
-            <div className="mt-0.5 text-[10px] text-slate-500">{new Date(w.at).toLocaleString()}</div>
+            <div className="mt-0.5 font-sans text-[10px] not-italic text-slate-500">{new Date(w.at).toLocaleString()}</div>
           </div>
         ))}
       </div>
@@ -373,18 +395,18 @@ function WishesOverlay({ onClose }: { onClose: () => void }) {
 function FireOverlay({ onClose }: { onClose: () => void }) {
   const [idx, setIdx] = useState(() => Math.floor(Math.random() * FIRESIDE_PROMPTS.length));
   return (
-    <Modal title="🔥 Fireside prompts" onClose={onClose}>
-      <div className="rounded-2xl bg-gradient-to-br from-orange-500/15 to-violet-500/15 px-4 py-5 text-center text-[15px] leading-relaxed text-amber-100">
+    <Modal title="✧ Fireside whispers" onClose={onClose}>
+      <div className="rounded-2xl bg-gradient-to-br from-orange-500/15 via-rose-500/10 to-violet-500/15 px-5 py-6 text-center font-display text-[17px] italic leading-relaxed text-amber-100">
         “{FIRESIDE_PROMPTS[idx]}”
       </div>
       <div className="mt-4 flex items-center justify-between gap-2">
         <button
           onClick={() => setIdx((i) => (i + 1 + Math.floor(Math.random() * (FIRESIDE_PROMPTS.length - 1))) % FIRESIDE_PROMPTS.length)}
-          className="rounded-full bg-white/10 px-4 py-2 text-sm transition hover:bg-white/20 active:scale-95"
+          className="font-display rounded-full bg-white/10 px-5 py-2 text-sm italic tracking-wide transition hover:bg-white/20 active:scale-95"
         >
           Another ✨
         </button>
-        <span className="text-[11px] text-slate-400">best enjoyed on a voice call, fire between you</span>
+        <span className="font-display text-[11px] italic text-slate-400">best enjoyed on a call, fire between you</span>
       </div>
     </Modal>
   );

@@ -4,7 +4,7 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { fx, playerState } from "@/lib/input";
-import { useStore } from "@/lib/store";
+import { ISLANDS } from "@/lib/layout";
 
 /* ---------- helpers ---------- */
 
@@ -38,7 +38,41 @@ function heartTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-/* ---------- fireflies ---------- */
+function petalTexture(color: string) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  g.fillStyle = color;
+  g.shadowColor = color;
+  g.shadowBlur = 8;
+  g.beginPath();
+  g.ellipse(32, 32, 14, 24, 0.5, 0, Math.PI * 2);
+  g.fill();
+  return new THREE.CanvasTexture(c);
+}
+
+function seededPositions(n: number, fn: (i: number, r: number) => [number, number, number], seed = 1) {
+  const pos = new Float32Array(n * 3);
+  const seedAttr = new Float32Array(n);
+  const tint = new Float32Array(n);
+  let s = seed;
+  const rnd = () => {
+    s = (s * 16807) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+  for (let i = 0; i < n; i++) {
+    const r = rnd();
+    const [x, y, z] = fn(i, r);
+    pos[i * 3] = x;
+    pos[i * 3 + 1] = y;
+    pos[i * 3 + 2] = z;
+    seedAttr[i] = rnd() * 100;
+    tint[i] = rnd();
+  }
+  return { pos, seedAttr, tint };
+}
+
+/* ---------- fireflies (spread across the archipelago) ---------- */
 
 const fireflyVert = /* glsl */ `
   attribute float aSeed;
@@ -73,35 +107,15 @@ const fireflyFrag = /* glsl */ `
   }
 `;
 
-function seededPositions(n: number, fn: (i: number, r: number) => [number, number, number], seed = 1) {
-  const pos = new Float32Array(n * 3);
-  const seedAttr = new Float32Array(n);
-  const tint = new Float32Array(n);
-  let s = seed;
-  const rnd = () => {
-    s = (s * 16807) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-  for (let i = 0; i < n; i++) {
-    const r = rnd();
-    const [x, y, z] = fn(i, r);
-    pos[i * 3] = x;
-    pos[i * 3 + 1] = y;
-    pos[i * 3 + 2] = z;
-    seedAttr[i] = rnd() * 100;
-    tint[i] = rnd();
-  }
-  return { pos, seedAttr, tint };
-}
-
 export function Fireflies() {
   const mat = useRef<THREE.ShaderMaterial>(null);
   const data = useMemo(
     () =>
-      seededPositions(42, (i, r) => {
+      seededPositions(78, (i, r) => {
+        const isl = ISLANDS[i % ISLANDS.length];
         const a = r * Math.PI * 2;
-        const rad = 2.5 + r * 9.5;
-        return [Math.cos(a) * rad, 0.4 + r * 1.8, Math.sin(a) * rad];
+        const rad = Math.sqrt(r) * (isl.r - 2);
+        return [isl.c[0] + Math.cos(a) * rad, 0.4 + r * 2.0, isl.c[1] + Math.sin(a) * rad];
       }, 1234),
     [],
   );
@@ -138,7 +152,7 @@ const motesVert = /* glsl */ `
   attribute float aSeed;
   uniform float uTime;
   uniform float uDpr;
-  uniform float uRise;   // 1 = rising, -1 = falling
+  uniform float uRise;
   uniform float uSpan;
   varying float vA;
   void main() {
@@ -229,19 +243,17 @@ export function EmberParticles({ position }: { position: [number, number, number
 }
 
 export function WishMotes({ position }: { position: [number, number, number] }) {
-  return <Motes position={position} count={16} radius={1.9} span={2.4} rise={false} color="#b18cff" />;
+  return <Motes position={position} count={16} radius={1.9} span={2.6} rise={false} color="#b18cff" />;
 }
 
 /* ---------- chimney smoke ---------- */
 
 export function Smoke({ offset }: { offset: [number, number, number] }) {
-  const group = useRef<THREE.Group>(null);
   const tex = useMemo(() => makeRadialTexture("rgba(190,185,215,0.55)", "rgba(160,155,190,0)"), []);
   const sprites = useMemo(() => {
     return Array.from({ length: 6 }, () => {
       const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.3, depthWrite: false });
-      const sp = new THREE.Sprite(mat);
-      return sp;
+      return new THREE.Sprite(mat);
     });
   }, [tex]);
   useFrame((state) => {
@@ -249,13 +261,12 @@ export function Smoke({ offset }: { offset: [number, number, number] }) {
     sprites.forEach((sp, i) => {
       const k = (t * 0.2 + i / 6) % 1;
       sp.position.set(Math.sin((t + i * 2) * 0.7) * 0.25 * k, offset[1] + k * 2.4, offset[2] + Math.cos((t + i) * 0.6) * 0.2 * k);
-      sp.position.x += offset[0] * 0; // keep local
       sp.scale.setScalar(0.45 + k * 1.15);
       (sp.material as THREE.SpriteMaterial).opacity = Math.sin(k * Math.PI) * 0.32;
     });
   });
   return (
-    <group position={[offset[0], 0, offset[2]]} ref={group}>
+    <group position={[offset[0], 0, offset[2]]}>
       {sprites.map((sp, i) => (
         <primitive key={i} object={sp} />
       ))}
@@ -273,9 +284,9 @@ export function DriftingLanterns() {
       s = (s * 16807) % 2147483647;
       return (s - 1) / 2147483646;
     };
-    return Array.from({ length: 6 }, () => {
+    return Array.from({ length: 8 }, () => {
       const a = rnd() * Math.PI * 2;
-      const r = 16 + rnd() * 8;
+      const r = 18 + rnd() * 16;
       return { x: Math.cos(a) * r, z: Math.sin(a) * r, speed: 0.45 + rnd() * 0.4, phase: rnd() * 30, wobble: 0.8 + rnd() };
     });
   }, []);
@@ -316,6 +327,157 @@ export function DriftingLanterns() {
           </mesh>
         </group>
       ))}
+    </group>
+  );
+}
+
+/* ---------- falling petals (everbloom) ---------- */
+
+export function Petals({ center }: { center: [number, number] }) {
+  const tex = useMemo(() => petalTexture("#ffa8c8"), []);
+  const specs = useMemo(() => {
+    let s = 4242;
+    const rnd = () => {
+      s = (s * 16807) % 2147483647;
+      return (s - 1) / 2147483646;
+    };
+    return Array.from({ length: 34 }, () => {
+      const a = rnd() * Math.PI * 2;
+      const r = Math.sqrt(rnd()) * 8.5;
+      return { x: center[0] + Math.cos(a) * r, z: center[1] + Math.sin(a) * r, phase: rnd() * 40, speed: 0.55 + rnd() * 0.5, sway: 0.4 + rnd() * 0.5, scale: 0.16 + rnd() * 0.12 };
+    });
+  }, [center]);
+  return <PetalMotion specs={specs} tex={tex} center={center} />;
+}
+
+function PetalMotion({
+  specs,
+  tex,
+  center,
+}: {
+  specs: { x: number; z: number; phase: number; speed: number; sway: number; scale: number }[];
+  tex: THREE.CanvasTexture;
+  center: [number, number];
+}) {
+  const refs = useRef<(THREE.Sprite | null)[]>([]);
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    refs.current.forEach((sp, i) => {
+      if (!sp) return;
+      const s = specs[i];
+      const k = (t * 0.09 * s.speed + s.phase / 40) % 1;
+      sp.position.set(
+        s.x + Math.sin(t * s.speed + s.phase) * s.sway,
+        3.6 - k * 4.2,
+        s.z + Math.cos(t * s.speed * 0.8 + s.phase) * s.sway,
+      );
+      sp.material.rotation = t * 0.8 + s.phase;
+      (sp.material as THREE.SpriteMaterial).opacity = Math.min(1, k * 5) * Math.min(1, (1 - k) * 4) * 0.85;
+    });
+  });
+  return (
+    <group>
+      {specs.map((_, i) => (
+        <sprite
+          key={i}
+          ref={(el) => {
+            refs.current[i] = el;
+          }}
+          position={[center[0], 2, center[1]]}
+          scale={[specs[i].scale, specs[i].scale, 1]}
+        >
+          <spriteMaterial map={tex} transparent depthWrite={false} />
+        </sprite>
+      ))}
+    </group>
+  );
+}
+
+/* ---------- butterflies (everbloom) ---------- */
+
+function Butterfly({ color, center, phase }: { color: string; center: [number, number]; phase: number }) {
+  const group = useRef<THREE.Group>(null);
+  const wingL = useRef<THREE.Group>(null);
+  const wingR = useRef<THREE.Group>(null);
+  const prev = useMemo(() => new THREE.Vector3(), []);
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const g = group.current;
+    if (!g) return;
+    const nx = center[0] + Math.sin(t * 0.32 + phase) * 4.2 + Math.sin(t * 0.9 + phase * 2) * 0.8;
+    const nz = center[1] + Math.cos(t * 0.27 + phase * 1.3) * 3.6 + Math.cos(t * 0.8 + phase) * 0.7;
+    const ny = 1.1 + Math.sin(t * 0.75 + phase * 2.1) * 0.55;
+    prev.copy(g.position);
+    g.position.set(nx, ny, nz);
+    const dx = nx - prev.x;
+    const dz = nz - prev.z;
+    if (Math.abs(dx) + Math.abs(dz) > 1e-5) g.rotation.y = Math.atan2(dx, dz);
+    const flap = Math.sin(t * 11 + phase * 5) * 0.85;
+    if (wingL.current) wingL.current.rotation.z = 0.35 + flap;
+    if (wingR.current) wingR.current.rotation.z = -0.35 - flap;
+  });
+  return (
+    <group ref={group}>
+      <mesh position={[0, 0, 0]}>
+        <capsuleGeometry args={[0.016, 0.09, 3, 6]} />
+        <meshStandardMaterial color="#3d2f4e" roughness={1} />
+      </mesh>
+      <group ref={wingL} position={[-0.01, 0.05, 0]}>
+        <mesh position={[-0.09, 0, 0]} rotation={[0, 0, 0]}>
+          <planeGeometry args={[0.19, 0.13]} />
+          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.45} side={THREE.DoubleSide} transparent opacity={0.95} />
+        </mesh>
+      </group>
+      <group ref={wingR} position={[0.01, 0.05, 0]}>
+        <mesh position={[0.09, 0, 0]}>
+          <planeGeometry args={[0.19, 0.13]} />
+          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.45} side={THREE.DoubleSide} transparent opacity={0.95} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+export function Butterflies() {
+  return (
+    <group>
+      <Butterfly color="#ff9ec7" center={[27, -2]} phase={0} />
+      <Butterfly color="#ffd27a" center={[25.5, -4]} phase={2.4} />
+      <Butterfly color="#c4b5fd" center={[29, -1]} phase={4.1} />
+      <Butterfly color="#7ee8d8" center={[26, -6]} phase={1.2} />
+      <Butterfly color="#ff9ec7" center={[2.5, 4.5]} phase={3.3} />
+      <Butterfly color="#fff3f5" center={[-2, 6]} phase={5.0} />
+    </group>
+  );
+}
+
+/* ---------- waterfall (drifting islets) ---------- */
+
+export function Waterfall({ offset }: { offset: [number, number] }) {
+  const tex = useMemo(() => makeRadialTexture("rgba(200,230,255,0.9)", "rgba(160,200,255,0)"), []);
+  const sprites = useMemo(
+    () =>
+      Array.from({ length: 12 }, () => new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }))),
+    [tex],
+  );
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    sprites.forEach((sp, i) => {
+      const k = (t * 0.5 + i / 12) % 1;
+      sp.position.set(offset[0] + Math.sin((t + i * 3) * 2.2) * 0.07, offset[1] - k * 6.5, Math.cos((t + i) * 1.7) * 0.07);
+      sp.scale.setScalar(0.3 - k * 0.12);
+      (sp.material as THREE.SpriteMaterial).opacity = (1 - k) * 0.55;
+    });
+  });
+  return (
+    <group>
+      {sprites.map((sp, i) => (
+        <primitive key={i} object={sp} />
+      ))}
+      {/* soft glow at the base */}
+      <sprite position={[offset[0], offset[1] - 6.8, 0]} scale={[1.6, 1.0, 1]}>
+        <spriteMaterial map={tex} transparent opacity={0.25} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </sprite>
     </group>
   );
 }

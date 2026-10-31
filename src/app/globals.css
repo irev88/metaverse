@@ -4,6 +4,7 @@
   --teal: #5eead4;
   --violet: #a78bfa;
   --gold: #fbbf24;
+  --rose: #ff9ec7;
 }
 
 html,
@@ -13,6 +14,10 @@ body {
   padding: 0;
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+.font-display {
+  font-family: "Cormorant Garamond", Georgia, "Times New Roman", serif;
 }
 
 .world-root {
@@ -28,27 +33,37 @@ body {
 }
 
 .glass {
-  background: rgba(14, 17, 40, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(167, 139, 250, 0.22);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(160deg, rgba(22, 19, 46, 0.78), rgba(14, 13, 34, 0.72));
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 214, 178, 0.16);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 226, 190, 0.08);
+}
+
+.gold-text {
+  background: linear-gradient(100deg, #f6d9a8 10%, #ff9ec7 35%, #a78bfa 60%, #5eead4 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .tag3d {
   pointer-events: none;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
-  padding: 4px 9px;
+  padding: 5px 11px;
   border-radius: 9999px;
-  background: rgba(10, 12, 30, 0.55);
-  border: 1px solid rgba(167, 139, 250, 0.3);
+  background: rgba(12, 10, 28, 0.6);
+  border: 1px solid rgba(255, 214, 178, 0.24);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   white-space: nowrap;
-  color: #e8e6ff;
+  color: #f3eaff;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
   transform: translateY(-4px);
+  letter-spacing: 0.06em;
 }
 
 @keyframes fadeUp {
@@ -62,7 +77,7 @@ body {
   }
 }
 .anim-fade-up {
-  animation: fadeUp 0.3s ease both;
+  animation: fadeUp 0.35s ease both;
 }
 
 @keyframes respawnFlash {
@@ -90,7 +105,7 @@ body {
   }
 }
 .anim-floaty {
-  animation: floaty 3s ease-in-out infinite;
+  animation: floaty 3.2s ease-in-out infinite;
 }
 
 @keyframes shimmer {
@@ -102,19 +117,12 @@ body {
   }
 }
 .shimmer-text {
-  background: linear-gradient(
-    100deg,
-    #a78bfa 20%,
-    #5eead4 40%,
-    #fbbf24 50%,
-    #5eead4 60%,
-    #a78bfa 80%
-  );
+  background: linear-gradient(100deg, #a78bfa 20%, #5eead4 40%, #fbbf24 50%, #ff9ec7 60%, #a78bfa 80%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: shimmer 3.2s linear infinite;
+  animation: shimmer 4.2s linear infinite;
 }
 
 @keyframes toastIn {
@@ -128,5 +136,27 @@ body {
   }
 }
 .anim-toast {
-  animation: toastIn 0.25s ease both;
+  animation: toastIn 0.3s ease both;
+}
+
+@keyframes heartBeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  12% {
+    transform: scale(1.14);
+  }
+  24% {
+    transform: scale(1);
+  }
+  36% {
+    transform: scale(1.1);
+  }
+  48% {
+    transform: scale(1);
+  }
+}
+.anim-heartbeat {
+  animation: heartBeat 2.4s ease-in-out infinite;
 }

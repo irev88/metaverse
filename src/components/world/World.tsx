@@ -5,8 +5,8 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import { Sky } from "./Sky";
 import { Island } from "./Island";
-import { Campfire, Portals, Telescope, WishTree } from "./POIs";
-import { DriftingLanterns, Fireflies, HeartBurst } from "./Particles";
+import { Campfire, Observatory, Orrery, Pond, Portals, RoseArch, StarChart, Swing, Telescope, WishTree } from "./POIs";
+import { Butterflies, DriftingLanterns, Fireflies, HeartBurst, Petals } from "./Particles";
 import { Player } from "./Player";
 import { Stardust } from "./Stardust";
 import { Hud } from "../hud/Hud";
@@ -112,25 +112,28 @@ export default function World() {
         camera={{ fov: 55, near: 0.1, far: 1200, position: [13, 9, 26] }}
       >
         <color attach="background" args={["#070a18"]} />
-        <fogExp2 attach="fog" args={["#0a0e24", 0.0075]} />
+        <fogExp2 attach="fog" args={["#0a0e24", 0.0048]} />
 
-        <ambientLight intensity={0.38} color="#8fa3d9" />
-        <hemisphereLight args={["#3b4a86", "#1c1430", 0.4]} />
+        <ambientLight intensity={0.34} color="#8fa3d9" />
+        <hemisphereLight args={["#3b4a86", "#1c1430", 0.38]} />
+        {/* starlight key */}
         <directionalLight
           castShadow={rich}
           position={[26, 38, 14]}
-          intensity={1.15}
+          intensity={0.85}
           color="#b9c8ff"
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
-          shadow-camera-left={-24}
-          shadow-camera-right={24}
-          shadow-camera-top={24}
-          shadow-camera-bottom={-24}
+          shadow-mapSize-width={rich ? 4096 : 2048}
+          shadow-mapSize-height={rich ? 4096 : 2048}
+          shadow-camera-left={-46}
+          shadow-camera-right={46}
+          shadow-camera-top={46}
+          shadow-camera-bottom={-46}
           shadow-camera-near={1}
-          shadow-camera-far={110}
-          shadow-bias={-0.0004}
+          shadow-camera-far={160}
+          shadow-bias={-0.0005}
         />
+        {/* moonlight, from the moon */}
+        <directionalLight position={[46, 28, -62]} intensity={0.5} color="#aebcff" />
 
         <Suspense fallback={null}>
           <Sky />
@@ -139,9 +142,17 @@ export default function World() {
           <Telescope />
           <WishTree />
           <Portals />
+          <Pond />
+          <Swing />
+          <RoseArch />
+          <Observatory />
+          <Orrery />
+          <StarChart />
           <Stardust />
           <Fireflies />
           <DriftingLanterns />
+          <Petals center={[27, -2]} />
+          <Butterflies />
           <HeartBurst />
           <Player />
         </Suspense>

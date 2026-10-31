@@ -7,15 +7,20 @@ import { Avatar } from "./Avatar";
 import { fx, input, joyMove, playerState } from "@/lib/input";
 import { sfx } from "@/lib/audio";
 import { useStore } from "@/lib/store";
+import { groundHeight } from "@/lib/terrain";
 import {
+  ARCH,
+  ARCH_LINES,
   BENCH,
   CAMPFIRE,
   COLLIDERS,
   INTERACTABLES,
-  ISLAND_RADIUS,
+  ORRERY_LINES,
   PIER_DIR,
   PIER_LENGTH,
   PIER_START,
+  POND,
+  POND_LINES,
   SIT_BENCH,
   SIT_FIRE,
   SPAWN,
@@ -24,17 +29,6 @@ import {
 
 const tmpTarget = new THREE.Vector3();
 const cineTarget = new THREE.Vector3();
-
-function groundHeight(x: number, z: number): number {
-  if (Math.hypot(x, z) <= ISLAND_RADIUS) return 0;
-  // pier walkway
-  const t = (x - PIER_START[0]) * PIER_DIR[0] + (z - PIER_START[2]) * PIER_DIR[2];
-  if (t >= -0.4 && t <= PIER_LENGTH) {
-    const perp = (x - PIER_START[0]) * PIER_DIR[2] - (z - PIER_START[2]) * PIER_DIR[0];
-    if (Math.abs(perp) <= 0.95) return 0;
-  }
-  return -Infinity;
-}
 
 function dampAngle(a: number, b: number, lambda: number, dt: number): number {
   const d = (((b - a + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
@@ -55,13 +49,14 @@ export function Player() {
   const camYaw = useRef(Math.PI);
   const camPitch = useRef(0.3);
   const camDist = useRef(7.5);
-  const camPos = useRef(new THREE.Vector3(12, 9, 24));
+  const camPos = useRef(new THREE.Vector3(22, 14, 34));
   const sitTarget = useRef<{ spot: THREE.Vector3; face: number } | null>(null);
   const emoteUntil = useRef(0);
   const heartFired = useRef(true);
   const nearestId = useRef<string | null>(null);
   const startedAt = useRef(performance.now());
   const touchedCamera = useRef(false);
+  const lineIdx = useRef({ pond: 0, arch: 0, orrery: 0 });
 
   useFrame((state, rawDt) => {
     const dt = Math.min(rawDt, 0.05);
@@ -106,7 +101,7 @@ export function Player() {
       const wx = fx * nz + rx * nx;
       const wz = fz * nz + rz * nx;
       const running = input.run || mag > 0.95;
-      const speed = running ? 6.6 : 4.0;
+      const speed = running ? 7.4 : 4.4;
       pos.current.x += wx * speed * dt;
       pos.current.z += wz * speed * dt;
       heading.current = dampAngle(heading.current, Math.atan2(wx, wz), 11, dt);
@@ -121,7 +116,7 @@ export function Player() {
     if (input.jump) {
       input.jump = false;
       if (grounded.current && !s.sitting) {
-        velY.current = 8.0;
+        velY.current = 8.2;
         sfx.jump();
       }
     }
@@ -143,7 +138,7 @@ export function Player() {
       heading.current = Math.PI;
       grounded.current = true;
       s.flashNow();
-      s.toast("Whoops — the void tickles 😅");
+      s.toast("The void carried you home ✨");
     }
 
     /* ----- prop collisions ----- */
@@ -214,7 +209,7 @@ export function Player() {
         sfx.collect();
         const n = s.stardust + 1;
         if (n === STARDUST.length) {
-          window.setTimeout(() => s.toast("All stardust found! You make this world glow ✨"), 400);
+          window.setTimeout(() => s.toast("Every last star found — you light up all three isles ✨"), 400);
         }
       }
     }
@@ -226,7 +221,7 @@ export function Player() {
     input.camDX = 0;
     input.camDY = 0;
     if (input.zoom !== 0) {
-      camDist.current = THREE.MathUtils.clamp(camDist.current + input.zoom, 3.2, 13);
+      camDist.current = THREE.MathUtils.clamp(camDist.current + input.zoom, 3.2, 14);
       input.zoom = 0;
       touchedCamera.current = true;
     }
@@ -242,9 +237,9 @@ export function Player() {
     );
 
     const elapsed = (performance.now() - startedAt.current) / 1000;
-    if (elapsed < 3.6 && !touchedCamera.current) {
-      const k = smooth01(elapsed / 3.6);
-      cineTarget.set(pos.current.x + 13, pos.current.y + 8.5, pos.current.z + 17);
+    if (elapsed < 4.2 && !touchedCamera.current) {
+      const k = smooth01(elapsed / 4.2);
+      cineTarget.set(pos.current.x + 19, pos.current.y + 11, pos.current.z + 25);
       tmpTarget.lerpVectors(cineTarget, tmpTarget, k);
       camPos.current.lerp(tmpTarget, 1 - Math.exp(-6 * dt));
     } else {
@@ -281,6 +276,23 @@ export function Player() {
     } else if (id === "wishes") {
       s.setOverlay("wishes");
       sfx.ui();
+    } else if (id === "observatory") {
+      s.setOverlay("observatory");
+      sfx.ui();
+    } else if (id === "pond") {
+      const i = lineIdx.current.pond++ % POND_LINES.length;
+      s.toast(POND_LINES[i]);
+      sfx.wish();
+    } else if (id === "arch") {
+      const i = lineIdx.current.arch++ % ARCH_LINES.length;
+      s.toast(ARCH_LINES[i]);
+      fx.heartAt = performance.now();
+      sfx.wish();
+    } else if (id === "orrery") {
+      s.kickOrrery();
+      const i = lineIdx.current.orrery++ % ORRERY_LINES.length;
+      s.toast(ORRERY_LINES[i]);
+      sfx.portal();
     } else if (id.startsWith("portal:")) {
       const key = id.slice(7);
       const names: Record<string, string> = { arcade: "Arcade", planetarium: "Planetarium", letters: "Letters" };
@@ -288,6 +300,9 @@ export function Player() {
       sfx.portal();
     }
   }
+
+  void POND;
+  void ARCH;
 
   return (
     <group ref={root}>

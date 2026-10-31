@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { setSound } from "./audio";
 import type { EmoteName } from "./input";
 
-export type Overlay = null | "telescope" | "wishes" | "fire";
+export type Overlay = null | "telescope" | "wishes" | "fire" | "observatory";
 export type Quality = "rich" | "lite";
 
 export interface Wish {
@@ -70,6 +70,8 @@ interface WorldState {
   flashNow: () => void;
   hintDismissed: boolean;
   dismissHint: () => void;
+  orreryKick: number;
+  kickOrrery: () => void;
 }
 
 export const useStore = create<WorldState>((set, get) => ({
@@ -123,6 +125,8 @@ export const useStore = create<WorldState>((set, get) => ({
     saveJSON("orbit.hintDismissed", true);
     set({ hintDismissed: true });
   },
+  orreryKick: 0,
+  kickOrrery: () => set({ orreryKick: Date.now() }),
 }));
 
 // Re-export so HUD buttons can raise one-shot emotes without importing input deeply.
