@@ -309,7 +309,7 @@ function Signpost() {
         <boxGeometry args={[1.5, 0.52, 0.07]} />
         <meshStandardMaterial color="#7a5c42" flatShading roughness={1} />
       </mesh>
-      <Html position={[0, 1.62, 0]} center style={{ pointerEvents: "none" }}>
+      <Html position={[0, 1.62, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
         <div className="tag3d">✨ The Hearth · est. 2026</div>
       </Html>
     </group>

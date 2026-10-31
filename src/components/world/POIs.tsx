@@ -122,7 +122,7 @@ export function Telescope() {
           <meshStandardMaterial color="#3d3560" metalness={0.4} roughness={0.4} />
         </mesh>
       </group>
-      <Html position={[0, 2.2, 0]} center style={{ pointerEvents: "none" }}>
+      <Html position={[0, 2.2, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
         <div className="tag3d">🔭 stargazer</div>
       </Html>
     </group>
@@ -180,7 +180,7 @@ export function WishTree() {
         <meshBasicMaterial color="#8b6cf0" transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <WishMotes position={[WISH_TREE[0], 2.6, WISH_TREE[2]]} />
-      <Html position={[WISH_TREE[0], 4.9, WISH_TREE[2]]} center style={{ pointerEvents: "none" }}>
+      <Html position={[WISH_TREE[0], 4.9, WISH_TREE[2]]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
         <div className="tag3d">🌟 wishing tree · {wishes.length} wish{wishes.length === 1 ? "" : "es"}</div>
       </Html>
     </group>
@@ -260,7 +260,7 @@ function Portal({
           side={THREE.DoubleSide}
         />
       </mesh>
-      <Html position={[0, 3.3, 0]} center style={{ pointerEvents: "none" }}>
+      <Html position={[0, 3.3, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
         <div className="tag3d">{emoji} {label} · soon</div>
       </Html>
     </group>

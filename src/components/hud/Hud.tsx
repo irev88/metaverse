@@ -187,15 +187,21 @@ function Joystick() {
 function LoadingScreen() {
   const loaded = useStore((s) => s.loaded);
   const progress = useProgress();
-  const [ready, setReady] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [gone, setGone] = useState(false);
 
   useEffect(() => {
-    const t = window.setTimeout(() => setReady(true), 1700);
-    return () => window.clearTimeout(t);
+    const t0 = performance.now();
+    const iv = window.setInterval(() => setElapsed((performance.now() - t0) / 1000), 150);
+    return () => window.clearInterval(iv);
   }, []);
 
-  const done = ready && loaded && progress.progress >= 100;
+  // The world is fully procedural (no external assets), so the loading
+  // manager may never report progress — treat "no assets" as done, and
+  // force-dismiss after 8 s no matter what.
+  const assetsDone = progress.total === 0 || progress.progress >= 100;
+  const minShowover = elapsed > 1.4;
+  const done = loaded && minShowover && (assetsDone || elapsed > 8);
 
   useEffect(() => {
     if (done) {

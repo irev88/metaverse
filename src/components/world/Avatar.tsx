@@ -186,7 +186,7 @@ export function Avatar({ name = "You ✦" }: { name?: string }) {
         </group>
       </group>
 
-      <Html position={[0, 2.25, 0]} center style={{ pointerEvents: "none" }}>
+      <Html position={[0, 2.25, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
         <div className="tag3d">{name}</div>
       </Html>
     </group>
