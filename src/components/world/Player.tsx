@@ -9,22 +9,20 @@ import { sfx } from "@/lib/audio";
 import { useStore } from "@/lib/store";
 import { groundHeight } from "@/lib/terrain";
 import {
-  ARCH,
   ARCH_LINES,
   BENCH,
   CAMPFIRE,
   COLLIDERS,
   INTERACTABLES,
+  MAIL_LINES,
   ORRERY_LINES,
-  PIER_DIR,
-  PIER_LENGTH,
-  PIER_START,
-  POND,
+  PICNIC_LINES,
   POND_LINES,
   SIT_BENCH,
   SIT_FIRE,
   SPAWN,
   STARDUST,
+  WELL_LINES,
 } from "@/lib/layout";
 
 const tmpTarget = new THREE.Vector3();
@@ -56,7 +54,7 @@ export function Player() {
   const nearestId = useRef<string | null>(null);
   const startedAt = useRef(performance.now());
   const touchedCamera = useRef(false);
-  const lineIdx = useRef({ pond: 0, arch: 0, orrery: 0 });
+  const lineIdx = useRef({ pond: 0, arch: 0, orrery: 0, well: 0, mail: 0, picnic: 0 });
 
   useFrame((state, rawDt) => {
     const dt = Math.min(rawDt, 0.05);
@@ -101,7 +99,7 @@ export function Player() {
       const wx = fx * nz + rx * nx;
       const wz = fz * nz + rz * nx;
       const running = input.run || mag > 0.95;
-      const speed = running ? 7.4 : 4.4;
+      const speed = running ? 8.4 : 4.8;
       pos.current.x += wx * speed * dt;
       pos.current.z += wz * speed * dt;
       heading.current = dampAngle(heading.current, Math.atan2(wx, wz), 11, dt);
@@ -293,6 +291,18 @@ export function Player() {
       const i = lineIdx.current.orrery++ % ORRERY_LINES.length;
       s.toast(ORRERY_LINES[i]);
       sfx.portal();
+    } else if (id === "well") {
+      const i = lineIdx.current.well++ % WELL_LINES.length;
+      s.toast(WELL_LINES[i]);
+      sfx.wish();
+    } else if (id === "mailbox") {
+      const i = lineIdx.current.mail++ % MAIL_LINES.length;
+      s.toast(MAIL_LINES[i]);
+      sfx.ui();
+    } else if (id === "picnic") {
+      const i = lineIdx.current.picnic++ % PICNIC_LINES.length;
+      s.toast(PICNIC_LINES[i]);
+      sfx.wish();
     } else if (id.startsWith("portal:")) {
       const key = id.slice(7);
       const names: Record<string, string> = { arcade: "Arcade", planetarium: "Planetarium", letters: "Letters" };
@@ -300,9 +310,6 @@ export function Player() {
       sfx.portal();
     }
   }
-
-  void POND;
-  void ARCH;
 
   return (
     <group ref={root}>

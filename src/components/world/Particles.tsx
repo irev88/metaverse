@@ -441,10 +441,10 @@ function Butterfly({ color, center, phase }: { color: string; center: [number, n
 export function Butterflies() {
   return (
     <group>
-      <Butterfly color="#ff9ec7" center={[27, -2]} phase={0} />
-      <Butterfly color="#ffd27a" center={[25.5, -4]} phase={2.4} />
-      <Butterfly color="#c4b5fd" center={[29, -1]} phase={4.1} />
-      <Butterfly color="#7ee8d8" center={[26, -6]} phase={1.2} />
+      <Butterfly color="#ff9ec7" center={[42, -4]} phase={0} />
+      <Butterfly color="#ffd27a" center={[40, -6]} phase={2.4} />
+      <Butterfly color="#c4b5fd" center={[44, -3]} phase={4.1} />
+      <Butterfly color="#7ee8d8" center={[41, -8]} phase={1.2} />
       <Butterfly color="#ff9ec7" center={[2.5, 4.5]} phase={3.3} />
       <Butterfly color="#fff3f5" center={[-2, 6]} phase={5.0} />
     </group>

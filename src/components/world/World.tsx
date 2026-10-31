@@ -5,6 +5,11 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import { Sky } from "./Sky";
 import { Island } from "./Island";
+import { Terrain } from "./Terrain";
+import { Bushes, Ferns, Rocks, Trees } from "./Trees";
+import { Flowers, Grass } from "./Grass";
+import { Rabbits, SheepFlock } from "./Animals";
+import { CottageYard, Mailbox, Picnic, Well } from "./Props";
 import { Campfire, Observatory, Orrery, Pond, Portals, RoseArch, StarChart, Swing, Telescope, WishTree } from "./POIs";
 import { Butterflies, DriftingLanterns, Fireflies, HeartBurst, Petals } from "./Particles";
 import { Player } from "./Player";
@@ -106,30 +111,30 @@ export default function World() {
   return (
     <div className="world-root" ref={wrap}>
       <Canvas
-        shadows={rich}
+        shadows="soft"
         dpr={[1, rich ? 2 : 1.6]}
         gl={{ antialias: true, powerPreference: "high-performance" }}
-        camera={{ fov: 55, near: 0.1, far: 1200, position: [13, 9, 26] }}
+        camera={{ fov: 55, near: 0.1, far: 1200, position: [22, 14, 34] }}
       >
         <color attach="background" args={["#070a18"]} />
-        <fogExp2 attach="fog" args={["#0a0e24", 0.0048]} />
+        <fogExp2 attach="fog" args={["#0a0e24", 0.0042]} />
 
         <ambientLight intensity={0.34} color="#8fa3d9" />
         <hemisphereLight args={["#3b4a86", "#1c1430", 0.38]} />
         {/* starlight key */}
         <directionalLight
           castShadow={rich}
-          position={[26, 38, 14]}
+          position={[36, 52, 18]}
           intensity={0.85}
           color="#b9c8ff"
           shadow-mapSize-width={rich ? 4096 : 2048}
           shadow-mapSize-height={rich ? 4096 : 2048}
-          shadow-camera-left={-46}
-          shadow-camera-right={46}
-          shadow-camera-top={46}
-          shadow-camera-bottom={-46}
+          shadow-camera-left={-64}
+          shadow-camera-right={64}
+          shadow-camera-top={64}
+          shadow-camera-bottom={-64}
           shadow-camera-near={1}
-          shadow-camera-far={160}
+          shadow-camera-far={200}
           shadow-bias={-0.0005}
         />
         {/* moonlight, from the moon */}
@@ -137,7 +142,20 @@ export default function World() {
 
         <Suspense fallback={null}>
           <Sky />
+          <Terrain />
+          <Trees />
+          <Rocks />
+          <Bushes />
+          <Ferns />
+          <Grass />
+          <Flowers />
+          <Rabbits />
+          <SheepFlock />
           <Island />
+          <CottageYard />
+          <Well />
+          <Mailbox />
+          <Picnic />
           <Campfire />
           <Telescope />
           <WishTree />
@@ -151,7 +169,7 @@ export default function World() {
           <Stardust />
           <Fireflies />
           <DriftingLanterns />
-          <Petals center={[27, -2]} />
+          <Petals center={[42, -4]} />
           <Butterflies />
           <HeartBurst />
           <Player />
