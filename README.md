@@ -9,13 +9,19 @@ Play it: `https://irev88.github.io/metaverse/` (once Pages is enabled — see be
 
 ## 🎮 What's in the world right now
 
-- **The Hearth** — a floating island in space: cottage, campfire, glowing wish tree,
-  telescope, pier, three warp portals (Arcade · Planetarium · Letters — arriving in future phases)
+- **An archipelago of three isles** — **The Hearth** (cottage, campfire, glowing wish tree,
+  portals, pier), **Everbloom Isle** (reflection pond, swing, rose arch, blossom trees,
+  petal rain, butterflies), and **Starfall Isle** (rotating observatory dome, windable orrery,
+  star charts) — all connected by lantern bridges
+- **A photoreal night sky** — a procedural Milky Way with dust lanes, Saturn with ringed
+  detail and an orbiting moon, a crater-painted Moon with halo, diffraction-flare stars,
+  a periodic comet with twin tails, layered auroras, and shooting stars
 - **Your astronaut avatar** — walk, run, jump, wave 👋 dance 💃 send hearts ❤️
-- **Interactions** — sit by the fire (fireside conversation prompts), stargaze (real time +
-  moon phase), leave wishes on the tree (they become glowing fruit), collect 12 pieces of stardust
-- **Dreamy atmosphere** — aurora shaders, shooting stars, a ringed planet, fireflies,
-  drifting sky lanterns, ambient synth pad (toggle 🔊 top-right)
+- **Interactions** — fireside conversation prompts, two telescopes (time + moon phase), wishes
+  that become glowing fruit, pond musings, the rose arch ("meet me at midnight"), a windable
+  orrery, and 20 pieces of stardust hidden across all three isles
+- **Dreamy atmosphere** — string lights, drifting sky lanterns, fireflies, waterfalls off
+  floating islets, glow mushrooms, ambient synth pad (🔊 top-right)
 - **Desktop:** WASD/arrows move · Shift run · Space jump · drag to look · scroll zoom · E interact · 1/2/3 emotes
 - **Mobile:** joystick + drag + on-screen buttons · auto-reduced graphics if needed
 
