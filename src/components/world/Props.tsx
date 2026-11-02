@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import { COTTAGE, MAILBOX, PICNIC, WELL, type V3 } from "@/lib/layout";
 import { terrainHeight } from "@/lib/terrain";
+import { NearTag } from "./NearTag";
 
 function useGroundY(pos: V3): number {
   return useMemo(() => (pos[1] || 0) + terrainHeight(pos[0], pos[2]), [pos]);
@@ -60,9 +60,9 @@ export function Well() {
         <cylinderGeometry args={[0.13, 0.11, 0.18, 10]} />
         <meshStandardMaterial color="#6b4b3a" flatShading roughness={1} />
       </mesh>
-      <Html position={[0, 3.0, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">✧ wishing well</div>
-      </Html>
+      <NearTag position={[0, 3.0, 0]} radius={4}>
+        ✧ wishing well
+      </NearTag>
     </group>
   );
 }
@@ -100,9 +100,9 @@ export function Mailbox() {
           <meshStandardMaterial color="#54406b" />
         </mesh>
       </group>
-      <Html position={[0, 1.9, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">✧ our letters</div>
-      </Html>
+      <NearTag position={[0, 1.9, 0]} radius={3}>
+        ✧ our letters
+      </NearTag>
     </group>
   );
 }
@@ -239,9 +239,9 @@ export function Picnic() {
         <icosahedronGeometry args={[0.06, 0]} />
         <meshStandardMaterial color="#ff6f9e" roughness={0.7} flatShading />
       </mesh>
-      <Html position={[0, 0.9, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">🧺 saved for two</div>
-      </Html>
+      <NearTag position={[0, 0.9, 0]} radius={4}>
+        🧺 saved for two
+      </NearTag>
     </group>
   );
 }

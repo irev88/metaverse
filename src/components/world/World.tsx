@@ -169,7 +169,7 @@ export default function World() {
           <Stardust />
           <Fireflies />
           <DriftingLanterns />
-          <Petals center={[42, -4]} />
+          <Petals center={[52, -6]} />
           <Butterflies />
           <HeartBurst />
           <Player />

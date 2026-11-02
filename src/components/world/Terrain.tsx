@@ -19,50 +19,99 @@ function mulberry32(seed: number) {
   };
 }
 
-/* ============ displaced, vertex-colored meadow ============ */
+/* ============ circular displaced meadow ============ */
+
+function makeDiscGeometry(isl: IslandDef): THREE.BufferGeometry {
+  const rings = 52;
+  const segs = 120;
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  const cLush = new THREE.Color("#28684c");
+  const cLight = new THREE.Color("#47996a");
+  const cDry = new THREE.Color("#6da265");
+  const cRock = new THREE.Color("#5f5c7a");
+  const c = new THREE.Color();
+  const smooth = (a: number, b: number, x: number) => {
+    const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+
+  // center vertex
+  const hCenter = terrainHeight(isl.c[0], isl.c[1]);
+  positions.push(0, hCenter === -Infinity ? 0 : hCenter, 0);
+  colors.push(cLush.r, cLush.g, cLush.b);
+  uvs.push(0.5, 0.5);
+
+  for (let ri = 1; ri <= rings; ri++) {
+    const rr = (ri / rings) * isl.r;
+    for (let si = 0; si < segs; si++) {
+      const a = (si / segs) * Math.PI * 2;
+      const x = Math.cos(a) * rr;
+      const z = Math.sin(a) * rr;
+      const wx = x + isl.c[0];
+      const wz = z + isl.c[1];
+      let y = terrainHeight(wx, wz);
+      if (y === -Infinity) y = -0.6;
+      if (ri === rings) y -= 0.3; // tuck the rim under the dirt skirt
+      positions.push(x, y, z);
+      uvs.push(x / (isl.r * 2) + 0.5, z / (isl.r * 2) + 0.5);
+
+      const n = fbm(wx * 0.45, wz * 0.45, 3);
+      const rim = smooth(isl.r * 0.82, isl.r * 0.99, rr);
+      c.copy(cLush).lerp(cLight, Math.min(1, Math.max(0, (y - 0.12) * 0.85)));
+      c.lerp(cDry, n * 0.32);
+      c.lerp(cRock, rim);
+      colors.push(c.r, c.g, c.b);
+    }
+  }
+
+  // center fan
+  for (let si = 0; si < segs; si++) {
+    indices.push(0, 1 + ((si + 1) % segs), 1 + si);
+  }
+  // ring quads
+  for (let ri = 1; ri < rings; ri++) {
+    const a0 = 1 + (ri - 1) * segs;
+    const b0 = 1 + ri * segs;
+    for (let si = 0; si < segs; si++) {
+      const s1 = (si + 1) % segs;
+      indices.push(a0 + si, b0 + s1, b0 + si);
+      indices.push(a0 + si, a0 + s1, b0 + s1);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  // ensure normals face up
+  if (geo.attributes.normal.getY(0) < 0) {
+    for (let i = 0; i < indices.length; i += 3) {
+      const t = indices[i + 1];
+      indices[i + 1] = indices[i + 2];
+      indices[i + 2] = t;
+    }
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+  }
+  geo.computeBoundingSphere();
+  return geo;
+}
 
 function Meadow({ isl, index }: { isl: IslandDef; index: number }) {
-  const geometry = useMemo(() => {
-    const seg = 84;
-    const size = isl.r * 2.06;
-    const geo = new THREE.PlaneGeometry(size, size, seg, seg);
-    geo.rotateX(-Math.PI / 2);
-    const pos = geo.attributes.position as THREE.BufferAttribute;
-    const colors = new Float32Array(pos.count * 3);
-    const cLush = new THREE.Color("#2e7a58");
-    const cLight = new THREE.Color("#4da273");
-    const cDry = new THREE.Color("#7fae6a");
-    const cRock = new THREE.Color("#6c6685");
-    const c = new THREE.Color();
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i) + isl.c[0];
-      const z = pos.getZ(i) + isl.c[1];
-      const h = terrainHeight(x, z);
-      const y = h === -Infinity ? -0.6 : h;
-      pos.setY(i, y);
-      // color: lush in dips, lighter on hills, rocky at the rim
-      const localX = pos.getX(i);
-      const localZ = pos.getZ(i);
-      const d = Math.hypot(localX, localZ) / isl.r;
-      const n = fbm(x * 0.5, z * 0.5, 3);
-      c.copy(cLush).lerp(cLight, Math.min(1, Math.max(0, (y - 0.15) * 0.9)));
-      c.lerp(cDry, n * 0.3);
-      c.lerp(cRock, THREE.MathUtils.smoothstep(d, 0.88, 1.0));
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
-    }
-    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    geo.computeVertexNormals();
-    return geo;
-  }, [isl]);
+  const geometry = useMemo(() => makeDiscGeometry(isl), [isl]);
 
   const rimRocks = useMemo(() => {
     const rng = mulberry32(7 + index * 31);
-    const n = 16;
+    const n = Math.round(isl.r * 0.8);
     return Array.from({ length: n }, (_, i) => {
       const a = (i / n) * Math.PI * 2 + rng() * 0.4;
-      const r = isl.r - 0.6 - rng() * 0.8;
+      const r = isl.r - 0.6 - rng() * 0.9;
       return {
         pos: [isl.c[0] + Math.cos(a) * r, -0.35 + rng() * 0.5, isl.c[1] + Math.sin(a) * r] as V3,
         scale: 0.5 + rng() * 1.0,
@@ -73,12 +122,12 @@ function Meadow({ isl, index }: { isl: IslandDef; index: number }) {
 
   const chunks = useMemo(() => {
     const rng = mulberry32(40 + index);
-    return Array.from({ length: 3 }, () => {
+    return Array.from({ length: 4 }, () => {
       const a = rng() * Math.PI * 2;
-      const r = isl.r + 2 + rng() * 5;
+      const r = isl.r + 2.5 + rng() * 6;
       return {
-        pos: [isl.c[0] + Math.cos(a) * r, -3.4 - rng() * 3.6, isl.c[1] + Math.sin(a) * r] as V3,
-        scale: 0.35 + rng() * 0.8,
+        pos: [isl.c[0] + Math.cos(a) * r, -3.6 - rng() * 3.8, isl.c[1] + Math.sin(a) * r] as V3,
+        scale: 0.35 + rng() * 0.9,
         speed: 0.05 + rng() * 0.06,
         phase: rng() * Math.PI * 2,
       };
@@ -88,15 +137,17 @@ function Meadow({ isl, index }: { isl: IslandDef; index: number }) {
 
   return (
     <group>
-      <mesh geometry={geometry} position={[isl.c[0], 0, isl.c[1]]} receiveShadow />
+      <mesh geometry={geometry} position={[isl.c[0], 0, isl.c[1]]} receiveShadow>
+        <meshStandardMaterial vertexColors roughness={1} metalness={0} />
+      </mesh>
       {/* dirt skirt under the meadow */}
-      <mesh position={[isl.c[0], -1.7, isl.c[1]]}>
-        <cylinderGeometry args={[isl.r * 0.985, isl.r * 0.86, 3.4, 28, 1, true]} />
+      <mesh position={[isl.c[0], -1.9, isl.c[1]]}>
+        <cylinderGeometry args={[isl.r * 0.99, isl.r * 0.86, 3.8, 40, 1, true]} />
         <meshStandardMaterial color="#5a4a3a" flatShading roughness={1} side={THREE.DoubleSide} />
       </mesh>
       {/* rocky underside */}
-      <mesh position={[isl.c[0], -8.6, isl.c[1]]} rotation={[Math.PI, 0, 0]}>
-        <coneGeometry args={[isl.r * 0.86, 11.5, 24, 3]} />
+      <mesh position={[isl.c[0], -9.4, isl.c[1]]} rotation={[Math.PI, 0, 0]}>
+        <coneGeometry args={[isl.r * 0.86, 12.5, 28, 3]} />
         <meshStandardMaterial color="#4b4266" flatShading roughness={1} />
       </mesh>
       {rimRocks.map((rock, i) => (

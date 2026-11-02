@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo, useRef } from "react";
-import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { BRIDGES, CAMPFIRE, COTTAGE, LANTERNS, PIER_DIR, PIER_LENGTH, PIER_START, SIGN, type V3 } from "@/lib/layout";
 import { terrainHeight } from "@/lib/terrain";
 import { Smoke } from "./Particles";
+import { NearTag } from "./NearTag";
 
 /* ================= cottage ================= */
 
@@ -256,9 +256,9 @@ function Signpost() {
         <boxGeometry args={[1.7, 0.56, 0.07]} />
         <meshStandardMaterial color="#7a5c42" flatShading roughness={1} />
       </mesh>
-      <Html position={[0, 1.66, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">✦ The Hearth · est. 2026 ✦</div>
-      </Html>
+      <NearTag position={[0, 1.66, 0]} radius={4.5}>
+        ✦ The Hearth · est. 2026 ✦
+      </NearTag>
     </group>
   );
 }
@@ -435,12 +435,12 @@ export function Island() {
       <GlowMushrooms />
 
       {/* island name tags */}
-      <Html position={[42, 7.6, -4]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">🌸 Everbloom Isle</div>
-      </Html>
-      <Html position={[-36, 8.2, 9]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">🔭 Starfall Isle</div>
-      </Html>
+      <NearTag position={[52, 8.6, -6]} radius={22}>
+        🌸 Everbloom Isle
+      </NearTag>
+      <NearTag position={[-45, 9.2, 12]} radius={20}>
+        🔭 Starfall Isle
+      </NearTag>
     </group>
   );
 }

@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useRef } from "react";
-import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { ARCH, CAMPFIRE, CHART, OBSERVATORY, ORRERY, POND, PORTALS, SWING, TELESCOPE, WISH_TREE } from "@/lib/layout";
+import { terrainHeight } from "@/lib/terrain";
+import { fbm } from "@/lib/noise";
 import { useStore } from "@/lib/store";
+import { NearTag } from "./NearTag";
 import { EmberParticles, WishMotes } from "./Particles";
 
 /* ================= campfire ================= */
@@ -97,7 +99,6 @@ export function Campfire() {
           <meshStandardMaterial color="#6b4b34" flatShading roughness={1} />
         </mesh>
       ))}
-      {/* warm ground glow */}
       <mesh position={[CAMPFIRE[0], 0.015, CAMPFIRE[2]]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[2.1, 24]} />
         <meshBasicMaterial color="#ff8c4a" transparent opacity={0.1} blending={THREE.AdditiveBlending} depthWrite={false} />
@@ -136,105 +137,285 @@ export function Telescope() {
           <meshStandardMaterial color="#3d3560" metalness={0.4} roughness={0.4} />
         </mesh>
       </group>
-      <Html position={[0, 2.2, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">✧ stargazer</div>
-      </Html>
+      <NearTag position={[0, 2.2, 0]} radius={4}>
+        ✧ stargazer
+      </NearTag>
     </group>
   );
 }
 
-/* ================= wish tree ================= */
+/* ================= the wishing tree — the heart of the hearth ================= */
+
+function displaceBlob(geo: THREE.BufferGeometry, amp: number, seed: number) {
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const n = fbm(v.x * 1.5 + seed, v.y * 1.9 + v.z * 1.5 + seed * 1.7, 3) - 0.5;
+    const len = v.length() || 1;
+    v.addScaledVector(v.clone().divideScalar(len), n * 2 * amp);
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
 
 export function WishTree() {
-  const wishes = useStore((s) => s.wishes);
-  const wisps = useRef<(THREE.Sprite | null)[]>([]);
-  const fruits = useMemo(() => {
-    const out: [number, number, number][] = [];
+  const wishCount = useStore((s) => s.wishes.length);
+  const canopyMats = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
+  const lanternRefs = useRef<(THREE.Group | null)[]>([]);
+  const spiralMat = useRef<THREE.MeshStandardMaterial>(null);
+  const runeMat = useRef<THREE.MeshStandardMaterial>(null);
+
+  // twisted trunk segments
+  const trunk = useMemo(() => {
+    const segs: { pos: [number, number, number]; r0: number; r1: number; rot: number; tilt: number }[] = [];
+    let x = 0;
+    let z = 0;
+    for (let i = 0; i < 5; i++) {
+      const k = i / 4;
+      const sway = Math.sin(i * 1.9 + 0.6) * 0.22;
+      x += sway * 0.45;
+      z += Math.cos(i * 1.4) * 0.12;
+      segs.push({
+        pos: [WISH_TREE[0] + x, 0.35 + i * 0.72, WISH_TREE[2] + z],
+        r0: 0.62 - k * 0.34,
+        r1: 0.52 - k * 0.34,
+        rot: i * 0.9,
+        tilt: sway * 0.4,
+      });
+    }
+    return segs;
+  }, []);
+
+  // glowing spiral around the trunk
+  const spiralGeo = useMemo(() => {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 140; i++) {
+      const k = i / 140;
+      const a = k * Math.PI * 6.5 + 0.4;
+      const y = 0.25 + k * 3.6;
+      const r = 0.66 * (1 - k * 0.5) + 0.05;
+      pts.push(new THREE.Vector3(WISH_TREE[0] + Math.cos(a) * r, y, WISH_TREE[2] + Math.sin(a) * r));
+    }
+    return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 160, 0.026, 6, false);
+  }, []);
+
+  // organic canopy — displaced blobs layered as a crown
+  const blobs = useMemo(() => {
+    const configs: { pos: [number, number, number]; r: number; detail: number; amp: number; seed: number; c: string }[] = [];
+    const crown: [string, number][] = [
+      ["#8b6cf0", 0],
+      ["#a78bfa", 1],
+      ["#6ee7d8", 2],
+      ["#b18cff", 3],
+      ["#8b6cf0", 4],
+    ];
+    // big lower ring
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + 0.3;
+      configs.push({
+        pos: [WISH_TREE[0] + Math.cos(a) * 1.55, 4.05 + (i % 2) * 0.4, WISH_TREE[2] + Math.sin(a) * 1.55],
+        r: 1.05 + (i % 3) * 0.22,
+        detail: 2,
+        amp: 0.3,
+        seed: 31 + i * 13,
+        c: crown[i % crown.length][0],
+      });
+    }
+    // crown core
+    configs.push({ pos: [WISH_TREE[0], 4.9, WISH_TREE[2]], r: 1.6, detail: 3, amp: 0.26, seed: 111, c: "#9d7bf5" });
+    configs.push({ pos: [WISH_TREE[0] + 0.5, 5.7, WISH_TREE[2] - 0.3], r: 1.0, detail: 2, amp: 0.3, seed: 131, c: "#6ee7d8" });
+    configs.push({ pos: [WISH_TREE[0] - 0.6, 5.55, WISH_TREE[2] + 0.35], r: 0.9, detail: 2, amp: 0.3, seed: 141, c: "#b18cff" });
+    return configs.map((cfg) => {
+      const geo = displaceBlob(new THREE.IcosahedronGeometry(cfg.r, cfg.detail), cfg.amp * cfg.r, cfg.seed);
+      return { ...cfg, geo };
+    });
+  }, []);
+
+  // branches
+  const branchGeos = useMemo(() => {
+    return [0, 1, 2].map((i) => {
+      const a = (i / 3) * Math.PI * 2 + 1.1;
+      const pts = [
+        new THREE.Vector3(WISH_TREE[0], 3.4, WISH_TREE[2]),
+        new THREE.Vector3(WISH_TREE[0] + Math.cos(a) * 0.8, 3.75, WISH_TREE[2] + Math.sin(a) * 0.8),
+        new THREE.Vector3(WISH_TREE[0] + Math.cos(a) * 1.5, 4.05, WISH_TREE[2] + Math.sin(a) * 1.5),
+      ];
+      return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.07, 6, false);
+    });
+  }, []);
+
+  // hanging wish lanterns — dim buds until wished upon
+  const lanterns = useMemo(() => {
+    const out: { pos: [number, number, number]; stem: number }[] = [];
     for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2 + 0.4;
-      const rr = 1.75 + (i % 3) * 0.35;
-      out.push([WISH_TREE[0] + Math.cos(a) * rr, 2.1 + (i % 4) * 0.5, WISH_TREE[2] + Math.sin(a) * rr]);
+      const a = (i / 12) * Math.PI * 2 + 0.55;
+      const rr = 1.7 + (i % 3) * 0.4;
+      out.push({
+        pos: [WISH_TREE[0] + Math.cos(a) * rr, 3.4 + (i % 4) * 0.55, WISH_TREE[2] + Math.sin(a) * rr],
+        stem: 0.5 + (i % 3) * 0.35,
+      });
     }
     return out;
   }, []);
+
+  // rune stones around the base
+  const runes = useMemo(() => {
+    void terrainHeight(WISH_TREE[0], WISH_TREE[2]);
+    return Array.from({ length: 6 }, (_, i) => {
+      const a = (i / 6) * Math.PI * 2 + 0.25;
+      const rr = 2.7 + (i % 2) * 0.35;
+      return { pos: [WISH_TREE[0] + Math.cos(a) * rr, 0.28, WISH_TREE[2] + Math.sin(a) * rr] as [number, number, number], h: 0.5 + (i % 3) * 0.2, rot: a * 2 };
+    });
+  }, []);
+
+  const wisps = useRef<(THREE.Sprite | null)[]>([]);
   const wispSpecs = useMemo(
     () =>
-      Array.from({ length: 10 }, (_, i) => ({
-        r: 1.2 + (i % 3) * 0.45,
-        speed: 0.5 + (i % 4) * 0.22,
+      Array.from({ length: 12 }, (_, i) => ({
+        r: 1.6 + (i % 3) * 0.6,
+        speed: 0.4 + (i % 4) * 0.18,
         phase: i * 1.3,
-        y: 0.6 + (i % 5) * 0.55,
+        y: 1.2 + (i % 5) * 0.8,
       })),
     [],
   );
+
   useFrame((state) => {
     const t = state.clock.elapsedTime;
+    const base = 0.55 + Math.min(wishCount * 0.14, 1.4);
+    canopyMats.current.forEach((m, i) => {
+      if (!m) return;
+      m.emissiveIntensity = base * (0.8 + 0.25 * Math.sin(t * 0.9 + i * 1.4));
+    });
+    if (spiralMat.current) spiralMat.current.emissiveIntensity = 1.6 + Math.sin(t * 1.3) * 0.6 + wishCount * 0.1;
+    if (runeMat.current) runeMat.current.emissiveIntensity = 1.4 + Math.sin(t * 1.1) * 0.5;
+    lanternRefs.current.forEach((g, i) => {
+      if (!g) return;
+      g.rotation.y = Math.sin(t * 0.7 + i * 2.1) * 0.22;
+      const bulb = g.children[1] as THREE.Mesh | undefined;
+      if (bulb) {
+        const mat = bulb.material as THREE.MeshStandardMaterial;
+        mat.emissiveIntensity = i < wishCount ? 2.8 + Math.sin(t * 2 + i) * 0.6 : 0.25;
+      }
+    });
     wisps.current.forEach((sp, i) => {
       if (!sp) return;
       const s = wispSpecs[i];
       sp.position.set(
         WISH_TREE[0] + Math.cos(t * s.speed + s.phase) * s.r,
-        s.y + Math.sin(t * 0.7 + s.phase) * 0.25,
+        s.y + Math.sin(t * 0.7 + s.phase) * 0.3,
         WISH_TREE[2] + Math.sin(t * s.speed + s.phase) * s.r,
       );
     });
   });
-  const glow = Math.min(0.85 + wishes.length * 0.14, 2.1);
 
   return (
     <group>
-      <mesh position={[WISH_TREE[0], 1.6, WISH_TREE[2]]} castShadow>
-        <cylinderGeometry args={[0.28, 0.55, 3.2, 7]} />
-        <meshStandardMaterial color="#4a3663" flatShading roughness={1} />
+      {/* ground: glowing rune circle */}
+      <mesh position={[WISH_TREE[0], 0.02, WISH_TREE[2]]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[3.1, 40]} />
+        <meshBasicMaterial color="#8b6cf0" transparent opacity={0.1} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
-      {/* roots */}
-      {[0, 1, 2, 3].map((i) => {
-        const a = (i / 4) * Math.PI * 2 + 0.5;
+      <mesh position={[WISH_TREE[0], 0.03, WISH_TREE[2]]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[2.95, 3.1, 48]} />
+        <meshBasicMaterial color="#b18cff" transparent opacity={0.35} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
+      {/* rune stones */}
+      {runes.map((r, i) => (
+        <group key={i} position={r.pos} rotation={[0, r.rot, (i % 2 ? 1 : -1) * 0.06]}>
+          <mesh castShadow>
+            <boxGeometry args={[0.22, r.h, 0.14]} />
+            <meshStandardMaterial color="#4a4468" flatShading roughness={1} />
+          </mesh>
+          <mesh position={[0, r.h * 0.2, 0.075]}>
+            <sphereGeometry args={[0.028, 6, 6]} />
+            <meshStandardMaterial color="#c4b5fd" emissive="#a78bfa" emissiveIntensity={1.5} ref={i === 0 ? runeMat : undefined} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* twisted trunk */}
+      {trunk.map((s, i) => (
+        <mesh key={i} position={s.pos} rotation={[s.tilt, s.rot, s.tilt * 0.6]} castShadow>
+          <cylinderGeometry args={[s.r1, s.r0, 0.86, 10, 3]} />
+          <meshStandardMaterial color={i % 2 ? "#4a3860" : "#54406b"} flatShading roughness={0.95} />
+        </mesh>
+      ))}
+      {/* root flares */}
+      {[0, 1, 2, 3, 4].map((i) => {
+        const a = (i / 5) * Math.PI * 2 + 0.5;
         return (
-          <mesh key={i} position={[WISH_TREE[0] + Math.cos(a) * 0.55, 0.12, WISH_TREE[2] + Math.sin(a) * 0.55]} rotation={[0, -a, 0.5]}>
-            <cylinderGeometry args={[0.07, 0.16, 0.8, 5]} />
-            <meshStandardMaterial color="#44315c" flatShading roughness={1} />
+          <mesh key={i} position={[WISH_TREE[0] + Math.cos(a) * 0.62, 0.14, WISH_TREE[2] + Math.sin(a) * 0.62]} rotation={[0, -a, 0.55]}>
+            <coneGeometry args={[0.2, 0.9, 5]} />
+            <meshStandardMaterial color="#463458" flatShading roughness={1} />
           </mesh>
         );
       })}
-      {[
-        { p: [0, 3.9, 0], r: 2.0, c: "#b18cff" },
-        { p: [1.35, 3.3, 0.5], r: 1.35, c: "#6ee7d8" },
-        { p: [-1.2, 3.4, -0.35], r: 1.45, c: "#b18cff" },
-        { p: [0.45, 3.0, -1.25], r: 1.25, c: "#8b7cf6" },
-        { p: [-0.55, 2.9, 1.15], r: 1.2, c: "#6ee7d8" },
-        { p: [0.2, 4.9, -0.4], r: 1.1, c: "#8b7cf6" },
-      ].map((c, i) => (
-        <mesh key={i} position={[WISH_TREE[0] + c.p[0], c.p[1], WISH_TREE[2] + c.p[2]]} castShadow>
-          <icosahedronGeometry args={[c.r, 0]} />
-          <meshStandardMaterial color="#2c2350" emissive={c.c} emissiveIntensity={glow * 0.55} flatShading roughness={0.85} />
-        </mesh>
-      ))}
-      {fruits.slice(0, wishes.length).map((f, i) => (
-        <mesh key={i} position={f}>
-          <sphereGeometry args={[0.09, 8, 8]} />
-          <meshStandardMaterial color="#ffe2a8" emissive="#ffd27a" emissiveIntensity={3.4} />
-        </mesh>
-      ))}
-      <mesh position={[WISH_TREE[0], 0.02, WISH_TREE[2]]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[2.5, 32]} />
-        <meshBasicMaterial color="#8b6cf0" transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} />
+      {/* glowing spiral */}
+      <mesh geometry={spiralGeo}>
+        <meshStandardMaterial ref={spiralMat} color="#c4b5fd" emissive="#a78bfa" emissiveIntensity={1.6} roughness={0.4} />
       </mesh>
-      <WishMotes position={[WISH_TREE[0], 3, WISH_TREE[2]]} />
-      {wispSpecs.map((s, i) => (
+      {/* branches */}
+      {branchGeos.map((geo, i) => (
+        <mesh key={i} geometry={geo}>
+          <meshStandardMaterial color="#4a3860" flatShading roughness={1} />
+        </mesh>
+      ))}
+      {/* canopy */}
+      {blobs.map((b, i) => (
+        <mesh key={i} geometry={b.geo} position={b.pos} castShadow>
+          <meshStandardMaterial
+            ref={(el) => {
+              canopyMats.current[i] = el;
+            }}
+            color="#241c44"
+            emissive={b.c}
+            emissiveIntensity={0.7}
+            flatShading
+            roughness={0.85}
+          />
+        </mesh>
+      ))}
+      {/* hanging wish lanterns */}
+      {lanterns.map((l, i) => (
+        <group
+          key={i}
+          ref={(el) => {
+            lanternRefs.current[i] = el;
+          }}
+        >
+          <mesh position={[l.pos[0], l.pos[1] - l.stem / 2, l.pos[2]]}>
+            <cylinderGeometry args={[0.008, 0.008, l.stem, 4]} />
+            <meshStandardMaterial color="#2a2438" />
+          </mesh>
+          <mesh position={[l.pos[0], l.pos[1] - l.stem - 0.09, l.pos[2]]} scale={[1, 1.35, 1]}>
+            <sphereGeometry args={[0.09, 10, 10]} />
+            <meshStandardMaterial color="#ffe9c4" emissive="#ffd27a" emissiveIntensity={0.25} />
+          </mesh>
+          {i < wishCount && (
+            <sprite position={[l.pos[0], l.pos[1] - l.stem - 0.09, l.pos[2]]} scale={[0.7, 0.7, 1]}>
+              <spriteMaterial color="#ffd27a" transparent opacity={0.28} depthWrite={false} blending={THREE.AdditiveBlending} />
+            </sprite>
+          )}
+        </group>
+      ))}
+      <WishMotes position={[WISH_TREE[0], 3.2, WISH_TREE[2]]} />
+      {wispSpecs.map((_, i) => (
         <sprite
           key={i}
           ref={(el) => {
             wisps.current[i] = el;
           }}
-          scale={[0.35, 0.35, 1]}
+          scale={[0.32, 0.32, 1]}
         >
           <spriteMaterial color="#c4b5fd" transparent opacity={0.5} depthWrite={false} blending={THREE.AdditiveBlending} />
         </sprite>
       ))}
-      <Html position={[WISH_TREE[0], 5.6, WISH_TREE[2]]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">✦ wishing tree · {wishes.length} wish{wishes.length === 1 ? "" : "es"}</div>
-      </Html>
+      <NearTag position={[WISH_TREE[0], 6.8, WISH_TREE[2]]} radius={6}>
+        ✦ wishing tree · {wishCount} wish{wishCount === 1 ? "" : "es"}
+      </NearTag>
     </group>
   );
 }
@@ -315,9 +496,9 @@ function Portal({ label, emoji, pos, color }: { label: string; emoji: string; po
           );
         })}
       </group>
-      <Html position={[0, 3.3, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">{emoji} {label} · soon</div>
-      </Html>
+      <NearTag position={[0, 3.3, 0]} radius={3.5}>
+        {emoji} {label} · soon
+      </NearTag>
     </group>
   );
 }
@@ -387,7 +568,6 @@ export function Pond() {
           <meshStandardMaterial color="#5f5878" flatShading roughness={1} />
         </mesh>
       ))}
-      {/* lily pads + a glowing lotus */}
       {[
         [POND.c[0] - 1.4, POND.c[1] + 0.9],
         [POND.c[0] + 1.1, POND.c[1] + 1.3],
@@ -402,9 +582,9 @@ export function Pond() {
         <coneGeometry args={[0.14, 0.2, 8]} />
         <meshStandardMaterial color="#ffb3cd" emissive="#ff8fb3" emissiveIntensity={1.6} roughness={0.7} />
       </mesh>
-      <Html position={[POND.c[0], 1.5, POND.c[1]]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">✧ the reflection pond</div>
-      </Html>
+      <NearTag position={[POND.c[0], 1.5, POND.c[1]]} radius={5}>
+        ✧ the reflection pond
+      </NearTag>
     </group>
   );
 }
@@ -447,9 +627,9 @@ export function Swing() {
           <meshStandardMaterial color="#8a6a4a" flatShading roughness={1} />
         </mesh>
       </group>
-      <Html position={[0, 3.1, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">🕊 save me a spot</div>
-      </Html>
+      <NearTag position={[0, 3.1, 0]} radius={4}>
+        🕊 save me a spot
+      </NearTag>
     </group>
   );
 }
@@ -486,9 +666,9 @@ export function RoseArch() {
           <meshStandardMaterial color={b.c} roughness={0.65} flatShading emissive={b.c} emissiveIntensity={0.12} />
         </mesh>
       ))}
-      <Html position={[0, 2.75, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">🌹 our arch</div>
-      </Html>
+      <NearTag position={[0, 2.75, 0]} radius={4}>
+        🌹 our arch
+      </NearTag>
     </group>
   );
 }
@@ -503,12 +683,10 @@ export function Observatory() {
   });
   return (
     <group position={OBSERVATORY} rotation={[0, yaw, 0]}>
-      {/* stone base */}
       <mesh position={[0, 1.1, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[3.1, 3.4, 2.2, 12]} />
         <meshStandardMaterial color="#565070" flatShading roughness={1} />
       </mesh>
-      {/* door */}
       <mesh position={[0, 0.9, 3.15]}>
         <boxGeometry args={[1.1, 1.8, 0.2]} />
         <meshStandardMaterial color="#241a30" roughness={0.9} />
@@ -517,23 +695,19 @@ export function Observatory() {
         <cylinderGeometry args={[0.55, 0.55, 0.2, 12, 1, false, 0, Math.PI]} />
         <meshStandardMaterial color="#241a30" roughness={0.9} />
       </mesh>
-      {/* warm window */}
       <mesh position={[2.2, 1.5, 2.2]} rotation={[0, -0.6, 0]}>
         <boxGeometry args={[0.6, 0.6, 0.08]} />
         <meshStandardMaterial color="#ffdca0" emissive="#ffcf7d" emissiveIntensity={2.2} />
       </mesh>
-      {/* rotating dome with slit + telescope */}
       <group ref={dome} position={[0, 2.2, 0]}>
         <mesh castShadow>
           <sphereGeometry args={[3.0, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2]} />
           <meshStandardMaterial color="#6a628e" flatShading roughness={0.8} />
         </mesh>
-        {/* slit */}
         <mesh position={[0, 1.35, 1.15]} rotation={[-0.7, 0, 0]}>
           <boxGeometry args={[0.7, 2.6, 0.12]} />
           <meshStandardMaterial color="#1c1832" roughness={0.9} />
         </mesh>
-        {/* great telescope tube */}
         <mesh position={[0, 1.15, 0.9]} rotation={[-1.0, 0, 0]} castShadow>
           <cylinderGeometry args={[0.28, 0.42, 3.2, 12]} />
           <meshStandardMaterial color="#d4b078" metalness={0.55} roughness={0.35} />
@@ -543,18 +717,16 @@ export function Observatory() {
           <meshStandardMaterial color="#3d3560" emissive="#8b7cf6" emissiveIntensity={0.5} metalness={0.4} roughness={0.4} />
         </mesh>
       </group>
-      {/* warm interior light through door */}
       <pointLight position={[0, 1.4, 3.6]} color="#ffbf78" intensity={9} distance={8} decay={2} />
-      {/* steps */}
       {[0, 1].map((i) => (
         <mesh key={i} position={[0, 0.08 + i * 0.14, 3.9 - i * 0.35]} receiveShadow>
           <boxGeometry args={[1.6 - i * 0.2, 0.14, 0.5]} />
           <meshStandardMaterial color="#4c4570" flatShading />
         </mesh>
       ))}
-      <Html position={[0, 6.2, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">✦ starfall observatory</div>
-      </Html>
+      <NearTag position={[0, 6.2, 0]} radius={8}>
+        ✦ starfall observatory
+      </NearTag>
     </group>
   );
 }
@@ -587,13 +759,11 @@ export function Orrery() {
         <ringGeometry args={[0.5, 0.62, 32]} />
         <meshBasicMaterial color="#8b7cf6" transparent opacity={0.4} side={THREE.DoubleSide} />
       </mesh>
-      {/* sun */}
       <mesh position={[0, 0.75, 0]}>
         <sphereGeometry args={[0.3, 14, 14]} />
         <meshStandardMaterial color="#ffd27a" emissive="#ffb35e" emissiveIntensity={2.4} />
       </mesh>
       <pointLight position={[0, 0.8, 0]} color="#ffd9a0" intensity={5} distance={5} decay={2} />
-      {/* mercury */}
       <group ref={arm1} position={[0, 0.75, 0]}>
         <mesh position={[0.55, 0, 0]}>
           <cylinderGeometry args={[0.012, 0.012, 0.55, 5]} />
@@ -604,7 +774,6 @@ export function Orrery() {
           <meshStandardMaterial color="#b0a6c4" roughness={0.8} />
         </mesh>
       </group>
-      {/* earth + moon */}
       <group ref={arm2} position={[0, 0.75, 0]}>
         <mesh position={[0.95, 0, 0]}>
           <cylinderGeometry args={[0.012, 0.012, 0.95, 5]} />
@@ -621,7 +790,6 @@ export function Orrery() {
           </mesh>
         </group>
       </group>
-      {/* mini saturn */}
       <group ref={arm3} position={[0, 0.75, 0]}>
         <mesh position={[1.4, 0, 0]}>
           <cylinderGeometry args={[0.012, 0.012, 1.4, 5]} />
@@ -636,9 +804,9 @@ export function Orrery() {
           <meshBasicMaterial color="#e8dcc0" transparent opacity={0.75} side={THREE.DoubleSide} />
         </mesh>
       </group>
-      <Html position={[0, 1.9, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d font-display">✧ orrery of us</div>
-      </Html>
+      <NearTag position={[0, 1.9, 0]} radius={4.5}>
+        ✧ orrery of us
+      </NearTag>
     </group>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
@@ -17,6 +17,11 @@ export function Avatar({ name = "You ✦" }: { name?: string }) {
   const armL = useRef<THREE.Group>(null);
   const armR = useRef<THREE.Group>(null);
   const antennaTip = useRef<THREE.Mesh>(null);
+  const [tagVisible, setTagVisible] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const lastMove = useRef(-10);
+  const lastOver = useRef(0);
+  const outTimer = useRef<number | null>(null);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -24,6 +29,10 @@ export function Avatar({ name = "You ✦" }: { name?: string }) {
     const sitting = playerState.sitting;
     const emote = playerState.emoteName;
     const emoteActive = emote && t < playerState.emoteUntil;
+
+    if (moving) lastMove.current = t;
+    const wantTag = hovered || t - lastMove.current < 1.8;
+    if (wantTag !== tagVisible) setTagVisible(wantTag);
 
     // reset targets each frame (computed absolutely)
     let legLx = 0,
@@ -97,9 +106,28 @@ export function Avatar({ name = "You ✦" }: { name?: string }) {
     }
   });
 
+  const hoverIn = () => {
+    if (outTimer.current) {
+      window.clearTimeout(outTimer.current);
+      outTimer.current = null;
+    }
+    lastOver.current = performance.now();
+    setHovered(true);
+  };
+  const hoverOut = () => {
+    if (outTimer.current) window.clearTimeout(outTimer.current);
+    outTimer.current = window.setTimeout(() => {
+      if (performance.now() - lastOver.current > 60) setHovered(false);
+    }, 80);
+  };
+
   return (
     <group>
-      <group ref={body}>
+      <group
+        ref={body}
+        onPointerOver={hoverIn}
+        onPointerOut={hoverOut}
+      >
         {/* legs */}
         <group ref={legL} position={[-0.14, 0.62, 0]}>
           <mesh position={[0, -0.26, 0]} castShadow>
@@ -186,9 +214,11 @@ export function Avatar({ name = "You ✦" }: { name?: string }) {
         </group>
       </group>
 
-      <Html position={[0, 2.25, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
-        <div className="tag3d">{name}</div>
-      </Html>
+      {tagVisible && (
+        <Html position={[0, 2.25, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[9, 0]}>
+          <div className="tag3d anim-fade-up">{name}</div>
+        </Html>
+      )}
     </group>
   );
 }

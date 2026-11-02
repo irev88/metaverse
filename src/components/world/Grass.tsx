@@ -13,8 +13,8 @@ import { useStore } from "@/lib/store";
    ============================================================ */
 
 function makeBladeGeometry(): THREE.BufferGeometry {
-  const a = new THREE.PlaneGeometry(0.1, 0.62, 1, 4);
-  a.translate(0, 0.31, 0);
+  const a = new THREE.PlaneGeometry(0.085, 0.56, 1, 4);
+  a.translate(0, 0.28, 0);
   const b = a.clone();
   b.rotateY(Math.PI / 2);
   // normalize index state before merging (defensive; both are indexed today)
@@ -52,8 +52,8 @@ const grassFrag = /* glsl */ `
   varying float vH;
   varying vec3 vTint;
   void main() {
-    vec3 root = vec3(0.13, 0.32, 0.22);
-    vec3 tip = vec3(0.42, 0.78, 0.52);
+    vec3 root = vec3(0.09, 0.26, 0.17);
+    vec3 tip = vec3(0.33, 0.68, 0.43);
     vec3 col = mix(root, tip, vH) * vTint;
     gl_FragColor = vec4(col, 1.0);
   }
@@ -61,7 +61,7 @@ const grassFrag = /* glsl */ `
 
 export function Grass() {
   const quality = useStore((s) => s.quality);
-  const count = quality === "rich" ? 6200 : 2600;
+  const count = quality === "rich" ? 7000 : 2800;
   const geo = useMemo(makeBladeGeometry, []);
   const mat = useMemo(
     () =>
@@ -90,7 +90,7 @@ export function Grass() {
       const z = isl.c[1] + Math.sin(a) * r;
       const h = terrainHeight(x, z);
       if (h === -Infinity) continue;
-      tint.setHSL(0.36 + rnd() * 0.06, 0.45 + rnd() * 0.2, 0.85 + rnd() * 0.3);
+      tint.setHSL(0.35 + rnd() * 0.07, 0.42 + rnd() * 0.2, 0.72 + rnd() * 0.34);
       out.push({ x, z, y: h, s: 0.65 + rnd() * 0.9, rot: rnd() * Math.PI, tint });
     }
     return out;

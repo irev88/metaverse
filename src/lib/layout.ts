@@ -1,5 +1,5 @@
 // The Hearth archipelago — single source of truth for the expanded world.
-// Islands are large rolling meadows; terrain height comes from lib/terrain.
+// Large rolling meadow islands; terrain height comes from lib/terrain.
 export type V3 = [number, number, number];
 
 export const SPAWN: V3 = [0, 0, 12.5];
@@ -14,9 +14,9 @@ export interface IslandDef {
 }
 
 export const ISLANDS: IslandDef[] = [
-  { id: "hearth", name: "The Hearth", tag: "✨ The Hearth", c: [0, 0], r: 19, grass: "#2f7a5e" },
-  { id: "everbloom", name: "Everbloom Isle", tag: "🌸 Everbloom Isle", c: [42, -4], r: 15, grass: "#3c8a64" },
-  { id: "starfall", name: "Starfall Isle", tag: "🔭 Starfall Isle", c: [-36, 9], r: 13, grass: "#41707a" },
+  { id: "hearth", name: "The Hearth", tag: "✨ The Hearth", c: [0, 0], r: 24, grass: "#2f7a5e" },
+  { id: "everbloom", name: "Everbloom Isle", tag: "🌸 Everbloom Isle", c: [52, -6], r: 20, grass: "#3c8a64" },
+  { id: "starfall", name: "Starfall Isle", tag: "🔭 Starfall Isle", c: [-45, 12], r: 17, grass: "#41707a" },
 ];
 
 export interface BridgeDef {
@@ -26,8 +26,8 @@ export interface BridgeDef {
 }
 
 export const BRIDGES: BridgeDef[] = [
-  { a: [18.7, -1.77], b: [27.3, -2.62], w: 2.0 }, // hearth -> everbloom
-  { a: [-18.2, 4.55], b: [-23.2, 5.82], w: 2.0 }, // hearth -> starfall
+  { a: [23.05, -2.66], b: [33.32, -3.84], w: 2.0 }, // hearth -> everbloom
+  { a: [-22.42, 5.98], b: [-29.15, 7.77], w: 2.0 }, // hearth -> starfall
 ];
 
 /* ----- the hearth ----- */
@@ -59,34 +59,43 @@ export const TREES: V3[] = [
   [9.5, 0, -1.2],
   [-4.5, 0, 6.5],
   [11.0, 0, 2.5],
-  // new meadows of the larger hearth
   [13.8, 0, -9.2],
   [-14.6, 0, -6.0],
   [4.6, 0, 13.6],
   [-13.2, 0, 11.4],
   [15.4, 0, 4.2],
+  // outer meadows of the larger hearth
+  [18.0, 0, -13.5],
+  [-17.5, 0, -11.0],
+  [8.0, 0, 18.5],
+  [-18.0, 0, 15.5],
+  [19.5, 0, 3.0],
+  [-6.0, 0, 19.0],
+  [14.0, 0, 14.5],
 ];
 
 export const BLOSSOM_TREES: V3[] = [
-  // everbloom
-  [36.5, 0, -12.5],
-  [46.0, 0, 0.2],
-  [44.8, 0, -13.2],
-  [39.8, 0, 2.6],
-  [34.2, 0, 1.4],
-  [47.6, 0, -8.2],
-  // starfall
-  [-42.5, 0, 13.5],
-  [-29.5, 0, 15.0],
+  // everbloom (center 52,-6)
+  [46.5, 0, -14.5],
+  [56.0, 0, -1.8],
+  [54.8, 0, -15.2],
+  [49.8, 0, 0.6],
+  [44.2, 0, -0.6],
+  [57.6, 0, -10.2],
+  [60.0, 0, -6.0],
+  [56.0, 0, 2.0],
+  // starfall (center -45,12)
+  [-51.5, 0, 16.5],
+  [-38.5, 0, 18.0],
 ];
 
 export const PINE_TREES: V3[] = [
-  [-40.0, 0, 3.2],
-  [-34.2, 0, 12.2],
-  [-26.2, 0, 13.6],
-  [-42.2, 0, 8.4],
-  [-30.2, 0, 1.2],
-  [-44.0, 0, 5.8],
+  [-49.0, 0, 6.2],
+  [-43.2, 0, 15.2],
+  [-35.2, 0, 16.6],
+  [-51.2, 0, 11.4],
+  [-39.2, 0, 4.2],
+  [-53.0, 0, 8.8],
 ];
 
 export const LANTERNS: V3[] = [
@@ -95,59 +104,60 @@ export const LANTERNS: V3[] = [
   [-5.2, 0, -0.5],
   [6.0, 0, -8.0],
   // everbloom
-  [29.6, 0, -3.6],
-  [35.6, 0, 0.6],
-  [40.5, 0, -7.5],
+  [39.6, 0, -5.6],
+  [45.6, 0, -1.4],
+  [50.5, 0, -9.5],
   // starfall
-  [-26.0, 0, 6.6],
-  [-31.5, 0, 3.4],
-  [-33.0, 0, 10.5],
+  [-35.0, 0, 9.6],
+  [-40.5, 0, 6.4],
+  [-42.0, 0, 13.5],
 ];
 
 /* ----- everbloom isle ----- */
-export const POND = { c: [32.5, -5.5] as [number, number], r: 3.4 };
-export const SWING: V3 = [28.3, 0, -7.8];
-export const ARCH: V3 = [28.9, 0, -2.3];
-export const FLOWER_HEART = { c: [38.5, -9.5] as [number, number], scale: 0.22 };
+export const POND = { c: [42.5, -7.5] as [number, number], r: 3.4 };
+export const SWING: V3 = [38.3, 0, -9.8];
+export const ARCH: V3 = [38.9, 0, -4.3];
+export const FLOWER_HEART = { c: [48.5, -11.5] as [number, number], scale: 0.22 };
 
 export const FLOWER_FIELDS: { c: [number, number]; r: number }[] = [
-  { c: [35.5, -4.0], r: 4.2 },
-  { c: [41.5, -6.0], r: 3.4 },
-  { c: [33.0, -8.5], r: 2.8 },
-  { c: [44.0, -10.5], r: 2.6 },
+  { c: [45.5, -6.0], r: 4.2 },
+  { c: [51.5, -8.0], r: 3.4 },
+  { c: [43.0, -10.5], r: 2.8 },
+  { c: [54.0, -12.5], r: 2.6 },
   { c: [2.5, 4.5], r: 2.2 },
   { c: [-3.0, 3.0], r: 1.8 },
-  { c: [-12.0, 7.0], r: 2.4 }, // starfall meadow patch
+  { c: [10.0, 10.5], r: 2.4 }, // hearth south-east
+  { c: [-41.0, 10.0], r: 2.6 }, // starfall meadow
 ];
 
 /* ----- starfall isle ----- */
-export const OBSERVATORY: V3 = [-29.5, 0, 8.5];
-export const ORRERY: V3 = [-25.0, 0, 10.8];
-export const CHART: V3 = [-27.2, 0, 4.2];
+export const OBSERVATORY: V3 = [-38.5, 0, 11.5];
+export const ORRERY: V3 = [-34.0, 0, 13.8];
+export const CHART: V3 = [-36.2, 0, 7.2];
 
 /* ----- drifting islets ----- */
 export const MINI_ISLANDS: { c: [number, number]; y: number; r: number; waterfall?: boolean; tree?: boolean }[] = [
-  { c: [10, -20], y: -6.5, r: 2.4, waterfall: true, tree: true },
-  { c: [-16, 20], y: -7.5, r: 1.8, tree: true },
-  { c: [52, 10], y: -8.5, r: 2.8, waterfall: true, tree: true },
-  { c: [-6, -26], y: -9, r: 2.0, tree: false },
-  { c: [30, -24], y: -7, r: 1.9, tree: true },
+  { c: [12, -26], y: -6.5, r: 2.4, waterfall: true, tree: true },
+  { c: [-20, 27], y: -7.5, r: 1.8, tree: true },
+  { c: [66, 12], y: -8.5, r: 2.8, waterfall: true, tree: true },
+  { c: [-8, -32], y: -9, r: 2.0, tree: false },
+  { c: [38, -30], y: -7, r: 1.9, tree: true },
 ];
 
 /* ----- wildlife zones ----- */
 export const RABBIT_ZONES: { c: [number, number]; r: number }[] = [
-  { c: [-4, 9], r: 6.5 }, // hearth south meadow
-  { c: [36, -3], r: 6 }, // everbloom flower meadow
-  { c: [12, -6], r: 5.5 }, // hearth east
+  { c: [-5, 11], r: 8 }, // hearth south meadow
+  { c: [46, -5], r: 7 }, // everbloom flower meadow
+  { c: [13, -7], r: 6.5 }, // hearth east
 ];
 
 export const SHEEP_ZONES: { c: [number, number]; r: number }[] = [
-  { c: [-10, 12.5], r: 5.5 }, // hearth NW meadow
-  { c: [-34, 11.5], r: 5 }, // starfall grove
+  { c: [-11, 15], r: 7 }, // hearth NW meadow
+  { c: [-43, 14.5], r: 6 }, // starfall grove
 ];
 
 export const STARDUST: V3[] = [
-  // hearth (10)
+  // hearth (12)
   [-3.2, 1.0, 2.8],
   [5.6, 0.9, 1.4],
   [-8.0, 1.2, -1.0],
@@ -158,31 +168,33 @@ export const STARDUST: V3[] = [
   [9.2, 1.0, 8.6], // by the well
   [-2.2, 1.0, 16.2], // the picnic
   [16.5, 1.0, -8.0],
+  [19.5, 1.0, 9.0],
+  [-20.5, 1.0, -9.0],
   // bridge east (1)
-  [23.0, 1.0, -2.2],
+  [28.2, 1.0, -3.2],
   // everbloom (6)
-  [30.0, 1.0, 0.2],
-  [32.5, 1.0, -1.8],
-  [38.5, 1.0, -9.5], // heart of the flower heart
-  [28.3, 1.0, -9.4], // swing
-  [44.0, 1.0, -3.0],
-  [35.0, 1.0, -12.0],
+  [40.0, 1.0, -1.8],
+  [42.5, 1.0, -3.8],
+  [48.5, 1.0, -11.5], // heart of the flower heart
+  [38.3, 1.0, -11.4], // swing
+  [54.0, 1.0, -5.0],
+  [45.0, 1.0, -14.0],
   // bridge west (1)
-  [-20.7, 1.0, 5.2],
+  [-25.8, 1.0, 6.9],
   // starfall (6)
-  [-23.5, 1.0, 7.4],
-  [-29.5, 1.0, 3.4],
-  [-38.5, 1.0, 8.8],
-  [-25.0, 1.0, 11.6],
-  [-41.5, 1.0, 5.6],
-  [-33.5, 1.0, 13.0],
+  [-32.5, 1.0, 10.4],
+  [-38.5, 1.0, 6.4],
+  [-47.5, 1.0, 11.8],
+  [-34.0, 1.0, 14.6],
+  [-50.5, 1.0, 8.6],
+  [-42.5, 1.0, 16.0],
 ];
 
 export const INTERACTABLES: { id: string; pos: V3; r: number; label: string }[] = [
   { id: "campfire", pos: CAMPFIRE, r: 2.3, label: "Sit by the fire" },
   { id: "bench", pos: BENCH, r: 1.7, label: "Sit on the bench" },
   { id: "telescope", pos: TELESCOPE, r: 2.1, label: "Look through the telescope" },
-  { id: "wishes", pos: WISH_TREE, r: 2.5, label: "Leave a wish" },
+  { id: "wishes", pos: WISH_TREE, r: 2.9, label: "Leave a wish" },
   { id: "pond", pos: [POND.c[0], 0, POND.c[1]], r: 4.6, label: "Gaze into the pond" },
   { id: "arch", pos: ARCH, r: 2.3, label: "Meet me beneath the arch" },
   { id: "orrery", pos: ORRERY, r: 2.5, label: "Wind the orrery" },
@@ -195,7 +207,7 @@ export const INTERACTABLES: { id: string; pos: V3; r: number; label: string }[] 
 
 export const COLLIDERS: { pos: V3; r: number }[] = [
   { pos: COTTAGE, r: 2.6 },
-  { pos: WISH_TREE, r: 1.0 },
+  { pos: WISH_TREE, r: 1.15 },
   { pos: TELESCOPE, r: 0.9 },
   { pos: CAMPFIRE, r: 1.35 },
   { pos: BENCH, r: 0.8 },
@@ -220,7 +232,7 @@ export const COLLIDERS: { pos: V3; r: number }[] = [
 // Spots where the rolling terrain is gently flattened to y≈0 so structures sit true.
 export const FLATTEN: { x: number; z: number; s: number }[] = [
   { x: COTTAGE[0], z: COTTAGE[2], s: 3.6 },
-  { x: WISH_TREE[0], z: WISH_TREE[2], s: 2.6 },
+  { x: WISH_TREE[0], z: WISH_TREE[2], s: 3.0 },
   { x: TELESCOPE[0], z: TELESCOPE[2], s: 2.2 },
   { x: CAMPFIRE[0], z: CAMPFIRE[2], s: 3.0 },
   { x: BENCH[0], z: BENCH[2], s: 2.0 },
@@ -229,9 +241,10 @@ export const FLATTEN: { x: number; z: number; s: number }[] = [
   { x: WELL[0], z: WELL[2], s: 2.4 },
   { x: MAILBOX[0], z: MAILBOX[2], s: 1.6 },
   { x: PICNIC[0], z: PICNIC[2], s: 3.0 },
-  { x: POND.c[0], z: POND.c[1], s: 4.6 },
+  { x: POND.c[0], z: POND.c[1], s: 4.8 },
   { x: SWING[0], z: SWING[2], s: 2.4 },
   { x: ARCH[0], z: ARCH[2], s: 2.2 },
+  { x: FLOWER_HEART.c[0], z: FLOWER_HEART.c[1], s: 3.2 },
   { x: OBSERVATORY[0], z: OBSERVATORY[2], s: 5.0 },
   { x: ORRERY[0], z: ORRERY[2], s: 2.6 },
   { x: CHART[0], z: CHART[2], s: 1.8 },
