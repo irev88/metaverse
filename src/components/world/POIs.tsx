@@ -210,7 +210,7 @@ const POKE_LINES = [
 ];
 
 // wish-burst colours (pale)
-const LEAF_TINTS = ["#f7e3bd", "#f7cfc0", "#f2e6cf", "#f7d9c4"];
+const LEAF_TINTS = ["#ffcf7a", "#ffab6e", "#ffe0a0", "#ff9e62"];
 
 export function WishTree() {
   const wishCount = useStore((s) => s.wishes.length);
@@ -270,7 +270,7 @@ export function WishTree() {
   // high-detail canopy, pale moonlit palette, kept within r<=2.35
   const blobs = useMemo(() => {
     const configs: { pos: [number, number, number]; r: number; detail: number; amp: number; seed: number; c: string }[] = [];
-    const ring = ["#f5e2c0", "#f7ded0", "#f0d4b4", "#f7ecd4", "#f2d9c0", "#f0e0bc", "#f5e2c0"];
+    const ring = ["#ffb85c", "#ff9e5e", "#ffd06e", "#ff8a6a", "#ffc257", "#ffab52", "#ffb85c"];
     for (let i = 0; i < 7; i++) {
       const a = (i / 7) * Math.PI * 2 + 0.3;
       configs.push({
@@ -282,10 +282,10 @@ export function WishTree() {
         c: ring[i],
       });
     }
-    configs.push({ pos: [WISH_TREE[0], 5.05, WISH_TREE[2]], r: 1.28, detail: 3, amp: 0.3, seed: 111, c: "#f7e8c8" });
-    configs.push({ pos: [WISH_TREE[0] + 0.45, 5.75, WISH_TREE[2] - 0.28], r: 0.78, detail: 3, amp: 0.34, seed: 131, c: "#f5d9b8" });
-    configs.push({ pos: [WISH_TREE[0] - 0.52, 5.62, WISH_TREE[2] + 0.32], r: 0.7, detail: 3, amp: 0.34, seed: 141, c: "#f7ded0" });
-    configs.push({ pos: [WISH_TREE[0] + 0.05, 4.0, WISH_TREE[2] - 0.1], r: 0.62, detail: 2, amp: 0.3, seed: 151, c: "#f0e0bc" });
+    configs.push({ pos: [WISH_TREE[0], 5.05, WISH_TREE[2]], r: 1.28, detail: 3, amp: 0.3, seed: 111, c: "#ffcf6e" });
+    configs.push({ pos: [WISH_TREE[0] + 0.45, 5.75, WISH_TREE[2] - 0.28], r: 0.78, detail: 3, amp: 0.34, seed: 131, c: "#ffa45e" });
+    configs.push({ pos: [WISH_TREE[0] - 0.52, 5.62, WISH_TREE[2] + 0.32], r: 0.7, detail: 3, amp: 0.34, seed: 141, c: "#ff8f6e" });
+    configs.push({ pos: [WISH_TREE[0] + 0.05, 4.0, WISH_TREE[2] - 0.1], r: 0.62, detail: 2, amp: 0.3, seed: 151, c: "#ffbc59" });
     return configs.map((cfg) => {
       const geo = displaceBlob(new THREE.IcosahedronGeometry(cfg.r, cfg.detail), cfg.amp * cfg.r, cfg.seed);
       return { ...cfg, geo };
@@ -407,7 +407,7 @@ export function WishTree() {
     const pokeK = sincePoke >= 0 && sincePoke < 1.4 ? sincePoke / 1.4 : -1;
 
     const boost = 1 + focus * 0.7 + (burstK >= 0 ? Math.sin(burstK * Math.PI) * 1.15 : 0) + (pokeK >= 0 ? Math.sin(pokeK * Math.PI) * 0.5 : 0);
-    const base = (0.52 + Math.min(wishCount * 0.09, 1.1)) * boost;
+    const base = (0.74 + Math.min(wishCount * 0.09, 1.1)) * boost;
 
     canopyMats.current.forEach((m, i) => {
       if (!m) return;
@@ -521,21 +521,21 @@ export function WishTree() {
       {/* ground: pale rune circle + rotating glyph ring */}
       <mesh position={[WISH_TREE[0], 0.02, WISH_TREE[2]]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[3.15, 48]} />
-        <meshBasicMaterial color="#d9b98a" transparent opacity={0.08} blending={THREE.AdditiveBlending} depthWrite={false} />
+        <meshBasicMaterial color="#e8a860" transparent opacity={0.1} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <mesh position={[WISH_TREE[0], 0.03, WISH_TREE[2]]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[2.95, 3.1, 56]} />
-        <meshBasicMaterial color="#e8c896" transparent opacity={0.26} blending={THREE.AdditiveBlending} depthWrite={false} />
+        <meshBasicMaterial color="#ffb864" transparent opacity={0.32} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <group ref={glyphRing} position={[WISH_TREE[0], 0, WISH_TREE[2]]}>
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[2.05, 2.13, 48]} />
-          <meshBasicMaterial color="#e8cf9e" transparent opacity={0.2} blending={THREE.AdditiveBlending} depthWrite={false} />
+          <meshBasicMaterial color="#f0b060" transparent opacity={0.26} blending={THREE.AdditiveBlending} depthWrite={false} />
         </mesh>
         {glyphs.map((g, i) => (
           <mesh key={i} position={[g.pos[0], g.pos[1] + 0.01, g.pos[2]]} rotation={[-Math.PI / 2, 0, g.rot]}>
             <planeGeometry args={[0.3, 0.09]} />
-            <meshBasicMaterial color="#f4e2bc" transparent opacity={0.5} blending={THREE.AdditiveBlending} depthWrite={false} />
+            <meshBasicMaterial color="#ffd98e" transparent opacity={0.55} blending={THREE.AdditiveBlending} depthWrite={false} />
           </mesh>
         ))}
       </group>
@@ -549,7 +549,7 @@ export function WishTree() {
           </mesh>
           <mesh position={[0, r.h * 0.2, 0.075]}>
             <sphereGeometry args={[0.028, 6, 6]} />
-            <meshStandardMaterial color="#efe3c4" emissive="#ffd9a0" emissiveIntensity={1.1} ref={i === 0 ? runeMat : undefined} />
+            <meshStandardMaterial color="#ffe2ae" emissive="#ffb85c" emissiveIntensity={1.25} ref={i === 0 ? runeMat : undefined} />
           </mesh>
         </group>
       ))}
@@ -578,7 +578,7 @@ export function WishTree() {
       })}
       {/* glowing spiral — pale gold */}
       <mesh geometry={spiralGeo}>
-        <meshStandardMaterial ref={spiralMat} color="#f2d9a4" emissive="#ffc978" emissiveIntensity={1.0} roughness={0.4} />
+        <meshStandardMaterial ref={spiralMat} color="#ffcf7a" emissive="#ffab3e" emissiveIntensity={1.25} roughness={0.4} />
       </mesh>
 
       {/* branches */}
@@ -610,7 +610,7 @@ export function WishTree() {
               ref={(el) => {
                 canopyMats.current[i] = el;
               }}
-              color="#2e2521"
+              color="#241a12"
               emissive={b.c}
               emissiveIntensity={0.55}
               flatShading
@@ -627,7 +627,7 @@ export function WishTree() {
             }}
             scale={[0.09, 0.09, 1]}
           >
-            <spriteMaterial map={glow} color="#ffe9c0" transparent opacity={0.4} depthWrite={false} blending={THREE.AdditiveBlending} />
+            <spriteMaterial map={glow} color="#ffcf7a" transparent opacity={0.45} depthWrite={false} blending={THREE.AdditiveBlending} />
           </sprite>
         ))}
       </group>
@@ -635,10 +635,10 @@ export function WishTree() {
       {/* crystal topper */}
       <mesh ref={crystal} position={[WISH_TREE[0], 6.72, WISH_TREE[2]]}>
         <octahedronGeometry args={[0.17, 0]} />
-        <meshStandardMaterial ref={crystalMat} color="#fdf2d8" emissive="#ffdf9e" emissiveIntensity={1.4} roughness={0.2} metalness={0.2} flatShading />
+        <meshStandardMaterial ref={crystalMat} color="#ffe6b0" emissive="#ffb545" emissiveIntensity={1.7} roughness={0.2} metalness={0.2} flatShading />
       </mesh>
       <sprite ref={crystalHalo} position={[WISH_TREE[0], 6.72, WISH_TREE[2]]} scale={[1.1, 1.1, 1]}>
-        <spriteMaterial map={glow} color="#ffe4a8" transparent opacity={0.16} depthWrite={false} blending={THREE.AdditiveBlending} />
+        <spriteMaterial map={glow} color="#ffc46a" transparent opacity={0.18} depthWrite={false} blending={THREE.AdditiveBlending} />
       </sprite>
 
       {/* hanging lanterns — knobs on the canopy edge, pendulum sway */}
@@ -695,7 +695,7 @@ export function WishTree() {
           visible={false}
           scale={[0.12, 0.12, 1]}
         >
-          <spriteMaterial map={glow} color="#fff0d0" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+          <spriteMaterial map={glow} color="#ffd88e" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
         </sprite>
       ))}
 
@@ -708,7 +708,7 @@ export function WishTree() {
           }}
           scale={[0.16, 0.16, 1]}
         >
-          <spriteMaterial map={glow} color="#f5e8d0" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+          <spriteMaterial map={glow} color="#f5d9a8" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
         </sprite>
       ))}
 
