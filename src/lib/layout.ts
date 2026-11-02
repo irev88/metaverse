@@ -14,7 +14,7 @@ export interface IslandDef {
 }
 
 export const ISLANDS: IslandDef[] = [
-  { id: "hearth", name: "The Hearth", tag: "✨ The Hearth", c: [0, 0], r: 24, grass: "#2f7a5e" },
+  { id: "hearth", name: "The Hearth", tag: "✨ The Hearth", c: [0, 0], r: 28, grass: "#2f7a5e" },
   { id: "everbloom", name: "Everbloom Isle", tag: "🌸 Everbloom Isle", c: [52, -6], r: 20, grass: "#3c8a64" },
   { id: "starfall", name: "Starfall Isle", tag: "🔭 Starfall Isle", c: [-45, 12], r: 17, grass: "#41707a" },
 ];
@@ -26,8 +26,8 @@ export interface BridgeDef {
 }
 
 export const BRIDGES: BridgeDef[] = [
-  { a: [23.05, -2.66], b: [33.32, -3.84], w: 2.0 }, // hearth -> everbloom
-  { a: [-22.42, 5.98], b: [-29.15, 7.77], w: 2.0 }, // hearth -> starfall
+  { a: [26.9, -3.11], b: [33.1, -3.83], w: 2.0 }, // hearth -> everbloom
+  { a: [-26.15, 7.0], b: [-29.3, 7.95], w: 2.0 }, // hearth -> starfall
 ];
 
 /* ----- the hearth ----- */
@@ -65,13 +65,15 @@ export const TREES: V3[] = [
   [-13.2, 0, 11.4],
   [15.4, 0, 4.2],
   // outer meadows of the larger hearth
-  [18.0, 0, -13.5],
-  [-17.5, 0, -11.0],
-  [8.0, 0, 18.5],
-  [-18.0, 0, 15.5],
-  [19.5, 0, 3.0],
-  [-6.0, 0, 19.0],
-  [14.0, 0, 14.5],
+  [19.5, 0, -15.5],
+  [-20.0, 0, -12.5],
+  [9.0, 0, 21.5],
+  [-20.5, 0, 18.0],
+  [23.0, 0, 3.5],
+  [-7.0, 0, 22.0],
+  [16.0, 0, 16.5],
+  [24.5, 0, -8.5],
+  [-23.5, 0, 1.0],
 ];
 
 export const BLOSSOM_TREES: V3[] = [
@@ -146,13 +148,13 @@ export const MINI_ISLANDS: { c: [number, number]; y: number; r: number; waterfal
 
 /* ----- wildlife zones ----- */
 export const RABBIT_ZONES: { c: [number, number]; r: number }[] = [
-  { c: [-5, 11], r: 8 }, // hearth south meadow
+  { c: [-6, 13], r: 10.5 }, // hearth south meadow
   { c: [46, -5], r: 7 }, // everbloom flower meadow
-  { c: [13, -7], r: 6.5 }, // hearth east
+  { c: [15, -8], r: 8 }, // hearth east
 ];
 
 export const SHEEP_ZONES: { c: [number, number]; r: number }[] = [
-  { c: [-11, 15], r: 7 }, // hearth NW meadow
+  { c: [-13, 18], r: 9 }, // hearth NW meadow
   { c: [-43, 14.5], r: 6 }, // starfall grove
 ];
 

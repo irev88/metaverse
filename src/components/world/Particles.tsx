@@ -20,6 +20,11 @@ function makeRadialTexture(inner: string, outer: string) {
   return new THREE.CanvasTexture(c);
 }
 
+/** Soft radial glow — use as `map` on any sprite so halos are never squares. */
+export function glowTexture() {
+  return makeRadialTexture("rgba(255,255,255,1)", "rgba(255,255,255,0)");
+}
+
 function heartTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 128;
@@ -242,8 +247,20 @@ export function EmberParticles({ position }: { position: [number, number, number
   return <Motes position={position} count={14} radius={0.35} span={1.6} rise color="#ffb066" />;
 }
 
-export function WishMotes({ position }: { position: [number, number, number] }) {
-  return <Motes position={position} count={16} radius={1.9} span={2.6} rise={false} color="#b18cff" />;
+export function WishMotes({
+  position,
+  radius = 1.9,
+  count = 16,
+  span = 2.6,
+  color = "#b18cff",
+}: {
+  position: [number, number, number];
+  radius?: number;
+  count?: number;
+  span?: number;
+  color?: string;
+}) {
+  return <Motes position={position} count={count} radius={radius} span={span} rise={false} color={color} />;
 }
 
 /* ---------- chimney smoke ---------- */

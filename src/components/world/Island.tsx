@@ -5,7 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { BRIDGES, CAMPFIRE, COTTAGE, LANTERNS, PIER_DIR, PIER_LENGTH, PIER_START, SIGN, type V3 } from "@/lib/layout";
 import { terrainHeight } from "@/lib/terrain";
-import { Smoke } from "./Particles";
+import { Smoke, glowTexture } from "./Particles";
 import { NearTag } from "./NearTag";
 
 /* ================= cottage ================= */
@@ -161,6 +161,16 @@ function Bridge({ index }: { index: number }) {
 
 function Lantern({ pos }: { pos: V3 }) {
   const y = useMemo(() => terrainHeight(pos[0], pos[2]), [pos]);
+  const tex = useMemo(glowTexture, []);
+  const halo = useRef<THREE.Sprite>(null);
+  const phase = useMemo(() => (pos[0] * 7 + pos[2] * 13) % 10, [pos]);
+  useFrame((state) => {
+    if (!halo.current) return;
+    const t = state.clock.elapsedTime;
+    const flicker = 0.15 + Math.sin(t * 6.7 + phase) * 0.025 + Math.sin(t * 13.3 + phase * 2) * 0.015;
+    (halo.current.material as THREE.SpriteMaterial).opacity = flicker;
+    halo.current.scale.setScalar(1.05 + Math.sin(t * 5.1 + phase) * 0.05);
+  });
   return (
     <group position={[pos[0], y, pos[2]]}>
       <mesh position={[0, 0.8, 0]} castShadow>
@@ -171,8 +181,8 @@ function Lantern({ pos }: { pos: V3 }) {
         <sphereGeometry args={[0.15, 12, 12]} />
         <meshStandardMaterial color="#ffe2a8" emissive="#ffd27a" emissiveIntensity={3.2} />
       </mesh>
-      <sprite position={[0, 1.68, 0]} scale={[1.1, 1.1, 1]}>
-        <spriteMaterial color="#ffcf8a" transparent opacity={0.16} depthWrite={false} blending={THREE.AdditiveBlending} />
+      <sprite ref={halo} position={[0, 1.68, 0]} scale={[1.1, 1.1, 1]}>
+        <spriteMaterial map={tex} color="#ffcf8a" transparent opacity={0.15} depthWrite={false} blending={THREE.AdditiveBlending} />
       </sprite>
     </group>
   );
@@ -199,10 +209,10 @@ function PathStones() {
     };
     return [
       ...make([0, 10.4], [0.8, -1.0], 10, 5),
-      ...make([1.4, -1.8], [18.4, -1.7], 12, 6),
-      ...make([-1.2, 9.4], [-17.9, 4.6], 12, 7),
-      ...make([27.5, -2.5], [28.9, -2.3], 3, 8),
-      ...make([-23.4, 5.9], [-25.2, 6.4], 3, 9),
+      ...make([1.4, -1.8], [26.0, -3.0], 15, 6),
+      ...make([-1.2, 9.4], [-25.2, 6.9], 14, 7),
+      ...make([33.6, -3.9], [38.9, -4.3], 4, 8),
+      ...make([-29.8, 8.1], [-35.0, 9.6], 4, 9),
       ...make([3.2, 6.6], [9.0, 6.7], 5, 10),
     ];
   }, []);

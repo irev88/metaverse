@@ -3,27 +3,16 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { FLOWER_FIELDS, FLOWER_HEART, ISLANDS } from "@/lib/layout";
 import { terrainHeight } from "@/lib/terrain";
 import { useStore } from "@/lib/store";
 
 /* ============================================================
-   Instanced grass with vertex-shader wind
+   Short uniform turf — a dense layer of tiny blades lying over
+   the whole terrain, like a lawn. Sway kept subtle.
    ============================================================ */
 
-function makeBladeGeometry(): THREE.BufferGeometry {
-  const a = new THREE.PlaneGeometry(0.085, 0.56, 1, 4);
-  a.translate(0, 0.28, 0);
-  const b = a.clone();
-  b.rotateY(Math.PI / 2);
-  // normalize index state before merging (defensive; both are indexed today)
-  const merged = mergeGeometries([a.index ? a.toNonIndexed() : a, b.index ? b.toNonIndexed() : b], false)!;
-  merged.computeBoundingSphere();
-  return merged;
-}
-
-const grassVert = /* glsl */ `
+const turfVert = /* glsl */ `
   uniform float uTime;
   varying float vH;
   varying vec3 vTint;
@@ -40,20 +29,20 @@ const grassVert = /* glsl */ `
       vTint = vec3(1.0);
       vec4 wp = vec4(position, 1.0);
     #endif
-    float phase = wp.x * 2.1 + wp.z * 1.7;
-    float sway = (sin(uTime * 1.7 + phase) + sin(uTime * 2.9 + phase * 1.7) * 0.4) * 0.11;
-    wp.x += sway * pow(uv.y, 1.6);
-    wp.z += sway * 0.6 * pow(uv.y, 1.6);
+    float phase = wp.x * 2.4 + wp.z * 1.9;
+    float sway = (sin(uTime * 1.4 + phase) + sin(uTime * 2.6 + phase * 1.7) * 0.35) * 0.035;
+    wp.x += sway * pow(uv.y, 1.5);
+    wp.z += sway * 0.55 * pow(uv.y, 1.5);
     gl_Position = projectionMatrix * modelViewMatrix * wp;
   }
 `;
 
-const grassFrag = /* glsl */ `
+const turfFrag = /* glsl */ `
   varying float vH;
   varying vec3 vTint;
   void main() {
-    vec3 root = vec3(0.09, 0.26, 0.17);
-    vec3 tip = vec3(0.33, 0.68, 0.43);
+    vec3 root = vec3(0.10, 0.25, 0.16);
+    vec3 tip = vec3(0.30, 0.56, 0.35);
     vec3 col = mix(root, tip, vH) * vTint;
     gl_FragColor = vec4(col, 1.0);
   }
@@ -61,13 +50,17 @@ const grassFrag = /* glsl */ `
 
 export function Grass() {
   const quality = useStore((s) => s.quality);
-  const count = quality === "rich" ? 7000 : 2800;
-  const geo = useMemo(makeBladeGeometry, []);
+  const count = quality === "rich" ? 9500 : 5000;
+  const geo = useMemo(() => {
+    const g = new THREE.PlaneGeometry(0.05, 0.26, 1, 3);
+    g.translate(0, 0.13, 0);
+    return g;
+  }, []);
   const mat = useMemo(
     () =>
       new THREE.ShaderMaterial({
-        vertexShader: grassVert,
-        fragmentShader: grassFrag,
+        vertexShader: turfVert,
+        fragmentShader: turfFrag,
         uniforms: { uTime: { value: 0 } },
         side: THREE.DoubleSide,
       }),
@@ -82,16 +75,19 @@ export function Grass() {
     };
     const out: { x: number; z: number; y: number; s: number; rot: number; tint: THREE.Color }[] = [];
     const tint = new THREE.Color();
-    for (let i = 0; i < count; i++) {
+    let guard = 0;
+    while (out.length < count && guard < count * 3) {
+      guard++;
       const isl = ISLANDS[Math.floor(rnd() * ISLANDS.length)];
       const a = rnd() * Math.PI * 2;
-      const r = 1.5 + Math.sqrt(rnd()) * (isl.r - 2.2);
+      const r = Math.sqrt(rnd()) * (isl.r - 1.2);
       const x = isl.c[0] + Math.cos(a) * r;
       const z = isl.c[1] + Math.sin(a) * r;
       const h = terrainHeight(x, z);
       if (h === -Infinity) continue;
-      tint.setHSL(0.35 + rnd() * 0.07, 0.42 + rnd() * 0.2, 0.72 + rnd() * 0.34);
-      out.push({ x, z, y: h, s: 0.65 + rnd() * 0.9, rot: rnd() * Math.PI, tint });
+      // subtle natural variation, matched to the terrain palette
+      tint.setHSL(0.34 + rnd() * 0.05, 0.32 + rnd() * 0.18, 0.72 + rnd() * 0.3);
+      out.push({ x, z, y: h, s: 0.7 + rnd() * 0.8, rot: rnd() * Math.PI, tint });
     }
     return out;
   }, [count]);
@@ -101,9 +97,9 @@ export function Grass() {
     if (!m) return;
     const d = new THREE.Object3D();
     data.forEach((g, i) => {
-      d.position.set(g.x, g.y - 0.02, g.z);
+      d.position.set(g.x, g.y - 0.015, g.z);
       d.rotation.set(0, g.rot, 0);
-      d.scale.set(g.s, g.s * (0.8 + g.tint.g * 0.4), g.s);
+      d.scale.set(g.s, g.s, g.s);
       d.updateMatrix();
       m.setMatrixAt(i, d.matrix);
       m.setColorAt(i, g.tint);
@@ -117,13 +113,7 @@ export function Grass() {
     mat.uniforms.uTime.value = state.clock.elapsedTime;
   });
 
-  return (
-    <instancedMesh
-      key={count}
-      ref={ref}
-      args={[geo, mat, Math.max(1, data.length)]}
-    />
-  );
+  return <instancedMesh key={count} ref={ref} args={[geo, mat, Math.max(1, data.length)]} />;
 }
 
 /* ============================================================

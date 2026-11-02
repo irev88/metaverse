@@ -231,72 +231,90 @@ function Sheep({ zone, seed }: { zone: { c: [number, number]; r: number }; seed:
     g.position.set(b.x, gy === -Infinity ? 0 : gy, b.z);
     g.rotation.y = b.heading;
 
-    const bob = moving ? Math.abs(Math.sin(gait.current)) * 0.045 : Math.sin(t * 1.1 + seed) * 0.012;
+    const bob = moving ? Math.abs(Math.sin(gait.current)) * 0.03 : Math.sin(t * 1.1 + seed) * 0.008;
     if (body.current) {
-      body.current.position.y = 0.52 + bob;
-      body.current.rotation.z = moving ? Math.sin(gait.current) * 0.04 : 0;
+      body.current.position.y = 0.55 + bob;
+      body.current.rotation.z = moving ? Math.sin(gait.current) * 0.02 : 0;
     }
     // grazing head dip while idle
     if (head.current) {
       const graze = b.idle > 0 ? Math.max(0, Math.sin(t * 0.5 + seed)) : 0;
-      const target = graze > 0.4 ? -0.85 : moving ? -0.15 : -0.3 + Math.sin(t * 1.3 + seed) * 0.06;
+      const target = graze > 0.4 ? -0.8 : moving ? -0.1 : -0.22 + Math.sin(t * 1.3 + seed) * 0.05;
       head.current.rotation.x += (target - head.current.rotation.x) * Math.min(1, 6 * dt);
     }
-    if (tail.current) tail.current.rotation.x = Math.sin(t * 3.1 + seed * 3) * 0.3 - 0.3;
+    if (tail.current) tail.current.rotation.x = Math.sin(t * 2.6 + seed * 3) * 0.2 - 0.15;
   });
 
   return (
     <group ref={group}>
-      <group ref={body} position={[0, 0.52, 0]}>
-        {/* wool body — overlapping displaced puffs */}
-        {[0, 1, 2, 3].map((i) => (
-          <mesh key={i} position={[(i - 1.5) * 0.17, (i % 2) * 0.06 - 0.02, 0]} scale={[1, 0.9, 1.15]} castShadow>
-            <sphereGeometry args={[0.28 - Math.abs(i - 1.5) * 0.03, 12, 12]} />
-            <meshStandardMaterial color="#eee9df" roughness={1} />
-          </mesh>
-        ))}
-        {/* legs */}
+      <group ref={body} position={[0, 0.55, 0]}>
+        {/* soft single-piece body */}
+        <mesh scale={[1, 0.84, 1.28]} castShadow>
+          <sphereGeometry args={[0.34, 18, 16]} />
+          <meshStandardMaterial color="#efece4" roughness={1} />
+        </mesh>
+        {/* wool crown — gentle bumps along the back */}
         {[
-          [-0.16, 0.16],
-          [0.16, 0.16],
-          [-0.16, -0.16],
-          [0.16, -0.16],
-        ].map(([x, z], i) => (
-          <mesh key={i} position={[x, -0.34, z]} castShadow>
-            <cylinderGeometry args={[0.045, 0.05, 0.36, 6]} />
-            <meshStandardMaterial color="#4a4038" roughness={1} />
+          [0, 0.2, -0.14, 0.17],
+          [0, 0.24, 0.02, 0.19],
+          [0, 0.19, 0.17, 0.15],
+        ].map(([x, y, z, r], i) => (
+          <mesh key={i} position={[x, y, z]} scale={[1.15, 0.7, 1]}>
+            <sphereGeometry args={[r, 12, 10]} />
+            <meshStandardMaterial color="#f2efe8" roughness={1} />
           </mesh>
         ))}
-        {/* head group */}
-        <group ref={head} position={[0, 0.08, 0.38]}>
-          <mesh position={[0, 0.05, 0.08]} castShadow>
-            <capsuleGeometry args={[0.085, 0.1, 4, 10]} />
-            <meshStandardMaterial color="#5a5048" roughness={1} />
+        {/* legs — symmetric, slightly thicker */}
+        {[
+          [-0.15, 0.22],
+          [0.15, 0.22],
+          [-0.15, -0.22],
+          [0.15, -0.22],
+        ].map(([x, z], i) => (
+          <mesh key={i} position={[x, -0.37, z]} castShadow>
+            <cylinderGeometry args={[0.05, 0.055, 0.4, 8]} />
+            <meshStandardMaterial color="#57503f" roughness={1} />
           </mesh>
-          {/* wool tuft on top of the head */}
-          <mesh position={[0, 0.17, 0.02]}>
-            <sphereGeometry args={[0.095, 10, 10]} />
-            <meshStandardMaterial color="#eee9df" roughness={1} />
+        ))}
+        {/* head — proportioned, forward of the body */}
+        <group ref={head} position={[0, 0.1, 0.42]}>
+          <mesh position={[0, 0.02, 0.05]} scale={[0.92, 1, 1.12]} castShadow>
+            <sphereGeometry args={[0.135, 14, 14]} />
+            <meshStandardMaterial color="#5c5148" roughness={1} />
           </mesh>
-          {/* ears */}
-          {[-0.1, 0.1].map((x) => (
-            <mesh key={x} position={[x, 0.06, 0.02]} rotation={[0, 0, x > 0 ? -0.5 : 0.5]}>
-              <capsuleGeometry args={[0.025, 0.09, 3, 6]} />
-              <meshStandardMaterial color="#5a5048" roughness={1} />
-            </mesh>
-          ))}
+          {/* muzzle */}
+          <mesh position={[0, -0.03, 0.17]} scale={[0.82, 0.72, 1]}>
+            <sphereGeometry args={[0.075, 12, 10]} />
+            <meshStandardMaterial color="#6d6053" roughness={1} />
+          </mesh>
+          <mesh position={[0, -0.03, 0.24]}>
+            <sphereGeometry args={[0.014, 6, 6]} />
+            <meshStandardMaterial color="#2a211c" roughness={0.5} />
+          </mesh>
           {/* eyes */}
-          {[-0.055, 0.055].map((x) => (
-            <mesh key={x} position={[x, 0.07, 0.165]}>
-              <sphereGeometry args={[0.013, 6, 6]} />
+          {[-0.062, 0.062].map((x) => (
+            <mesh key={x} position={[x, 0.05, 0.14]}>
+              <sphereGeometry args={[0.016, 8, 8]} />
               <meshStandardMaterial color="#1c1418" roughness={0.3} />
             </mesh>
           ))}
+          {/* droopy ears */}
+          {[-0.13, 0.13].map((x) => (
+            <mesh key={x} position={[x, 0.05, 0.02]} rotation={[0, 0, x > 0 ? -1.15 : 1.15]}>
+              <capsuleGeometry args={[0.03, 0.1, 4, 8]} />
+              <meshStandardMaterial color="#4c4238" roughness={1} />
+            </mesh>
+          ))}
+          {/* wool tuft on the crown */}
+          <mesh position={[0, 0.15, -0.02]} scale={[1.1, 0.8, 1]}>
+            <sphereGeometry args={[0.1, 12, 10]} />
+            <meshStandardMaterial color="#f2efe8" roughness={1} />
+          </mesh>
         </group>
         {/* tail */}
-        <mesh ref={tail} position={[0, 0.1, -0.36]}>
-          <sphereGeometry args={[0.06, 8, 8]} />
-          <meshStandardMaterial color="#eee9df" roughness={1} />
+        <mesh ref={tail} position={[0, 0.14, -0.46]}>
+          <sphereGeometry args={[0.07, 10, 10]} />
+          <meshStandardMaterial color="#f2efe8" roughness={1} />
         </mesh>
       </group>
     </group>
