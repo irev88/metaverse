@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { BLOSSOM_TREES, ISLANDS, LANTERNS, PINE_TREES, TREES, type V3 } from "@/lib/layout";
@@ -149,10 +150,26 @@ function TreeMesh({ pos, kind, seed, scale = 1 }: { pos: V3; kind: TreeKind; see
   const geo = useMemo(() => treeGeometry(kind, seed), [kind, seed]);
   const y = useMemo(() => (pos[1] || 0) + terrainHeight(pos[0], pos[2]), [pos]);
   const rot = useMemo(() => hash2(seed, 3) * Math.PI * 2, [seed]);
+  const phase = useMemo(() => hash2(seed, 9) * 10, [seed]);
+  const sway = useRef<THREE.Group>(null);
+
+  // gentle wind sway of the whole crown
+  useFrame((state) => {
+    const g = sway.current;
+    if (!g) return;
+    const t = state.clock.elapsedTime;
+    g.rotation.z = Math.sin(t * 0.62 + phase) * 0.013;
+    g.rotation.x = Math.cos(t * 0.5 + phase * 1.3) * 0.01;
+  });
+
   return (
-    <mesh geometry={geo} position={[pos[0], y, pos[2]]} rotation={[0, rot, 0]} scale={scale} castShadow>
-      <meshStandardMaterial vertexColors roughness={0.9} flatShading />
-    </mesh>
+    <group position={[pos[0], y, pos[2]]} rotation={[0, rot, 0]} scale={scale}>
+      <group ref={sway}>
+        <mesh geometry={geo} castShadow>
+          <meshStandardMaterial vertexColors roughness={0.9} flatShading />
+        </mesh>
+      </group>
+    </group>
   );
 }
 

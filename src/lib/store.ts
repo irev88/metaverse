@@ -18,6 +18,13 @@ interface Toast {
 }
 
 let toastId = 0;
+let bannerTimeout: number | null = null;
+
+export interface Banner {
+  key: number;
+  title: string;
+  sub: string;
+}
 
 function loadJSON<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -64,6 +71,8 @@ interface WorldState {
   setSitting: (v: boolean) => void;
   toasts: Toast[];
   toast: (text: string) => void;
+  banner: Banner | null;
+  showBanner: (title: string, sub: string) => void;
   audio: boolean;
   toggleAudio: () => void;
   flash: number;
@@ -111,6 +120,12 @@ export const useStore = create<WorldState>((set, get) => ({
     window.setTimeout(() => {
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
     }, 3000);
+  },
+  banner: null,
+  showBanner: (title, sub) => {
+    if (bannerTimeout) window.clearTimeout(bannerTimeout);
+    set({ banner: { title, sub, key: Date.now() } });
+    bannerTimeout = window.setTimeout(() => set({ banner: null }), 3600);
   },
   audio: false,
   toggleAudio: () => {

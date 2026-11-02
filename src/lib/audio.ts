@@ -1,8 +1,108 @@
-// Tiny WebAudio synth — ambient pad + UI chimes. No audio files needed.
+// Tiny WebAudio synth — ambient pad, wind, fire crackle + UI chimes. No audio files needed.
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let pad: { stop: () => void } | null = null;
 let enabled = false;
+
+/* ----- ambience: wind + fire crackle ----- */
+let noiseBuf: AudioBuffer | null = null;
+let windNodes: { stop: () => void } | null = null;
+let fireGain: GainNode | null = null;
+let crackleTimer: number | null = null;
+
+function makeNoiseBuffer(c: AudioContext): AudioBuffer {
+  const buf = c.createBuffer(1, c.sampleRate * 2, c.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  return buf;
+}
+
+function startWind() {
+  if (!ctx || !master || windNodes) return;
+  const c = ctx;
+  const src = c.createBufferSource();
+  src.buffer = noiseBuf!;
+  src.loop = true;
+  const lp = c.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 320;
+  lp.Q.value = 0.4;
+  const g = c.createGain();
+  g.gain.value = 0.016;
+  const lfo = c.createOscillator();
+  lfo.frequency.value = 0.07;
+  const lfoG = c.createGain();
+  lfoG.gain.value = 110;
+  lfo.connect(lfoG);
+  lfoG.connect(lp.frequency);
+  src.connect(lp);
+  lp.connect(g);
+  g.connect(master);
+  src.start();
+  lfo.start();
+  windNodes = {
+    stop: () => {
+      try {
+        g.gain.setTargetAtTime(0, c.currentTime, 0.4);
+        window.setTimeout(() => {
+          try {
+            src.stop();
+            lfo.stop();
+          } catch {
+            /* noop */
+          }
+        }, 1500);
+      } catch {
+        /* noop */
+      }
+    },
+  };
+}
+
+function startCrackle() {
+  if (!ctx || !master || crackleTimer !== null) return;
+  fireGain = ctx.createGain();
+  fireGain.gain.value = 0;
+  fireGain.connect(master);
+  crackleTimer = window.setInterval(() => {
+    if (!ctx || !fireGain || !enabled) return;
+    if (Math.random() > 0.6) return;
+    const c = ctx;
+    const src = c.createBufferSource();
+    src.buffer = noiseBuf!;
+    const off = Math.random() * 1.5;
+    const dur = 0.015 + Math.random() * 0.04;
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 1400 + Math.random() * 2800;
+    bp.Q.value = 1.2;
+    const g = c.createGain();
+    const peak = (0.15 + Math.random() * 0.5) * (0.25 + Math.random() * 0.75);
+    g.gain.setValueAtTime(0, c.currentTime);
+    g.gain.linearRampToValueAtTime(peak, c.currentTime + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + dur + 0.03);
+    src.connect(bp);
+    bp.connect(g);
+    g.connect(fireGain);
+    src.start(c.currentTime, off, dur + 0.05);
+  }, 95);
+}
+
+function stopCrackle() {
+  if (crackleTimer !== null) {
+    window.clearInterval(crackleTimer);
+    crackleTimer = null;
+  }
+  if (fireGain && ctx) {
+    fireGain.gain.setTargetAtTime(0, ctx.currentTime, 0.25);
+  }
+}
+
+/** 0 = far from the fire, 1 = right next to it. Called from the player loop. */
+export function setFireProximity(v: number) {
+  if (!fireGain || !ctx) return;
+  fireGain.gain.setTargetAtTime(Math.max(0, Math.min(1, v)) * 0.5, ctx.currentTime, 0.3);
+}
 
 function ensureCtx() {
   if (!ctx) {
@@ -89,9 +189,17 @@ export function setSound(on: boolean) {
   enabled = on;
   if (on) {
     ensureCtx();
+    if (!noiseBuf && ctx) noiseBuf = makeNoiseBuffer(ctx);
     startPad();
+    startWind();
+    startCrackle();
   } else {
     stopPad();
+    if (windNodes) {
+      windNodes.stop();
+      windNodes = null;
+    }
+    stopCrackle();
   }
 }
 

@@ -499,6 +499,117 @@ export function Waterfall({ offset }: { offset: [number, number] }) {
   );
 }
 
+/* ---------- running sparkle trail ---------- */
+
+const TRAIL_COLORS = ["#ffe9b0", "#a5f3e8", "#ff9ec7", "#fff6e0"];
+
+export function SparkleTrail() {
+  const tex = useMemo(glowTexture, []);
+  const sprites = useMemo(
+    () =>
+      Array.from({ length: 18 }, (_, i) => {
+        const mat = new THREE.SpriteMaterial({ map: tex, color: TRAIL_COLORS[i % TRAIL_COLORS.length], transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+        const sp = new THREE.Sprite(mat);
+        sp.visible = false;
+        return sp;
+      }),
+    [tex],
+  );
+  const st = useRef({ emit: 0, next: 0 });
+  const life = useMemo(() => new Float32Array(18).fill(1), []);
+  const start = useMemo(() => new Float32Array(18), []);
+  const basePos = useMemo(() => Array.from({ length: 18 }, () => new THREE.Vector3()), []);
+  const idx = useRef(0);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const s = st.current;
+    // emit while moving; faster stream when running
+    const rate = playerState.speed > 5.5 ? 0.035 : 0.085;
+    if (playerState.moving && t >= s.next) {
+      s.next = t + rate;
+      const sp = sprites[idx.current];
+      const i = idx.current;
+      idx.current = (idx.current + 1) % sprites.length;
+      basePos[i].set(
+        playerState.pos.x + (Math.random() - 0.5) * 0.5,
+        playerState.pos.y + 0.08 + Math.random() * 0.15,
+        playerState.pos.z + (Math.random() - 0.5) * 0.5,
+      );
+      start[i] = t;
+      life[i] = 0;
+      sp.visible = true;
+    }
+    sprites.forEach((sp, i) => {
+      if (!sp.visible) return;
+      const k = (t - start[i]) / 0.75;
+      if (k >= 1) {
+        sp.visible = false;
+        return;
+      }
+      sp.position.set(basePos[i].x, basePos[i].y + k * 0.45, basePos[i].z);
+      sp.scale.setScalar(0.09 + (1 - k) * 0.09);
+      (sp.material as THREE.SpriteMaterial).opacity = Math.sin(k * Math.PI) * 0.85;
+    });
+  });
+
+  return (
+    <group>
+      {sprites.map((sp, i) => (
+        <primitive key={i} object={sp} />
+      ))}
+    </group>
+  );
+}
+
+/* ---------- birds crossing the sky ---------- */
+
+function Bird({ phase, radius, height, speed }: { phase: number; radius: number; height: number; speed: number }) {
+  const group = useRef<THREE.Group>(null);
+  const wingL = useRef<THREE.Mesh>(null);
+  const wingR = useRef<THREE.Mesh>(null);
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const g = group.current;
+    if (!g) return;
+    const ang = phase + t * speed;
+    const x = Math.cos(ang) * radius;
+    const z = Math.sin(ang) * radius - 30;
+    g.position.set(x, height + Math.sin(t * 0.7 + phase) * 1.5, z);
+    g.rotation.y = -ang + (speed > 0 ? Math.PI : 0);
+    const flap = Math.sin(t * 6.5 + phase * 3) * 0.5;
+    if (wingL.current) wingL.current.rotation.z = flap;
+    if (wingR.current) wingR.current.rotation.z = -flap;
+  });
+  return (
+    <group ref={group} scale={2.2}>
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <capsuleGeometry args={[0.03, 0.16, 3, 6]} />
+        <meshBasicMaterial color="#15132a" />
+      </mesh>
+      <mesh ref={wingL} position={[0.12, 0, 0]} rotation={[0, 0, 0]}>
+        <planeGeometry args={[0.26, 0.1]} />
+        <meshBasicMaterial color="#15132a" side={THREE.DoubleSide} />
+      </mesh>
+      <mesh ref={wingR} position={[-0.12, 0, 0]} rotation={[0, 0, 0]}>
+        <planeGeometry args={[0.26, 0.1]} />
+        <meshBasicMaterial color="#15132a" side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+export function Birds() {
+  return (
+    <group>
+      <Bird phase={0.6} radius={62} height={30} speed={0.06} />
+      <Bird phase={2.4} radius={70} height={35} speed={0.05} />
+      <Bird phase={4.2} radius={66} height={27} speed={-0.055} />
+      <Bird phase={5.5} radius={78} height={33} speed={0.045} />
+    </group>
+  );
+}
+
 /* ---------- heart burst (heart emote) ---------- */
 
 export function HeartBurst() {

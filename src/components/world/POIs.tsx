@@ -8,7 +8,7 @@ import { terrainHeight } from "@/lib/terrain";
 import { fbm } from "@/lib/noise";
 import { useStore } from "@/lib/store";
 import { NearTag } from "./NearTag";
-import { EmberParticles, WishMotes, glowTexture } from "./Particles";
+import { EmberParticles, WishMotes, Smoke, glowTexture } from "./Particles";
 
 /* ================= campfire ================= */
 
@@ -69,16 +69,16 @@ export function Campfire() {
           <meshStandardMaterial color="#5b4030" flatShading roughness={1} />
         </mesh>
       ))}
-      {[0, 1].map((i) => (
+      {[0, 1, 2].map((i) => (
         <mesh
           key={i}
           ref={(el) => {
             flames.current[i] = el;
           }}
           position={[CAMPFIRE[0], 0.62, CAMPFIRE[2]]}
-          rotation={[0, (i * Math.PI) / 2, 0]}
+          rotation={[0, (i * Math.PI) / 3, 0]}
         >
-          <planeGeometry args={[1.15, 1.5]} />
+          <planeGeometry args={[i === 2 ? 0.8 : 1.15, i === 2 ? 1.05 : 1.5]} />
           <meshBasicMaterial map={tex} transparent depthWrite={false} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
         </mesh>
       ))}
@@ -86,8 +86,14 @@ export function Campfire() {
         <sphereGeometry args={[0.3, 10, 10]} />
         <meshStandardMaterial color="#ffb066" emissive="#ff7c30" emissiveIntensity={3} />
       </mesh>
+      {/* white-hot core */}
+      <mesh position={[CAMPFIRE[0], 0.42, CAMPFIRE[2]]}>
+        <sphereGeometry args={[0.13, 10, 10]} />
+        <meshStandardMaterial color="#fff3d0" emissive="#ffe9b8" emissiveIntensity={4} />
+      </mesh>
       <pointLight ref={light} position={[CAMPFIRE[0], 1.15, CAMPFIRE[2]]} color="#ff9d4d" intensity={13} distance={11} decay={2} />
       <EmberParticles position={[CAMPFIRE[0], 0.4, CAMPFIRE[2]]} />
+      <Smoke offset={[CAMPFIRE[0], 1.4, CAMPFIRE[2]]} />
       {/* log seats */}
       {[
         [2.35, 1.35, 0.7],
@@ -541,15 +547,32 @@ const pondFrag = /* glsl */ `
     vec3 col = mix(deep, shal, smoothstep(1.0, 0.2, r));
     col += vec3(0.35, 0.75, 0.7) * ripple * 0.16;
     col += vec3(0.9, 0.95, 1.0) * sparkle * 0.35;
-    gl_FragColor = vec4(col, 0.94);
+    gl_FragColor = vec4(col, 0.86);
   }
 `;
 
 export function Pond() {
   const mat = useRef<THREE.ShaderMaterial>(null);
   const uniforms = useMemo(() => ({ uTime: { value: 0 } }), []);
+  const koi = useRef<(THREE.Group | null)[]>([]);
+  const tailL = useRef<(THREE.Mesh | null)[]>([]);
+  const tailR = useRef<(THREE.Mesh | null)[]>([]);
   useFrame((state) => {
+    const t = state.clock.elapsedTime;
     if (mat.current) mat.current.uniforms.uTime.value = state.clock.elapsedTime;
+    // koi swimming lazy circles just beneath the surface
+    koi.current.forEach((g, i) => {
+      if (!g) return;
+      const r = [1.6, 2.1, 1.15][i];
+      const speed = [0.34, -0.27, 0.44][i];
+      const phase = [0, 2.3, 4.2][i];
+      const ang = phase + t * speed;
+      g.position.set(POND.c[0] + Math.cos(ang) * r, 0.028, POND.c[1] + Math.sin(ang) * r);
+      g.rotation.y = -ang + (speed > 0 ? Math.PI : 0);
+      const wag = Math.sin(t * 7 + i * 2.4) * 0.4;
+      if (tailL.current[i]) tailL.current[i].rotation.y = wag;
+      if (tailR.current[i]) tailR.current[i].rotation.y = wag * 0.8;
+    });
   });
   const rim = useMemo(
     () =>
@@ -561,10 +584,48 @@ export function Pond() {
   );
   return (
     <group>
-      <mesh position={[POND.c[0], 0.03, POND.c[1]]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[POND.c[0], 0.055, POND.c[1]]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[POND.r, 40]} />
         <shaderMaterial ref={mat} vertexShader={pondVert} fragmentShader={pondFrag} uniforms={uniforms} transparent depthWrite={false} />
       </mesh>
+      {/* koi — visible through the water */}
+      {[0, 1, 2].map((i) => (
+        <group
+          key={i}
+          ref={(el) => {
+            koi.current[i] = el;
+          }}
+        >
+          <mesh scale={[0.42, 0.34, 1]}>
+            <sphereGeometry args={[0.085, 10, 10]} />
+            <meshStandardMaterial color={i === 1 ? "#f3ede1" : "#e8ecf5"} roughness={0.6} />
+          </mesh>
+          <mesh position={[0.03, 0.015, 0.02]} scale={[0.5, 0.4, 0.7]}>
+            <sphereGeometry args={[0.05, 8, 8]} />
+            <meshStandardMaterial color="#ff8c5a" roughness={0.6} />
+          </mesh>
+          <mesh
+            ref={(el) => {
+              tailR.current[i] = el;
+            }}
+            position={[-0.1, 0, 0]}
+            rotation={[0, 0.5, 0]}
+          >
+            <coneGeometry args={[0.035, 0.1, 6]} />
+            <meshStandardMaterial color={i === 1 ? "#f3ede1" : "#ffd9c9"} roughness={0.7} transparent opacity={0.9} />
+          </mesh>
+          <mesh
+            ref={(el) => {
+              tailL.current[i] = el;
+            }}
+            position={[-0.1, 0, 0]}
+            rotation={[0, -0.5, 0]}
+          >
+            <coneGeometry args={[0.035, 0.1, 6]} />
+            <meshStandardMaterial color={i === 1 ? "#f3ede1" : "#ffd9c9"} roughness={0.7} transparent opacity={0.9} />
+          </mesh>
+        </group>
+      ))}
       {rim.map((s, i) => (
         <mesh key={i} position={s.pos} rotation={[0.2, s.rot, 0.12]} castShadow>
           <dodecahedronGeometry args={[0.3, 0]} />
@@ -576,12 +637,12 @@ export function Pond() {
         [POND.c[0] + 1.1, POND.c[1] + 1.3],
         [POND.c[0] + 1.6, POND.c[1] - 0.8],
       ].map(([x, z], i) => (
-        <mesh key={i} position={[x, 0.075, z]} rotation={[-Math.PI / 2, 0, i * 1.3]}>
+        <mesh key={i} position={[x, 0.09, z]} rotation={[-Math.PI / 2, 0, i * 1.3]}>
           <circleGeometry args={[0.32, 8, 0.5, 5.6]} />
           <meshStandardMaterial color="#2f8a5c" roughness={0.9} />
         </mesh>
       ))}
-      <mesh position={[POND.c[0] - 1.4, 0.16, POND.c[1] + 0.9]}>
+      <mesh position={[POND.c[0] - 1.4, 0.17, POND.c[1] + 0.9]}>
         <coneGeometry args={[0.14, 0.2, 8]} />
         <meshStandardMaterial color="#ffb3cd" emissive="#ff8fb3" emissiveIntensity={1.6} roughness={0.7} />
       </mesh>

@@ -5,9 +5,10 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { Avatar } from "./Avatar";
 import { fx, input, joyMove, playerState } from "@/lib/input";
-import { sfx } from "@/lib/audio";
+import { sfx, setFireProximity } from "@/lib/audio";
 import { useStore } from "@/lib/store";
 import { groundHeight } from "@/lib/terrain";
+import { ISLANDS } from "@/lib/layout";
 import {
   ARCH_LINES,
   BENCH,
@@ -27,6 +28,12 @@ import {
 
 const tmpTarget = new THREE.Vector3();
 const cineTarget = new THREE.Vector3();
+
+const ISLE_META: Record<string, { title: string; sub: string }> = {
+  hearth: { title: "The Hearth", sub: "where our fire keeps the night warm" },
+  everbloom: { title: "Everbloom Isle", sub: "the isle of promises" },
+  starfall: { title: "Starfall Isle", sub: "where the sky leans closer" },
+};
 
 function dampAngle(a: number, b: number, lambda: number, dt: number): number {
   const d = (((b - a + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
@@ -54,6 +61,7 @@ export function Player() {
   const nearestId = useRef<string | null>(null);
   const startedAt = useRef(performance.now());
   const touchedCamera = useRef(false);
+  const lastIsle = useRef<string | null>(null);
   const lineIdx = useRef({ pond: 0, arch: 0, orrery: 0, well: 0, mail: 0, picnic: 0 });
 
   useFrame((state, rawDt) => {
@@ -254,6 +262,22 @@ export function Player() {
       root.current.rotation.y = heading.current;
     }
     playerState.pos.copy(pos.current);
+
+    /* ----- ambience: fire crackle proximity + isle banners ----- */
+    const dFire = Math.hypot(pos.current.x - CAMPFIRE[0], pos.current.z - CAMPFIRE[2]);
+    setFireProximity(Math.max(0, 1 - dFire / 9));
+    let isle: string | null = null;
+    for (const isl of ISLANDS) {
+      if (Math.hypot(pos.current.x - isl.c[0], pos.current.z - isl.c[1]) < isl.r * 0.95) {
+        isle = isl.id;
+        break;
+      }
+    }
+    if (isle !== lastIsle.current) {
+      lastIsle.current = isle;
+      const m = isle ? ISLE_META[isle] : null;
+      if (m && t > 1.5) s.showBanner(m.title, m.sub);
+    }
   });
 
   function activate(id: string, s: ReturnType<typeof useStore.getState>) {

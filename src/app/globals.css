@@ -139,6 +139,27 @@ body {
   animation: toastIn 0.3s ease both;
 }
 
+@keyframes bannerShow {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+    letter-spacing: 0.5em;
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.anim-banner {
+  animation: bannerShow 3.6s ease both;
+}
+
 @keyframes heartBeat {
   0%,
   100% {

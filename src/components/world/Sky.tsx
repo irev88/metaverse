@@ -8,6 +8,9 @@ import { useStore } from "@/lib/store";
 
 /* ================= helpers ================= */
 
+/** Shared time-of-day phase (0 = deep night, 1 = dreamy dawn). Slow 5-min drift. */
+export const skyState = { phase: 0 };
+
 let seedState = 77;
 function srand() {
   seedState = (seedState * 16807) % 2147483647;
@@ -28,12 +31,13 @@ const domeVert = /* glsl */ `
 `;
 
 const domeFrag = /* glsl */ `
+  uniform float uPhase;
   varying float vH;
   void main() {
-    vec3 zenith  = vec3(0.008, 0.011, 0.042);
-    vec3 mid     = vec3(0.035, 0.045, 0.120);
-    vec3 horizon = vec3(0.070, 0.085, 0.205);
-    vec3 glow    = vec3(0.075, 0.115, 0.185);
+    vec3 zenith  = mix(vec3(0.008, 0.011, 0.042), vec3(0.055, 0.045, 0.135), uPhase);
+    vec3 mid     = mix(vec3(0.035, 0.045, 0.120), vec3(0.115, 0.085, 0.215), uPhase);
+    vec3 horizon = mix(vec3(0.070, 0.085, 0.205), vec3(0.29, 0.19, 0.29), uPhase);
+    vec3 glow    = mix(vec3(0.075, 0.115, 0.185), vec3(0.33, 0.21, 0.23), uPhase);
     vec3 c = mix(mid, zenith, smoothstep(0.05, 0.72, vH));
     c = mix(horizon, c, smoothstep(-0.02, 0.26, vH));
     c += glow * smoothstep(0.22, 0.0, abs(vH - 0.045)) * 0.55;
@@ -42,10 +46,15 @@ const domeFrag = /* glsl */ `
 `;
 
 function SkyDome() {
+  const mat = useRef<THREE.ShaderMaterial>(null);
+  const uniforms = useMemo(() => ({ uPhase: { value: 0 } }), []);
+  useFrame(() => {
+    if (mat.current) mat.current.uniforms.uPhase.value = skyState.phase;
+  });
   return (
     <mesh renderOrder={-30}>
       <sphereGeometry args={[420, 32, 20]} />
-      <shaderMaterial vertexShader={domeVert} fragmentShader={domeFrag} side={THREE.BackSide} depthWrite={false} fog={false} />
+      <shaderMaterial ref={mat} vertexShader={domeVert} fragmentShader={domeFrag} uniforms={uniforms} side={THREE.BackSide} depthWrite={false} fog={false} />
     </mesh>
   );
 }
@@ -119,13 +128,15 @@ function makeGalaxyTexture(): THREE.CanvasTexture {
 function Galaxy() {
   const tex = useMemo(makeGalaxyTexture, []);
   const ref = useRef<THREE.Mesh>(null);
-  useFrame((_, dt) => {
+  const matRef = useRef<THREE.MeshBasicMaterial>(null);
+  useFrame((state, dt) => {
     if (ref.current) ref.current.rotation.y += dt * 0.0016;
+    if (matRef.current) matRef.current.opacity = 0.92 - skyState.phase * 0.52;
   });
   return (
     <mesh ref={ref} renderOrder={-20} rotation={[0.16, 0, 0.5]}>
       <sphereGeometry args={[380, 48, 32]} />
-      <meshBasicMaterial map={tex} transparent side={THREE.BackSide} depthWrite={false} fog={false} opacity={0.92} />
+      <meshBasicMaterial ref={matRef} map={tex} transparent side={THREE.BackSide} depthWrite={false} fog={false} opacity={0.92} />
     </mesh>
   );
 }
@@ -608,12 +619,16 @@ function Aurora({
   seed: number;
 }) {
   const mat = useRef<THREE.ShaderMaterial>(null);
+  const base = useRef(intensity);
   const uniforms = useMemo(
     () => ({ uTime: { value: 0 }, uIntensity: { value: intensity }, uSeed: { value: seed } }),
     [intensity, seed],
   );
   useFrame((state) => {
-    if (mat.current) mat.current.uniforms.uTime.value = state.clock.elapsedTime;
+    if (mat.current) {
+      mat.current.uniforms.uTime.value = state.clock.elapsedTime;
+      mat.current.uniforms.uIntensity.value = base.current * (0.85 + 0.45 * skyState.phase);
+    }
   });
   return (
     <mesh position={position} rotation={rotation} scale={scale} renderOrder={-5}>
@@ -630,6 +645,69 @@ function Aurora({
         fog={false}
       />
     </mesh>
+  );
+}
+
+/* ================= moonbeams (fake volumetric light) ================= */
+
+function makeBeamTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  const grad = g.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, "rgba(215,225,255,0.5)");
+  grad.addColorStop(0.55, "rgba(205,215,255,0.16)");
+  grad.addColorStop(1, "rgba(200,210,255,0)");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 256);
+  // soften the left/right edges
+  const fade = g.createLinearGradient(0, 0, 64, 0);
+  fade.addColorStop(0, "rgba(0,0,0,1)");
+  fade.addColorStop(0.25, "rgba(0,0,0,0)");
+  fade.addColorStop(0.75, "rgba(0,0,0,0)");
+  fade.addColorStop(1, "rgba(0,0,0,1)");
+  g.globalCompositeOperation = "destination-out";
+  g.fillStyle = fade;
+  g.fillRect(0, 0, 64, 256);
+  return new THREE.CanvasTexture(c);
+}
+
+function Moonbeams() {
+  const tex = useMemo(makeBeamTexture, []);
+  const refs = useRef<(THREE.Mesh | null)[]>([]);
+  const specs = useMemo(
+    () => [
+      { pos: [26, 62, -38] as [number, number, number], w: 16, f: 0.11, p: 0 },
+      { pos: [58, 58, -66] as [number, number, number], w: 11, f: 0.09, p: 2.1 },
+      { pos: [-6, 66, -80] as [number, number, number], w: 13, f: 0.13, p: 4.2 },
+    ],
+    [],
+  );
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    refs.current.forEach((m, i) => {
+      if (!m) return;
+      const s = specs[i];
+      (m.material as THREE.MeshBasicMaterial).opacity = (0.05 + Math.sin(t * s.f + s.p) * 0.025) * (0.7 + 0.5 * skyState.phase);
+    });
+  });
+  return (
+    <group>
+      {specs.map((s, i) => (
+        <mesh
+          key={i}
+          ref={(el) => {
+            refs.current[i] = el;
+          }}
+          position={s.pos}
+          rotation={[0.1 * i, 0.15 - i * 0.1, -0.52]}
+        >
+          <planeGeometry args={[s.w, 170]} />
+          <meshBasicMaterial map={tex} transparent depthWrite={false} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} opacity={0.05} fog={false} />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
@@ -689,6 +767,12 @@ function ShootingStar({ firstDelay, period }: { firstDelay: number; period: numb
 export function Sky() {
   const quality = useStore((s) => s.quality);
   const rich = quality === "rich";
+
+  useFrame((state, dt) => {
+    // advance the slow dusk⇄dawn cycle (5-minute loop)
+    skyState.phase = 0.5 + 0.5 * Math.sin((state.clock.elapsedTime * Math.PI * 2) / 300 - Math.PI / 2);
+  });
+
   return (
     <>
       <SkyDome />
@@ -699,6 +783,7 @@ export function Sky() {
       <Moon />
       <Comet />
       <CloudWisps />
+      {rich && <Moonbeams />}
       <Aurora position={[0, 105, -165]} rotation={[-0.28, 0, 0.1]} scale={[350, 115, 1]} intensity={0.5} seed={0} />
       <Aurora position={[-95, 82, -225]} rotation={[-0.2, 0.3, -0.15]} scale={[265, 92, 1]} intensity={0.32} seed={2.4} />
       <Aurora position={[130, 92, -200]} rotation={[-0.24, -0.35, 0.18]} scale={[240, 88, 1]} intensity={0.26} seed={4.1} />

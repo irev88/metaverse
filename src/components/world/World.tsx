@@ -1,9 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useRef } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
-import { Sky } from "./Sky";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Bloom, EffectComposer, Noise, ToneMapping, Vignette } from "@react-three/postprocessing";
+import { ToneMappingMode } from "postprocessing";
+import * as THREE from "three";
+import { Sky, skyState } from "./Sky";
 import { Island } from "./Island";
 import { Terrain } from "./Terrain";
 import { Bushes, Ferns, Rocks, Trees } from "./Trees";
@@ -11,7 +13,7 @@ import { Flowers, Grass } from "./Grass";
 import { Rabbits, SheepFlock } from "./Animals";
 import { CottageYard, Mailbox, Picnic, Well } from "./Props";
 import { Campfire, Observatory, Orrery, Pond, Portals, RoseArch, StarChart, Swing, Telescope, WishTree } from "./POIs";
-import { Butterflies, DriftingLanterns, Fireflies, HeartBurst, Petals } from "./Particles";
+import { Butterflies, DriftingLanterns, Fireflies, HeartBurst, Petals, SparkleTrail, Birds } from "./Particles";
 import { Player } from "./Player";
 import { Stardust } from "./Stardust";
 import { Hud } from "../hud/Hud";
@@ -39,10 +41,65 @@ function PerfProbe() {
   return null;
 }
 
+/* Colors for the dusk⇄dawn atmosphere drift */
+const C = {
+  ambN: new THREE.Color("#8fa3d9"),
+  ambD: new THREE.Color("#c4a8c8"),
+  keyN: new THREE.Color("#b9c8ff"),
+  keyD: new THREE.Color("#ffd9c4"),
+  moonN: new THREE.Color("#aebcff"),
+  moonD: new THREE.Color("#e8d8ff"),
+  hemiN: new THREE.Color("#3b4a86"),
+  hemiD: new THREE.Color("#7a5f9e"),
+  fogN: new THREE.Color("#0a0e24"),
+  fogD: new THREE.Color("#2a1c3c"),
+};
+
+/** Drives light/fog colors from the sky cycle. */
+function AtmosphereRig({
+  amb,
+  hemi,
+  keyLight,
+  moonLight,
+}: {
+  amb: React.RefObject<THREE.AmbientLight | null>;
+  hemi: React.RefObject<THREE.HemisphereLight | null>;
+  keyLight: React.RefObject<THREE.DirectionalLight | null>;
+  moonLight: React.RefObject<THREE.DirectionalLight | null>;
+}) {
+  const scene = useThree((s) => s.scene);
+  useFrame(() => {
+    const p = skyState.phase;
+    if (amb.current) {
+      amb.current.intensity = 0.34 + p * 0.14;
+      amb.current.color.lerpColors(C.ambN, C.ambD, p);
+    }
+    if (hemi.current) {
+      hemi.current.intensity = 0.38 + p * 0.12;
+      hemi.current.color.lerpColors(C.hemiN, C.hemiD, p);
+    }
+    if (keyLight.current) {
+      keyLight.current.intensity = 0.85 + p * 0.3;
+      keyLight.current.color.lerpColors(C.keyN, C.keyD, p);
+    }
+    if (moonLight.current) {
+      moonLight.current.intensity = 0.5 - p * 0.25;
+      moonLight.current.color.lerpColors(C.moonN, C.moonD, p);
+    }
+    const fog = scene.fog as THREE.FogExp2 | null;
+    if (fog) fog.color.lerpColors(C.fogN, C.fogD, p);
+  });
+  return null;
+}
+
 export default function World() {
   const quality = useStore((s) => s.quality);
   const setLoaded = useStore((s) => s.setLoaded);
   const wrap = useRef<HTMLDivElement>(null);
+  const ambRef = useRef<THREE.AmbientLight>(null);
+  const hemiRef = useRef<THREE.HemisphereLight>(null);
+  const keyRef = useRef<THREE.DirectionalLight>(null);
+  const moonRef = useRef<THREE.DirectionalLight>(null);
   const rich = quality === "rich";
 
   useEffect(() => {
@@ -119,10 +176,11 @@ export default function World() {
         <color attach="background" args={["#070a18"]} />
         <fogExp2 attach="fog" args={["#0a0e24", 0.0042]} />
 
-        <ambientLight intensity={0.34} color="#8fa3d9" />
-        <hemisphereLight args={["#3b4a86", "#1c1430", 0.38]} />
+        <ambientLight ref={ambRef} intensity={0.34} color="#8fa3d9" />
+        <hemisphereLight ref={hemiRef} args={["#3b4a86", "#1c1430", 0.38]} />
         {/* starlight key */}
         <directionalLight
+          ref={keyRef}
           castShadow={rich}
           position={[36, 52, 18]}
           intensity={0.85}
@@ -138,7 +196,7 @@ export default function World() {
           shadow-bias={-0.0005}
         />
         {/* moonlight, from the moon */}
-        <directionalLight position={[46, 28, -62]} intensity={0.5} color="#aebcff" />
+        <directionalLight ref={moonRef} position={[46, 28, -62]} intensity={0.5} color="#aebcff" />
 
         <Suspense fallback={null}>
           <Sky />
@@ -171,16 +229,26 @@ export default function World() {
           <DriftingLanterns />
           <Petals center={[52, -6]} />
           <Butterflies />
+          <Birds />
+          <SparkleTrail />
           <HeartBurst />
           <Player />
         </Suspense>
 
+        <AtmosphereRig amb={ambRef} hemi={hemiRef} keyLight={keyRef} moonLight={moonRef} />
         <PerfProbe />
 
-        {rich && (
+        {rich ? (
           <EffectComposer multisampling={0}>
             <Bloom intensity={0.85} luminanceThreshold={0.55} luminanceSmoothing={0.2} mipmapBlur radius={0.7} />
+            <Noise opacity={0.022} />
             <Vignette offset={0.25} darkness={0.62} />
+            <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+          </EffectComposer>
+        ) : (
+          <EffectComposer multisampling={0}>
+            <Bloom intensity={0.7} luminanceThreshold={0.6} luminanceSmoothing={0.2} mipmapBlur radius={0.6} />
+            <Vignette offset={0.28} darkness={0.55} />
           </EffectComposer>
         )}
       </Canvas>

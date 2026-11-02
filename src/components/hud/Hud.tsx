@@ -22,6 +22,7 @@ export function Hud() {
   const overlay = useStore((s) => s.overlay);
   const setOverlay = useStore((s) => s.setOverlay);
   const toasts = useStore((s) => s.toasts);
+  const banner = useStore((s) => s.banner);
   const flash = useStore((s) => s.flash);
   const hintDismissed = useStore((s) => s.hintDismissed);
   const dismissHint = useStore((s) => s.dismissHint);
@@ -114,6 +115,15 @@ export function Hud() {
 
       {/* first-visit hint */}
       {!hintDismissed && !overlay && <HintCard onDismiss={dismissHint} coarse={coarse} />}
+
+      {/* isle banner */}
+      {banner && (
+        <div key={banner.key} className="anim-banner pointer-events-none absolute left-1/2 top-[74px] -translate-x-1/2 text-center">
+          <div className="font-display gold-text text-[26px] font-semibold tracking-[0.3em]">✦ {banner.title.toUpperCase()} ✦</div>
+          <div className="font-display mt-1 text-[13px] italic tracking-wide text-rose-200/85">{banner.sub}</div>
+          <div className="mx-auto mt-2 h-px w-32 bg-gradient-to-r from-transparent via-rose-200/50 to-transparent" />
+        </div>
+      )}
 
       {/* toasts */}
       <div className="absolute bottom-60 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2 md:bottom-36">
