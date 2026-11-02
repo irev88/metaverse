@@ -6,6 +6,7 @@ import { Bloom, EffectComposer, Noise, ToneMapping, Vignette } from "@react-thre
 import { ToneMappingMode } from "postprocessing";
 import * as THREE from "three";
 import { Sky, skyState } from "./Sky";
+import { treeFx } from "@/lib/fx";
 import { Island } from "./Island";
 import { Terrain } from "./Terrain";
 import { Bushes, Ferns, Rocks, Trees } from "./Trees";
@@ -53,9 +54,10 @@ const C = {
   hemiD: new THREE.Color("#7a5f9e"),
   fogN: new THREE.Color("#0a0e24"),
   fogD: new THREE.Color("#2a1c3c"),
+  fogDark: new THREE.Color("#04050c"),
 };
 
-/** Drives light/fog colors from the sky cycle. */
+/** Drives light/fog colors from the sky cycle + wishing-tree focus. */
 function AtmosphereRig({
   amb,
   hemi,
@@ -70,24 +72,28 @@ function AtmosphereRig({
   const scene = useThree((s) => s.scene);
   useFrame(() => {
     const p = skyState.phase;
+    const dim = 1 - 0.52 * treeFx.focus; // the world dims near the tree
     if (amb.current) {
-      amb.current.intensity = 0.34 + p * 0.14;
+      amb.current.intensity = (0.34 + p * 0.14) * dim;
       amb.current.color.lerpColors(C.ambN, C.ambD, p);
     }
     if (hemi.current) {
-      hemi.current.intensity = 0.38 + p * 0.12;
+      hemi.current.intensity = (0.38 + p * 0.12) * dim;
       hemi.current.color.lerpColors(C.hemiN, C.hemiD, p);
     }
     if (keyLight.current) {
-      keyLight.current.intensity = 0.85 + p * 0.3;
+      keyLight.current.intensity = (0.85 + p * 0.3) * dim;
       keyLight.current.color.lerpColors(C.keyN, C.keyD, p);
     }
     if (moonLight.current) {
-      moonLight.current.intensity = 0.5 - p * 0.25;
+      moonLight.current.intensity = (0.5 - p * 0.25) * dim;
       moonLight.current.color.lerpColors(C.moonN, C.moonD, p);
     }
     const fog = scene.fog as THREE.FogExp2 | null;
-    if (fog) fog.color.lerpColors(C.fogN, C.fogD, p);
+    if (fog) {
+      fog.color.lerpColors(C.fogN, C.fogD, p);
+      fog.color.lerp(C.fogDark, treeFx.focus * 0.55);
+    }
   });
   return null;
 }

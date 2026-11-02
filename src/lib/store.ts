@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { setSound } from "./audio";
+import { treeFx } from "./fx";
 import type { EmoteName } from "./input";
 
 export type Overlay = null | "telescope" | "wishes" | "fire" | "observatory";

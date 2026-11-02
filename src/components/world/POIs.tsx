@@ -7,6 +7,8 @@ import { ARCH, CAMPFIRE, CHART, OBSERVATORY, ORRERY, POND, PORTALS, SWING, TELES
 import { terrainHeight } from "@/lib/terrain";
 import { fbm } from "@/lib/noise";
 import { useStore } from "@/lib/store";
+import { treeFx } from "@/lib/fx";
+import { sfx } from "@/lib/audio";
 import { NearTag } from "./NearTag";
 import { EmberParticles, WishMotes, Smoke, glowTexture } from "./Particles";
 
@@ -166,171 +168,378 @@ function displaceBlob(geo: THREE.BufferGeometry, amp: number, seed: number) {
   return geo;
 }
 
+/** Radial bark ridges on a trunk segment. */
+function displaceBark(geo: THREE.BufferGeometry, amp: number, seed: number) {
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const ang = Math.atan2(z, x);
+    const ridge = (fbm(ang * 1.9 + seed, y * 2.6 + seed * 2.1, 3) - 0.5) * 2 * amp;
+    const len = Math.hypot(x, z) || 1;
+    pos.setX(i, x + (x / len) * ridge);
+    pos.setZ(i, z + (z / len) * ridge);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function makeLeafTexture(color: string): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  g.translate(32, 32);
+  g.rotate(0.6);
+  g.fillStyle = color;
+  g.shadowColor = color;
+  g.shadowBlur = 10;
+  g.beginPath();
+  g.ellipse(0, 0, 9, 17, 0, 0, Math.PI * 2);
+  g.fill();
+  const tex = new THREE.CanvasTexture(c);
+  return tex;
+}
+
+const POKE_LINES = [
+  "The tree hums — it liked that. ✦",
+  "A leaf of light lets go, just for you.",
+  "Somewhere far away, she feels a little shimmer.",
+  "The old tree keeps every wish safe.",
+  "It whispers: soon.",
+];
+
+// wish-burst colours (pale)
+const LEAF_TINTS = ["#e8e4f7", "#f2dde6", "#d7efe9", "#efe8d9"];
+
 export function WishTree() {
   const wishCount = useStore((s) => s.wishes.length);
-  const canopyMats = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
-  const lanternRefs = useRef<(THREE.Group | null)[]>([]);
-  const spiralMat = useRef<THREE.MeshStandardMaterial>(null);
-  const runeMat = useRef<THREE.MeshStandardMaterial>(null);
+  const toast = useStore((s) => s.toast);
+  const pokeIdx = useRef(0);
 
-  // twisted trunk segments
-  const trunk = useMemo(() => {
-    const segs: { pos: [number, number, number]; r0: number; r1: number; rot: number; tilt: number }[] = [];
+  /* ----- geometry (built once) ----- */
+
+  // twisted, bark-displaced trunk segments
+  const trunkGeos = useMemo(() => {
+    const segs: { pos: [number, number, number]; rot: number; tilt: number }[] = [];
     let x = 0;
     let z = 0;
+    const geos: THREE.BufferGeometry[] = [];
     for (let i = 0; i < 5; i++) {
       const k = i / 4;
       const sway = Math.sin(i * 1.9 + 0.6) * 0.22;
       x += sway * 0.45;
       z += Math.cos(i * 1.4) * 0.12;
-      segs.push({
-        pos: [WISH_TREE[0] + x, 0.35 + i * 0.72, WISH_TREE[2] + z],
-        r0: 0.62 - k * 0.34,
-        r1: 0.52 - k * 0.34,
-        rot: i * 0.9,
-        tilt: sway * 0.4,
-      });
+      segs.push({ pos: [WISH_TREE[0] + x, 0.35 + i * 0.72, WISH_TREE[2] + z], rot: i * 0.9, tilt: sway * 0.4 });
+      const r0 = 0.62 - k * 0.34;
+      const r1 = 0.52 - k * 0.34;
+      const g = displaceBark(new THREE.CylinderGeometry(r1, r0, 0.9, 14, 6), 0.05, i * 7 + 3);
+      geos.push(g);
     }
-    return segs;
+    return { segs, geos };
   }, []);
 
-  // glowing spiral around the trunk
+  // glowing spiral, tight to the trunk profile
   const spiralGeo = useMemo(() => {
     const pts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 140; i++) {
-      const k = i / 140;
+    for (let i = 0; i <= 160; i++) {
+      const k = i / 160;
       const a = k * Math.PI * 6.5 + 0.4;
-      const y = 0.25 + k * 3.6;
-      const r = 0.66 * (1 - k * 0.5) + 0.05;
-      pts.push(new THREE.Vector3(WISH_TREE[0] + Math.cos(a) * r, y, WISH_TREE[2] + Math.sin(a) * r));
+      const y = 0.25 + k * 3.55;
+      const r = 0.55 * (1 - k * 0.5) + 0.035;
+      const x = 0.112 * Math.sin(Math.max(0, (y - 0.35) / 0.72) * 1.9 + 0.6) * Math.min(1, y / 3.9) * 0.45 * 2.2;
+      pts.push(new THREE.Vector3(WISH_TREE[0] + Math.cos(a) * r + x * 0.5, y, WISH_TREE[2] + Math.sin(a) * r));
     }
-    return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 160, 0.026, 6, false);
+    return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 180, 0.022, 6, false);
   }, []);
 
-  // organic canopy — displaced blobs layered as a crown (pale palette)
+  // curved branches reaching into the canopy
+  const branchGeos = useMemo(() => {
+    return [0, 1, 2, 3, 4].map((i) => {
+      const a = (i / 5) * Math.PI * 2 + 0.6;
+      const pts = [
+        new THREE.Vector3(WISH_TREE[0], 3.35, WISH_TREE[2]),
+        new THREE.Vector3(WISH_TREE[0] + Math.cos(a) * 0.9, 3.8, WISH_TREE[2] + Math.sin(a) * 0.9),
+        new THREE.Vector3(WISH_TREE[0] + Math.cos(a) * 1.8, 4.15, WISH_TREE[2] + Math.sin(a) * 1.8),
+        new THREE.Vector3(WISH_TREE[0] + Math.cos(a) * 2.62, 4.05, WISH_TREE[2] + Math.sin(a) * 2.62),
+      ];
+      return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.055, 6, false);
+    });
+  }, []);
+
+  // high-detail canopy, pale moonlit palette, kept within r<=2.35
   const blobs = useMemo(() => {
     const configs: { pos: [number, number, number]; r: number; detail: number; amp: number; seed: number; c: string }[] = [];
-    const crown = ["#d8ccf5", "#e6def7", "#cfeee8", "#f2d8e2", "#d8ccf5"];
-    // big lower ring
+    const ring = ["#ddd4f2", "#e9e2f6", "#d7efe9", "#f2dde6", "#e5dcf4", "#efe8d9", "#ddd4f2"];
     for (let i = 0; i < 7; i++) {
       const a = (i / 7) * Math.PI * 2 + 0.3;
       configs.push({
-        pos: [WISH_TREE[0] + Math.cos(a) * 1.55, 4.05 + (i % 2) * 0.4, WISH_TREE[2] + Math.sin(a) * 1.55],
-        r: 1.05 + (i % 3) * 0.22,
-        detail: 2,
-        amp: 0.3,
+        pos: [WISH_TREE[0] + Math.cos(a) * 1.32, 4.3 + (i % 2) * 0.38, WISH_TREE[2] + Math.sin(a) * 1.32],
+        r: 0.78 + (i % 3) * 0.14,
+        detail: 3,
+        amp: 0.34,
         seed: 31 + i * 13,
-        c: crown[i % crown.length],
+        c: ring[i],
       });
     }
-    // crown core
-    configs.push({ pos: [WISH_TREE[0], 4.9, WISH_TREE[2]], r: 1.6, detail: 3, amp: 0.26, seed: 111, c: "#e6def5" });
-    configs.push({ pos: [WISH_TREE[0] + 0.5, 5.7, WISH_TREE[2] - 0.3], r: 1.0, detail: 2, amp: 0.3, seed: 131, c: "#cfeee8" });
-    configs.push({ pos: [WISH_TREE[0] - 0.6, 5.55, WISH_TREE[2] + 0.35], r: 0.9, detail: 2, amp: 0.3, seed: 141, c: "#f2d8e2" });
+    configs.push({ pos: [WISH_TREE[0], 5.05, WISH_TREE[2]], r: 1.28, detail: 3, amp: 0.3, seed: 111, c: "#e9e2f6" });
+    configs.push({ pos: [WISH_TREE[0] + 0.45, 5.75, WISH_TREE[2] - 0.28], r: 0.78, detail: 3, amp: 0.34, seed: 131, c: "#d7efe9" });
+    configs.push({ pos: [WISH_TREE[0] - 0.52, 5.62, WISH_TREE[2] + 0.32], r: 0.7, detail: 3, amp: 0.34, seed: 141, c: "#f2dde6" });
+    configs.push({ pos: [WISH_TREE[0] + 0.05, 4.0, WISH_TREE[2] - 0.1], r: 0.62, detail: 2, amp: 0.3, seed: 151, c: "#efe8d9" });
     return configs.map((cfg) => {
       const geo = displaceBlob(new THREE.IcosahedronGeometry(cfg.r, cfg.detail), cfg.amp * cfg.r, cfg.seed);
       return { ...cfg, geo };
     });
   }, []);
 
-  // branches
-  const branchGeos = useMemo(() => {
-    return [0, 1, 2].map((i) => {
-      const a = (i / 3) * Math.PI * 2 + 1.1;
-      const pts = [
-        new THREE.Vector3(WISH_TREE[0], 3.4, WISH_TREE[2]),
-        new THREE.Vector3(WISH_TREE[0] + Math.cos(a) * 0.8, 3.75, WISH_TREE[2] + Math.sin(a) * 0.8),
-        new THREE.Vector3(WISH_TREE[0] + Math.cos(a) * 1.5, 4.05, WISH_TREE[2] + Math.sin(a) * 1.5),
-      ];
-      return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.07, 6, false);
-    });
-  }, []);
-
-  // hanging wish lanterns — dim buds until wished upon
+  // lanterns hang from twig knobs on the canopy underside
   const lanterns = useMemo(() => {
-    const out: { pos: [number, number, number]; stem: number }[] = [];
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2 + 0.55;
-      const rr = 1.7 + (i % 3) * 0.4;
+    const out: { knob: [number, number, number]; cord: number }[] = [];
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + 0.85;
+      const rr = 2.55 + (i % 2) * 0.2;
       out.push({
-        pos: [WISH_TREE[0] + Math.cos(a) * rr, 3.4 + (i % 4) * 0.55, WISH_TREE[2] + Math.sin(a) * rr],
-        stem: 0.5 + (i % 3) * 0.35,
+        knob: [WISH_TREE[0] + Math.cos(a) * rr, 3.85 + (i % 3) * 0.42, WISH_TREE[2] + Math.sin(a) * rr],
+        cord: 0.5 + (i % 3) * 0.16,
       });
     }
     return out;
   }, []);
 
-  // rune stones around the base
-  const runes = useMemo(() => {
-    void terrainHeight(WISH_TREE[0], WISH_TREE[2]);
-    return Array.from({ length: 6 }, (_, i) => {
-      const a = (i / 6) * Math.PI * 2 + 0.25;
-      const rr = 2.7 + (i % 2) * 0.35;
-      return { pos: [WISH_TREE[0] + Math.cos(a) * rr, 0.28, WISH_TREE[2] + Math.sin(a) * rr] as [number, number, number], h: 0.5 + (i % 3) * 0.2, rot: a * 2 };
-    });
-  }, []);
+  // rune stones + rotating glyph ring
+  const runes = useMemo(
+    () =>
+      Array.from({ length: 6 }, (_, i) => {
+        const a = (i / 6) * Math.PI * 2 + 0.25;
+        const rr = 2.75 + (i % 2) * 0.3;
+        return { pos: [WISH_TREE[0] + Math.cos(a) * rr, 0.28, WISH_TREE[2] + Math.sin(a) * rr] as [number, number, number], h: 0.5 + (i % 3) * 0.2, rot: a * 2 };
+      }),
+    [],
+  );
+  const glyphs = useMemo(
+    () =>
+      Array.from({ length: 4 }, (_, i) => {
+        const a = (i / 4) * Math.PI * 2;
+        return { pos: [Math.cos(a) * 2.15, 0.05, Math.sin(a) * 2.15] as [number, number, number], rot: -a };
+      }),
+    [],
+  );
 
-  const wisps = useRef<(THREE.Sprite | null)[]>([]);
-  const wispTex = useMemo(glowTexture, []);
-  // each wisp is born at the trunk and spirals out through the canopy
+  /* ----- sprites: leaves, burst, wisps, crown fireflies ----- */
+
+  const leafTex = useMemo(() => LEAF_TINTS.map((c) => makeLeafTexture(c)), []);
+  const glow = useMemo(glowTexture, []);
+
+  const leafRefs = useRef<(THREE.Sprite | null)[]>([]);
+  const leafSpecs = useRef(
+    Array.from({ length: 14 }, (_, i) => ({
+      t0: -Math.random() * 8,
+      dur: 4.5 + Math.random() * 2.5,
+      a: Math.random() * Math.PI * 2,
+      r: 1.7 + Math.random() * 0.7,
+      y0: 4.5 + Math.random() * 0.9,
+      sway: 0.6 + Math.random() * 0.5,
+      spin: (Math.random() - 0.5) * 2.4,
+      tex: i % LEAF_TINTS.length,
+    })),
+  );
+
+  const burstRefs = useRef<(THREE.Sprite | null)[]>([]);
+
+  const wispRefs = useRef<(THREE.Sprite | null)[]>([]);
   const wispSpecs = useMemo(
     () =>
       Array.from({ length: 10 }, (_, i) => ({
         phase: i * 1.73,
         cycle: 0.055 + (i % 3) * 0.012,
         spin: 0.5 + (i % 4) * 0.24,
-        rise: 1.9 + (i % 3) * 0.5,
-        h0: 1.0 + (i % 4) * 0.65,
+        rise: 4.4 + (i % 3) * 0.5,
+        h0: 0.9 + (i % 4) * 0.5,
       })),
     [],
   );
 
+  const fireflyRefs = useRef<(THREE.Sprite | null)[]>([]);
+  const fireflySpecs = useMemo(
+    () =>
+      Array.from({ length: 10 }, (_, i) => ({
+        r: 0.6 + (i % 3) * 0.25,
+        speed: 0.5 + (i % 4) * 0.2,
+        phase: i * 2.1,
+        y: 3.95 + (i % 4) * 0.45,
+      })),
+    [],
+  );
+
+  /* ----- refs for animated materials ----- */
+
+  const canopyMats = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
+  const canopyGroup = useRef<THREE.Group>(null);
+  const spiralMat = useRef<THREE.MeshStandardMaterial>(null);
+  const runeMat = useRef<THREE.MeshStandardMaterial>(null);
+  const crystal = useRef<THREE.Mesh>(null);
+  const crystalHalo = useRef<THREE.Sprite>(null);
+  const crystalMat = useRef<THREE.MeshStandardMaterial>(null);
+  const glyphRing = useRef<THREE.Group>(null);
+  const lanternPivots = useRef<(THREE.Group | null)[]>([]);
+
+  /* ----- interaction ----- */
+
+  const poke = () => {
+    treeFx.pokeAt = performance.now();
+    toast(POKE_LINES[pokeIdx.current++ % POKE_LINES.length]);
+    sfx.wish();
+    // shake loose a small flurry
+    const t = performance.now() / 1000;
+    leafSpecs.current.forEach((s, i) => {
+      if (i < 6) s.t0 = t + i * 0.12;
+    });
+  };
+
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    const base = 0.55 + Math.min(wishCount * 0.14, 1.4);
+    const nowMs = performance.now();
+    const focus = treeFx.focus;
+
+    const sinceBurst = (nowMs - treeFx.burstAt) / 1000;
+    const burstK = sinceBurst >= 0 && sinceBurst < 4.2 ? sinceBurst / 4.2 : -1;
+    const sincePoke = (nowMs - treeFx.pokeAt) / 1000;
+    const pokeK = sincePoke >= 0 && sincePoke < 1.4 ? sincePoke / 1.4 : -1;
+
+    const boost = 1 + focus * 0.7 + (burstK >= 0 ? Math.sin(burstK * Math.PI) * 1.15 : 0) + (pokeK >= 0 ? Math.sin(pokeK * Math.PI) * 0.5 : 0);
+    const base = (0.52 + Math.min(wishCount * 0.09, 1.1)) * boost;
+
     canopyMats.current.forEach((m, i) => {
       if (!m) return;
-      m.emissiveIntensity = base * (0.8 + 0.25 * Math.sin(t * 0.9 + i * 1.4));
+      m.emissiveIntensity = base * (0.85 + 0.22 * Math.sin(t * 0.9 + i * 1.4));
     });
-    if (spiralMat.current) spiralMat.current.emissiveIntensity = 1.2 + Math.sin(t * 1.3) * 0.45 + wishCount * 0.1;
-    if (runeMat.current) runeMat.current.emissiveIntensity = 1.1 + Math.sin(t * 1.1) * 0.4;
-    lanternRefs.current.forEach((g, i) => {
+    if (canopyGroup.current) {
+      canopyGroup.current.scale.setScalar(1 + (burstK >= 0 ? Math.sin(burstK * Math.PI) * 0.03 : 0) + (pokeK >= 0 ? Math.sin(pokeK * Math.PI) * 0.018 : 0));
+    }
+    if (spiralMat.current) spiralMat.current.emissiveIntensity = (1.0 + Math.sin(t * 1.3) * 0.35 + wishCount * 0.08) * boost;
+    if (runeMat.current) runeMat.current.emissiveIntensity = (0.9 + Math.sin(t * 1.1) * 0.3) * (1 + focus * 0.6);
+    if (glyphRing.current) glyphRing.current.rotation.y = t * 0.16;
+
+    // crystal topper
+    if (crystal.current) {
+      crystal.current.rotation.y = t * 0.5;
+      crystal.current.position.y = 6.72 + Math.sin(t * 1.2) * 0.08;
+    }
+    if (crystalMat.current) crystalMat.current.emissiveIntensity = 1.4 + focus * 1.2 + (burstK >= 0 ? Math.sin(burstK * Math.PI) * 1.6 : 0);
+    if (crystalHalo.current) {
+      (crystalHalo.current.material as THREE.SpriteMaterial).opacity = 0.16 + focus * 0.2 + Math.sin(t * 2) * 0.04;
+    }
+
+    // lantern pendulums
+    lanternPivots.current.forEach((g, i) => {
       if (!g) return;
-      g.rotation.y = Math.sin(t * 0.7 + i * 2.1) * 0.22;
+      g.rotation.z = Math.sin(t * 0.9 + i * 1.7) * 0.07;
+      g.rotation.x = Math.cos(t * 0.7 + i * 1.3) * 0.05;
       const bulb = g.children[1] as THREE.Mesh | undefined;
       if (bulb) {
         const mat = bulb.material as THREE.MeshStandardMaterial;
-        mat.emissiveIntensity = i < wishCount ? 2.8 + Math.sin(t * 2 + i) * 0.6 : 0.25;
+        mat.emissiveIntensity = (i < wishCount ? 2.6 + Math.sin(t * 2 + i) * 0.5 : 0.22) * (1 + focus * 0.5);
       }
     });
-    wisps.current.forEach((sp, i) => {
+
+    // crown fireflies
+    fireflyRefs.current.forEach((sp, i) => {
+      if (!sp) return;
+      const s = fireflySpecs[i];
+      sp.position.set(
+        WISH_TREE[0] + Math.cos(t * s.speed + s.phase) * s.r,
+        s.y + Math.sin(t * 0.9 + s.phase * 2) * 0.18,
+        WISH_TREE[2] + Math.sin(t * s.speed + s.phase) * s.r,
+      );
+      (sp.material as THREE.SpriteMaterial).opacity = (0.35 + 0.3 * Math.sin(t * 2.2 + i * 2.4)) * (0.7 + focus * 0.5);
+    });
+
+    // falling leaves
+    leafRefs.current.forEach((sp, i) => {
+      if (!sp) return;
+      const s = leafSpecs.current[i];
+      let k = (t - s.t0) / s.dur;
+      if (k >= 1 || k < 0) {
+        if (k >= 1) {
+          // respawn after a pause
+          s.t0 = t + 1.5 + Math.random() * 4;
+          s.a = Math.random() * Math.PI * 2;
+          s.r = 1.7 + Math.random() * 0.7;
+          s.y0 = 4.5 + Math.random() * 0.9;
+          s.dur = 4.5 + Math.random() * 2.5;
+        }
+        sp.visible = false;
+        return;
+      }
+      sp.visible = true;
+      const drift = Math.sin(t * s.sway + s.a * 3) * 0.32;
+      sp.position.set(
+        WISH_TREE[0] + Math.cos(s.a) * s.r + drift,
+        s.y0 - k * 2.7,
+        WISH_TREE[2] + Math.sin(s.a) * s.r + Math.cos(t * s.sway * 0.8 + s.a) * 0.25,
+      );
+      sp.material.rotation = s.spin * t;
+      (sp.material as THREE.SpriteMaterial).opacity = Math.sin(k * Math.PI) * 0.8;
+    });
+
+    // wish burst — a column of light spiraling up
+    burstRefs.current.forEach((sp, i) => {
+      if (!sp) return;
+      if (burstK < 0 || sinceBurst > 9) {
+        sp.visible = false;
+        return;
+      }
+      const k = THREE.MathUtils.clamp((sinceBurst - i * 0.07) / 3.4, 0, 1);
+      if (k <= 0 || k >= 1) {
+        sp.visible = false;
+        return;
+      }
+      const a = i * 2.4 + k * 5.2;
+      const rad = 0.45 + k * 1.15;
+      sp.visible = true;
+      sp.position.set(WISH_TREE[0] + Math.cos(a) * rad, 1.1 + k * 5.2, WISH_TREE[2] + Math.sin(a) * rad);
+      sp.scale.setScalar(0.1 + k * 0.09);
+      (sp.material as THREE.SpriteMaterial).opacity = Math.sin(k * Math.PI) * 0.85;
+    });
+
+    // wisps rising from the roots through the crown
+    wispRefs.current.forEach((sp, i) => {
       if (!sp) return;
       const s = wispSpecs[i];
-      const k = (t * s.cycle + s.phase * 0.13) % 1; // 0 = at the trunk, 1 = faded into the sky
-      const rad = 0.3 + k * 1.15;
+      const k = (t * s.cycle + s.phase * 0.13) % 1;
+      const rad = 0.3 + k * 0.95;
       const ang = s.phase + t * s.spin;
-      sp.position.set(
-        WISH_TREE[0] + Math.cos(ang) * rad,
-        s.h0 + k * s.rise,
-        WISH_TREE[2] + Math.sin(ang) * rad,
-      );
+      sp.position.set(WISH_TREE[0] + Math.cos(ang) * rad, s.h0 + k * s.rise, WISH_TREE[2] + Math.sin(ang) * rad);
       const mat = sp.material as THREE.SpriteMaterial;
-      mat.opacity = Math.sin(k * Math.PI) * 0.5;
-      sp.scale.setScalar(0.18 + k * 0.1);
+      mat.opacity = Math.sin(k * Math.PI) * (0.32 + focus * 0.3);
+      sp.scale.setScalar(0.15 + k * 0.08);
     });
   });
 
   return (
     <group>
-      {/* ground: pale rune circle */}
+      {/* ground: pale rune circle + rotating glyph ring */}
       <mesh position={[WISH_TREE[0], 0.02, WISH_TREE[2]]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[3.1, 40]} />
+        <circleGeometry args={[3.15, 48]} />
         <meshBasicMaterial color="#b7a8e0" transparent opacity={0.08} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <mesh position={[WISH_TREE[0], 0.03, WISH_TREE[2]]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[2.95, 3.1, 48]} />
-        <meshBasicMaterial color="#cfc4ec" transparent opacity={0.28} blending={THREE.AdditiveBlending} depthWrite={false} />
+        <ringGeometry args={[2.95, 3.1, 56]} />
+        <meshBasicMaterial color="#cfc4ec" transparent opacity={0.26} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
+      <group ref={glyphRing} position={[WISH_TREE[0], 0, WISH_TREE[2]]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[2.05, 2.13, 48]} />
+          <meshBasicMaterial color="#d8cef0" transparent opacity={0.2} blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+        {glyphs.map((g, i) => (
+          <mesh key={i} position={[g.pos[0], g.pos[1] + 0.01, g.pos[2]]} rotation={[-Math.PI / 2, 0, g.rot]}>
+            <planeGeometry args={[0.3, 0.09]} />
+            <meshBasicMaterial color="#e8e0f4" transparent opacity={0.5} blending={THREE.AdditiveBlending} depthWrite={false} />
+          </mesh>
+        ))}
+      </group>
+
       {/* rune stones */}
       {runes.map((r, i) => (
         <group key={i} position={r.pos} rotation={[0, r.rot, (i % 2 ? 1 : -1) * 0.06]}>
@@ -345,85 +554,166 @@ export function WishTree() {
         </group>
       ))}
 
-      {/* twisted trunk */}
-      {trunk.map((s, i) => (
-        <mesh key={i} position={s.pos} rotation={[s.tilt, s.rot, s.tilt * 0.6]} castShadow>
-          <cylinderGeometry args={[s.r1, s.r0, 0.86, 10, 3]} />
-          <meshStandardMaterial color={i % 2 ? "#4a3860" : "#54406b"} flatShading roughness={0.95} />
-        </mesh>
-      ))}
+      {/* trunk (clickable) */}
+      <group
+        onClick={poke}
+        onPointerOver={() => (document.body.style.cursor = "pointer")}
+        onPointerOut={() => (document.body.style.cursor = "")}
+      >
+        {trunkGeos.segs.map((s, i) => (
+          <mesh key={i} geometry={trunkGeos.geos[i]} position={s.pos} rotation={[s.tilt, s.rot, s.tilt * 0.6]} castShadow>
+            <meshStandardMaterial color={i % 2 ? "#3f3450" : "#463a5e"} flatShading roughness={0.95} />
+          </mesh>
+        ))}
+      </group>
       {/* root flares */}
       {[0, 1, 2, 3, 4].map((i) => {
         const a = (i / 5) * Math.PI * 2 + 0.5;
         return (
           <mesh key={i} position={[WISH_TREE[0] + Math.cos(a) * 0.62, 0.14, WISH_TREE[2] + Math.sin(a) * 0.62]} rotation={[0, -a, 0.55]}>
             <coneGeometry args={[0.2, 0.9, 5]} />
-            <meshStandardMaterial color="#463458" flatShading roughness={1} />
+            <meshStandardMaterial color="#3c3150" flatShading roughness={1} />
           </mesh>
         );
       })}
       {/* glowing spiral — pale gold */}
       <mesh geometry={spiralGeo}>
-        <meshStandardMaterial ref={spiralMat} color="#efe6d2" emissive="#d9c9a3" emissiveIntensity={1.2} roughness={0.4} />
+        <meshStandardMaterial ref={spiralMat} color="#efe6d2" emissive="#e3d3a8" emissiveIntensity={1.0} roughness={0.4} />
       </mesh>
+
       {/* branches */}
-      {branchGeos.map((geo, i) => (
-        <mesh key={i} geometry={geo}>
-          <meshStandardMaterial color="#4a3860" flatShading roughness={1} />
-        </mesh>
-      ))}
-      {/* canopy */}
-      {blobs.map((b, i) => (
-        <mesh key={i} geometry={b.geo} position={b.pos} castShadow>
-          <meshStandardMaterial
+      <group
+        onClick={poke}
+        onPointerOver={() => (document.body.style.cursor = "pointer")}
+        onPointerOut={() => (document.body.style.cursor = "")}
+      >
+        {branchGeos.map((geo, i) => (
+          <mesh key={i} geometry={geo} castShadow>
+            <meshStandardMaterial color="#423758" flatShading roughness={1} />
+          </mesh>
+        ))}
+      </group>
+
+      {/* canopy (clickable) */}
+      <group ref={canopyGroup}>
+        {blobs.map((b, i) => (
+          <mesh
+            key={i}
+            geometry={b.geo}
+            position={b.pos}
+            castShadow
+            onClick={poke}
+            onPointerOver={() => (document.body.style.cursor = "pointer")}
+            onPointerOut={() => (document.body.style.cursor = "")}
+          >
+            <meshStandardMaterial
+              ref={(el) => {
+                canopyMats.current[i] = el;
+              }}
+              color="#262040"
+              emissive={b.c}
+              emissiveIntensity={0.55}
+              flatShading
+              roughness={0.85}
+            />
+          </mesh>
+        ))}
+        {/* fireflies inside the crown */}
+        {fireflySpecs.map((_, i) => (
+          <sprite
+            key={`ff${i}`}
             ref={(el) => {
-              canopyMats.current[i] = el;
+              fireflyRefs.current[i] = el;
             }}
-            color="#241c44"
-            emissive={b.c}
-            emissiveIntensity={0.7}
-            flatShading
-            roughness={0.85}
-          />
-        </mesh>
-      ))}
-      {/* hanging wish lanterns */}
+            scale={[0.09, 0.09, 1]}
+          >
+            <spriteMaterial map={glow} color="#efe8ff" transparent opacity={0.4} depthWrite={false} blending={THREE.AdditiveBlending} />
+          </sprite>
+        ))}
+      </group>
+
+      {/* crystal topper */}
+      <mesh ref={crystal} position={[WISH_TREE[0], 6.72, WISH_TREE[2]]}>
+        <octahedronGeometry args={[0.17, 0]} />
+        <meshStandardMaterial ref={crystalMat} color="#eef2ff" emissive="#d8e4ff" emissiveIntensity={1.4} roughness={0.2} metalness={0.2} flatShading />
+      </mesh>
+      <sprite ref={crystalHalo} position={[WISH_TREE[0], 6.72, WISH_TREE[2]]} scale={[1.1, 1.1, 1]}>
+        <spriteMaterial map={glow} color="#d8e4ff" transparent opacity={0.16} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </sprite>
+
+      {/* hanging lanterns — knobs on the canopy edge, pendulum sway */}
       {lanterns.map((l, i) => (
-        <group
-          key={i}
-          ref={(el) => {
-            lanternRefs.current[i] = el;
-          }}
-        >
-          <mesh position={[l.pos[0], l.pos[1] - l.stem / 2, l.pos[2]]}>
-            <cylinderGeometry args={[0.008, 0.008, l.stem, 4]} />
-            <meshStandardMaterial color="#2a2438" />
+        <group key={i} position={l.knob}>
+          {/* twig knob */}
+          <mesh>
+            <sphereGeometry args={[0.05, 8, 8]} />
+            <meshStandardMaterial color="#423758" flatShading roughness={1} />
           </mesh>
-          <mesh position={[l.pos[0], l.pos[1] - l.stem - 0.09, l.pos[2]]} scale={[1, 1.35, 1]}>
-            <sphereGeometry args={[0.09, 10, 10]} />
-            <meshStandardMaterial color="#ffe9c4" emissive="#ffd27a" emissiveIntensity={0.25} />
-          </mesh>
-          {i < wishCount && (
-            <sprite position={[l.pos[0], l.pos[1] - l.stem - 0.09, l.pos[2]]} scale={[0.55, 0.55, 1]}>
-              <spriteMaterial map={wispTex} color="#ffe9c4" transparent opacity={0.3} depthWrite={false} blending={THREE.AdditiveBlending} />
-            </sprite>
-          )}
+          <group
+            ref={(el) => {
+              lanternPivots.current[i] = el;
+            }}
+          >
+            <mesh position={[0, -l.cord / 2, 0]}>
+              <cylinderGeometry args={[0.008, 0.008, l.cord, 4]} />
+              <meshStandardMaterial color="#2a2438" />
+            </mesh>
+            <mesh position={[0, -l.cord - 0.09, 0]} scale={[1, 1.35, 1]}>
+              <sphereGeometry args={[0.09, 12, 12]} />
+              <meshStandardMaterial color="#f5ecd9" emissive="#ffe9c0" emissiveIntensity={0.22} />
+            </mesh>
+            {i < wishCount && (
+              <sprite position={[0, -l.cord - 0.09, 0]} scale={[0.5, 0.5, 1]}>
+                <spriteMaterial map={glow} color="#ffe9c0" transparent opacity={0.3} depthWrite={false} blending={THREE.AdditiveBlending} />
+              </sprite>
+            )}
+          </group>
         </group>
       ))}
-      <WishMotes position={[WISH_TREE[0], 4.7, WISH_TREE[2]]} radius={1.25} count={20} span={3.2} color="#cfc4ec" />
-      {wispSpecs.map((_, i) => (
+
+      {/* falling luminous leaves */}
+      {leafSpecs.current.map((s, i) => (
         <sprite
-          key={i}
+          key={`lf${i}`}
           ref={(el) => {
-            wisps.current[i] = el;
+            leafRefs.current[i] = el;
           }}
-          scale={[0.2, 0.2, 1]}
+          visible={false}
+          scale={[0.14, 0.14, 1]}
         >
-          <spriteMaterial map={wispTex} color="#e6def7" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+          <spriteMaterial map={leafTex[s.tex]} transparent opacity={0} depthWrite={false} />
         </sprite>
       ))}
-      <NearTag position={[WISH_TREE[0], 6.8, WISH_TREE[2]]} radius={6}>
-        ✦ wishing tree · {wishCount} wish{wishCount === 1 ? "" : "es"}
+
+      {/* wish-burst column */}
+      {Array.from({ length: 16 }, (_, i) => (
+        <sprite
+          key={`bs${i}`}
+          ref={(el) => {
+            burstRefs.current[i] = el;
+          }}
+          visible={false}
+          scale={[0.12, 0.12, 1]}
+        >
+          <spriteMaterial map={glow} color="#efe6ff" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+        </sprite>
+      ))}
+
+      {/* wisps rising from the roots */}
+      {wispSpecs.map((_, i) => (
+        <sprite
+          key={`w${i}`}
+          ref={(el) => {
+            wispRefs.current[i] = el;
+          }}
+          scale={[0.16, 0.16, 1]}
+        >
+          <spriteMaterial map={glow} color="#e6def7" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+        </sprite>
+      ))}
+
+      <NearTag position={[WISH_TREE[0], 7.6, WISH_TREE[2]]} radius={6}>
+        ✦ the wishing tree
       </NearTag>
     </group>
   );

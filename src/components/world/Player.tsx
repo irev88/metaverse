@@ -6,9 +6,10 @@ import * as THREE from "three";
 import { Avatar } from "./Avatar";
 import { fx, input, joyMove, playerState } from "@/lib/input";
 import { sfx, setFireProximity } from "@/lib/audio";
+import { treeFx } from "@/lib/fx";
 import { useStore } from "@/lib/store";
 import { groundHeight } from "@/lib/terrain";
-import { ISLANDS } from "@/lib/layout";
+import { ISLANDS, WISH_TREE } from "@/lib/layout";
 import {
   ARCH_LINES,
   BENCH,

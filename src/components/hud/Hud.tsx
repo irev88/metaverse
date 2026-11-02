@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useProgress } from "@react-three/drei";
 import { input, joyMove, type EmoteName } from "@/lib/input";
 import { sfx } from "@/lib/audio";
+import { treeFx } from "@/lib/fx";
 import { useStore } from "@/lib/store";
 import { FIRESIDE_PROMPTS, STARDUST } from "@/lib/layout";
 
@@ -116,6 +117,9 @@ export function Hud() {
       {/* first-visit hint */}
       {!hintDismissed && !overlay && <HintCard onDismiss={dismissHint} coarse={coarse} />}
 
+      {/* wishing-tree focus veil */}
+      <FocusVeil />
+
       {/* isle banner */}
       {banner && (
         <div key={banner.key} className="anim-banner pointer-events-none absolute left-1/2 top-[74px] -translate-x-1/2 text-center">
@@ -139,6 +143,31 @@ export function Hud() {
 
       <LoadingScreen />
     </div>
+  );
+}
+
+/* ================= wishing-tree focus veil ================= */
+
+function FocusVeil() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      if (ref.current) ref.current.style.opacity = (treeFx.focus * 0.9).toFixed(3);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className="pointer-events-none absolute inset-0"
+      style={{
+        opacity: 0,
+        background: "radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 32%, rgba(4,5,14,0.82) 100%)",
+      }}
+    />
   );
 }
 
