@@ -6,6 +6,8 @@ import * as THREE from "three";
 import { ISLANDS, MINI_ISLANDS, type IslandDef, type V3 } from "@/lib/layout";
 import { terrainHeight } from "@/lib/terrain";
 import { fbm } from "@/lib/noise";
+import { scatterData, soilNoise } from "@/lib/scatter";
+import { boulderVariants } from "./Rocks";
 import { Waterfall } from "./Particles";
 
 function mulberry32(seed: number) {
@@ -33,6 +35,9 @@ function makeDiscGeometry(isl: IslandDef): THREE.BufferGeometry {
   const cLight = new THREE.Color("#47996a");
   const cDry = new THREE.Color("#6da265");
   const cRock = new THREE.Color("#5f5c7a");
+  const cBare = new THREE.Color("#8a7458");
+  const cLitter = new THREE.Color("#6a5a3e");
+  const cClover = new THREE.Color("#2e8a4c");
   const c = new THREE.Color();
   const smooth = (a: number, b: number, x: number) => {
     const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -63,6 +68,11 @@ function makeDiscGeometry(isl: IslandDef): THREE.BufferGeometry {
       const rim = smooth(isl.r * 0.82, isl.r * 0.99, rr);
       c.copy(cLush).lerp(cLight, Math.min(1, Math.max(0, (y - 0.12) * 0.85)));
       c.lerp(cDry, n * 0.32);
+      // natural ground variation: leaf litter, bare earth, clover
+      const soil = soilNoise(wx, wz);
+      c.lerp(cLitter, smooth(0.55, 0.8, soil.litter) * 0.38);
+      c.lerp(cBare, smooth(0.6, 0.82, soil.bare) * 0.55);
+      c.lerp(cClover, smooth(0.58, 0.78, soil.clover) * 0.42);
       c.lerp(cRock, rim);
       colors.push(c.r, c.g, c.b);
     }
@@ -151,9 +161,15 @@ function Meadow({ isl, index }: { isl: IslandDef; index: number }) {
         <meshStandardMaterial color="#4b4266" flatShading roughness={1} />
       </mesh>
       {rimRocks.map((rock, i) => (
-        <mesh key={i} position={rock.pos} rotation={[0.3, rock.rot, 0.2]} scale={rock.scale} castShadow>
-          <dodecahedronGeometry args={[0.8, 0]} />
-          <meshStandardMaterial color="#564d73" flatShading roughness={0.95} />
+        <mesh
+          key={i}
+          geometry={boulderVariants()[i % 3]}
+          position={rock.pos}
+          rotation={[0.3, rock.rot, 0.2]}
+          scale={rock.scale * 0.75}
+          castShadow
+        >
+          <meshStandardMaterial vertexColors roughness={0.95} flatShading />
         </mesh>
       ))}
       {chunks.map((c, i) => (
@@ -170,6 +186,23 @@ function Meadow({ isl, index }: { isl: IslandDef; index: number }) {
         </mesh>
       ))}
       <ChunkDrift refs={chunkRefs} specs={chunks} />
+    </group>
+  );
+}
+
+/* ============ tiny reflective puddles in the dips ============ */
+
+function Puddles() {
+  const data = useMemo(() => scatterData().puddles, []);
+  if (!data.length) return null;
+  return (
+    <group>
+      {data.map((p, i) => (
+        <mesh key={i} position={[p.x, p.y + 0.012, p.z]} rotation={[-Math.PI / 2, 0, p.x]}>
+          <circleGeometry args={[p.r, 22]} />
+          <meshStandardMaterial color="#1c2c50" roughness={0.08} metalness={0.72} envMapIntensity={0.4} />
+        </mesh>
+      ))}
     </group>
   );
 }
@@ -237,6 +270,7 @@ export function Terrain() {
       {ISLANDS.map((isl, i) => (
         <Meadow key={isl.id} isl={isl} index={i} />
       ))}
+      <Puddles />
       {MINI_ISLANDS.map((s, i) => (
         <MiniIsland key={i} spec={s} index={i} />
       ))}

@@ -3,19 +3,127 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { FLOWER_FIELDS, FLOWER_HEART, ISLANDS } from "@/lib/layout";
 import { terrainHeight } from "@/lib/terrain";
+import { fbm } from "@/lib/noise";
+import { avoidsPOI, scatterData, soilNoise } from "@/lib/scatter";
 import { useStore } from "@/lib/store";
 
 /* ============================================================
-   Short uniform turf — a dense layer of tiny blades lying over
-   the whole terrain, like a lawn. Sway kept subtle.
+   Proper 3D grass blades — tapered, gently curved ribbons with
+   randomized height/width/bend/twist. One merged geometry per
+   species, instanced thousands of times with per-instance hue
+   variation and a translucent, wind-swept shader.
    ============================================================ */
 
-const turfVert = /* glsl */ `
+/** Curved, tapered blade ribbon (>= 2*segments+1 triangles). */
+function bladeGeometry(
+  segments: number,
+  height: number,
+  width: number,
+  bend: number,
+  twist: number,
+  tipTaper = 1,
+): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const y = t * height;
+    const zoff = bend * t * t * height; // gentle forward curve
+    const w = Math.max(0.004, width * Math.pow(1 - t * 0.92 * tipTaper, 0.85)) * 0.5;
+    const ang = twist * t;
+    const ca = Math.cos(ang);
+    const sa = Math.sin(ang);
+    // left vertex
+    positions.push(-w * ca, y, zoff - w * sa);
+    // right vertex
+    positions.push(w * ca, y, zoff + w * sa);
+    uvs.push(0, t, 1, t);
+  }
+  // pointed tip
+  positions.push(0, height * 1.04, bend * height + width * 0.12);
+  uvs.push(0.5, 1);
+
+  for (let i = 0; i < segments; i++) {
+    const a = i * 2;
+    indices.push(a, a + 1, a + 3);
+    indices.push(a, a + 3, a + 2);
+  }
+  const tip = segments * 2;
+  indices.push(tip, tip + 1, tip + 2);
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* ---------- species geometries ---------- */
+
+function turfGeometry(): THREE.BufferGeometry {
+  // short ground-cover blade
+  return bladeGeometry(4, 0.22, 0.05, 0.5, 0.5);
+}
+
+function meadowGeometry(): THREE.BufferGeometry {
+  // tall blade + seed head
+  const blade = bladeGeometry(6, 0.48, 0.06, 0.62, 0.8);
+  const head = new THREE.CapsuleGeometry(0.018, 0.09, 3, 6);
+  head.translate(0, 0.05, 0);
+  head.rotateX(0.35);
+  head.translate(0, 0.5, 0.48 * 0.62 * 0.48);
+  head.scale(1, 1, 1);
+  const merged = mergeGeometries([blade.index ? blade.toNonIndexed() : blade, head.toNonIndexed()], false)!;
+  merged.computeVertexNormals();
+  merged.computeBoundingSphere();
+  return merged;
+}
+
+function ornamentalGeometry(): THREE.BufferGeometry {
+  // wispy fan of 3 thin blades + a soft cream puff
+  const parts: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 3; i++) {
+    const b = bladeGeometry(5, 0.52 + (i % 2) * 0.12, 0.028, 0.85, 0.4);
+    b.rotateY((i / 3) * Math.PI * 2);
+    parts.push(b.index ? b.toNonIndexed() : b);
+  }
+  const puff = new THREE.IcosahedronGeometry(0.075, 1);
+  puff.scale(1, 1.7, 1);
+  puff.translate(0, 0.62, 0.14);
+  paintUniform(puff, new THREE.Color("#e8dcc0"));
+  parts.push(puff.toNonIndexed());
+  const merged = mergeGeometries(parts, false)!;
+  merged.computeVertexNormals();
+  merged.computeBoundingSphere();
+  return merged;
+}
+
+function paintUniform(geo: THREE.BufferGeometry, c: THREE.Color) {
+  const n = geo.attributes.position.count;
+  const colors = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+}
+
+/* ---------- shared translucent wind shader ---------- */
+
+const grassVert = /* glsl */ `
   uniform float uTime;
+  uniform float uGust;
+  uniform float uAmp;
   varying float vH;
   varying vec3 vTint;
+  varying vec3 vWorld;
   void main() {
     vH = uv.y;
     #ifdef USE_INSTANCING
@@ -29,69 +137,134 @@ const turfVert = /* glsl */ `
       vTint = vec3(1.0);
       vec4 wp = vec4(position, 1.0);
     #endif
-    float phase = wp.x * 2.4 + wp.z * 1.9;
-    float sway = (sin(uTime * 1.4 + phase) + sin(uTime * 2.6 + phase * 1.7) * 0.35) * 0.035;
-    wp.x += sway * pow(uv.y, 1.5);
-    wp.z += sway * 0.55 * pow(uv.y, 1.5);
-    gl_Position = projectionMatrix * modelViewMatrix * wp;
+    wp = modelMatrix * wp;
+    vWorld = wp.xyz;
+    // layered wind: rolling wave sweeping the field + soft gust swell
+    float wave = sin(dot(wp.xz, vec2(0.32, 0.21)) - uTime * 1.05);
+    wave += 0.5 * sin(dot(wp.xz, vec2(-0.18, 0.41)) - uTime * 1.9);
+    float gust = 0.55 + 0.45 * uGust;
+    float sway = wave * uAmp * gust * pow(uv.y, 1.6);
+    wp.x += sway;
+    wp.z += sway * 0.55;
+    gl_Position = projectionMatrix * viewMatrix * wp;
   }
 `;
 
-const turfFrag = /* glsl */ `
+const grassFrag = /* glsl */ `
+  uniform vec3 uLightDir;
   varying float vH;
   varying vec3 vTint;
+  varying vec3 vWorld;
   void main() {
-    vec3 root = vec3(0.10, 0.25, 0.16);
-    vec3 tip = vec3(0.30, 0.56, 0.35);
-    vec3 col = mix(root, tip, vH) * vTint;
+    // deep forest green base -> warm yellow-green tip
+    vec3 base = vec3(0.075, 0.21, 0.115);
+    vec3 tip = vec3(0.52, 0.72, 0.28);
+    vec3 col = mix(base, tip, smoothstep(0.05, 0.95, vH));
+    // warm the very tip (sun-kissed)
+    col += vec3(0.16, 0.12, 0.03) * smoothstep(0.72, 1.0, vH);
+    col *= vTint;
+    // fake translucency: glow when the light is behind the blade
+    vec3 view = normalize(vWorld - cameraPosition);
+    float back = pow(max(dot(normalize(uLightDir), view), 0.0), 3.0);
+    col += vec3(0.30, 0.26, 0.10) * back * vH * 0.6;
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
-export function Grass() {
-  const quality = useStore((s) => s.quality);
-  const count = quality === "rich" ? 9500 : 5000;
-  const geo = useMemo(() => {
-    const g = new THREE.PlaneGeometry(0.05, 0.26, 1, 3);
-    g.translate(0, 0.13, 0);
-    return g;
-  }, []);
-  const mat = useMemo(
+function useGrassMaterial(amp: number) {
+  return useMemo(
     () =>
       new THREE.ShaderMaterial({
-        vertexShader: turfVert,
-        fragmentShader: turfFrag,
-        uniforms: { uTime: { value: 0 } },
+        vertexShader: grassVert,
+        fragmentShader: grassFrag,
+        uniforms: {
+          uTime: { value: 0 },
+          uGust: { value: 0.5 },
+          uAmp: { value: amp },
+          uLightDir: { value: new THREE.Vector3(0.62, 0.42, 0.66).normalize() },
+        },
         side: THREE.DoubleSide,
       }),
-    [],
+    [amp],
   );
-  const ref = useRef<THREE.InstancedMesh>(null);
-  const data = useMemo(() => {
-    let seed = 9;
-    const rnd = () => {
-      seed = (seed * 16807) % 2147483647;
-      return (seed - 1) / 2147483646;
-    };
-    const out: { x: number; z: number; y: number; s: number; rot: number; tint: THREE.Color }[] = [];
-    const tint = new THREE.Color();
-    let guard = 0;
-    while (out.length < count && guard < count * 3) {
-      guard++;
-      const isl = ISLANDS[Math.floor(rnd() * ISLANDS.length)];
-      const a = rnd() * Math.PI * 2;
-      const r = Math.sqrt(rnd()) * (isl.r - 1.2);
-      const x = isl.c[0] + Math.cos(a) * r;
-      const z = isl.c[1] + Math.sin(a) * r;
-      const h = terrainHeight(x, z);
-      if (h === -Infinity) continue;
-      // subtle natural variation, matched to the terrain palette
-      tint.setHSL(0.34 + rnd() * 0.05, 0.32 + rnd() * 0.18, 0.72 + rnd() * 0.3);
-      out.push({ x, z, y: h, s: 0.7 + rnd() * 0.8, rot: rnd() * Math.PI, tint });
-    }
-    return out;
-  }, [count]);
+}
 
+/* ---------- placement ---------- */
+
+function makePlacement(
+  count: number,
+  seed: number,
+  opts: { hMin: number; hMax: number; clump: number; nearRockBoost: number; avoidBare: boolean },
+): { x: number; z: number; y: number; s: number; rot: number; tint: THREE.Color }[] {
+  const rnd0 = (s: number) => {
+    let a = s >>> 0;
+    return () => {
+      a = (a * 16807) % 2147483647;
+      return (a - 1) / 2147483646;
+    };
+  };
+  const rnd = rnd0(seed);
+  const rocks = scatterData().boulders;
+  const out: { x: number; z: number; y: number; s: number; rot: number; tint: THREE.Color }[] = [];
+  const tint = new THREE.Color();
+  let guard = 0;
+  while (out.length < count && guard < count * 6) {
+    guard++;
+    const isl = ISLANDS[Math.floor(rnd() * ISLANDS.length)];
+    const a = rnd() * Math.PI * 2;
+    const r = Math.sqrt(rnd()) * (isl.r - 1.6);
+    const x = isl.c[0] + Math.cos(a) * r;
+    const z = isl.c[1] + Math.sin(a) * r;
+    if (avoidsPOI(x, z, 0.2)) continue;
+    const y = terrainHeight(x, z);
+    if (y === -Infinity) continue;
+    // noise clumping — natural patches, denser in low areas
+    const clump = fbm(x * 0.24 + 3, z * 0.24 + 8, 3);
+    let keep = 0.16 + Math.pow(Math.max(0, clump - 0.28) / 0.72, 1.4) * opts.clump;
+    keep *= 1.25 - Math.min(1, y / 1.6) * 0.55; // denser in dips
+    if (opts.nearRockBoost > 0) {
+      for (const b of rocks) {
+        const d = Math.hypot(x - b.x, z - b.z);
+        if (d < 2.4) {
+          keep += opts.nearRockBoost * (1 - d / 2.4);
+          break;
+        }
+      }
+    }
+    const soil = soilNoise(x, z);
+    if (soil.bare > 0.62) keep *= 0.12; // sparse on exposed soil
+    else if (opts.avoidBare && soil.bare > 0.5) keep *= 0.5;
+    if (rnd() > Math.min(1, keep)) continue;
+
+    const hueJitter = (rnd() - 0.5) * 0.075; // ± ~13.5°
+    tint.setHSL(0.29 + hueJitter, 0.42 + rnd() * 0.16, 0.62 + rnd() * 0.22);
+    const s = 0.7 + rnd() * 0.9;
+    out.push({ x, z, y, s, rot: rnd() * Math.PI * 2, tint });
+  }
+  return out;
+}
+
+/* ---------- species components ---------- */
+
+function Species({
+  count,
+  seed,
+  geometry,
+  material,
+  opts,
+}: {
+  count: number;
+  seed: number;
+  geometry: THREE.BufferGeometry;
+  material: THREE.ShaderMaterial;
+  opts: { hMin: number; hMax: number; clump: number; nearRockBoost: number; avoidBare: boolean };
+}) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const data = useMemo(
+    () => makePlacement(count, seed, opts),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- opts is an inline literal; deps are its primitives
+    [count, seed, opts.hMin, opts.hMax, opts.clump, opts.nearRockBoost, opts.avoidBare],
+  );
   useLayoutEffect(() => {
     const m = ref.current;
     if (!m) return;
@@ -99,7 +272,8 @@ export function Grass() {
     data.forEach((g, i) => {
       d.position.set(g.x, g.y - 0.015, g.z);
       d.rotation.set(0, g.rot, 0);
-      d.scale.set(g.s, g.s, g.s);
+      const sc = g.s;
+      d.scale.set(sc * 0.9, sc, sc * 0.9);
       d.updateMatrix();
       m.setMatrixAt(i, d.matrix);
       m.setColorAt(i, g.tint);
@@ -107,17 +281,203 @@ export function Grass() {
     m.count = data.length;
     m.instanceMatrix.needsUpdate = true;
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
-  }, [data]);
+  }, [data, opts]);
+  return <instancedMesh key={count} ref={ref} args={[geometry, material, Math.max(1, data.length)]} />;
+}
 
+export function Grass() {
+  const quality = useStore((s) => s.quality);
+  const rich = quality === "rich";
+
+  const turfGeo = useMemo(turfGeometry, []);
+  const meadowGeo = useMemo(meadowGeometry, []);
+  const ornGeo = useMemo(ornamentalGeometry, []);
+
+  const turfMat = useGrassMaterial(0.055);
+  const meadowMat = useGrassMaterial(0.12);
+  const ornMat = useGrassMaterial(0.17);
+
+  const gust = useRef(0);
   useFrame((state) => {
-    mat.uniforms.uTime.value = state.clock.elapsedTime;
+    const t = state.clock.elapsedTime;
+    // slow breathing gust value shared by all species
+    const g = 0.5 + 0.5 * Math.sin(t * 0.23) * Math.sin(t * 0.11 + 1.7);
+    gust.current += (g - gust.current) * 0.02;
+    [turfMat, meadowMat, ornMat].forEach((m) => {
+      m.uniforms.uTime.value = t;
+      m.uniforms.uGust.value = gust.current;
+    });
   });
 
-  return <instancedMesh key={count} ref={ref} args={[geo, mat, Math.max(1, data.length)]} />;
+  return (
+    <group>
+      <Species
+        count={rich ? 9000 : 4200}
+        seed={101}
+        geometry={turfGeo}
+        material={turfMat}
+        opts={{ hMin: 0.15, hMax: 0.28, clump: 0.9, nearRockBoost: 0.35, avoidBare: false }}
+      />
+      <Species
+        count={rich ? 2400 : 1100}
+        seed={202}
+        geometry={meadowGeo}
+        material={meadowMat}
+        opts={{ hMin: 0.34, hMax: 0.55, clump: 1.15, nearRockBoost: 0.25, avoidBare: true }}
+      />
+      <Species
+        count={rich ? 130 : 60}
+        seed={303}
+        geometry={ornGeo}
+        material={ornMat}
+        opts={{ hMin: 0.5, hMax: 0.72, clump: 1.5, nearRockBoost: 0.6, avoidBare: true }}
+      />
+    </group>
+  );
 }
 
 /* ============================================================
-   Flowers on stems + the flower heart
+   Wildflowers — daisies, lavender, poppies, baby's breath
+   ============================================================ */
+
+type FlowerKind = "daisy" | "lavender" | "poppy" | "babys";
+
+const FLOWER_HUES: Record<FlowerKind, { head: string; core: string }> = {
+  daisy: { head: "#f7f3ea", core: "#f2c94c" },
+  lavender: { head: "#9d8cd8", core: "#8a76c8" },
+  poppy: { head: "#e8604a", core: "#3a2a28" },
+  babys: { head: "#fbf8f2", core: "#f0ead8" },
+};
+
+function flowerGeometry(kind: FlowerKind): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  // stem
+  const stem = new THREE.CylinderGeometry(0.008, 0.013, 0.34, 5);
+  stem.translate(0, 0.17, 0);
+  paintUniform(stem, new THREE.Color("#3f7a4e"));
+  parts.push(stem.toNonIndexed());
+  if (kind === "lavender") {
+    // spike of tiny buds
+    for (let i = 0; i < 6; i++) {
+      const bud = new THREE.IcosahedronGeometry(0.028, 0);
+      bud.translate(0, 0.3 + i * 0.045, 0);
+      paintUniform(bud, new THREE.Color(FLOWER_HUES.lavender.head));
+      parts.push(bud.toNonIndexed());
+    }
+  } else if (kind === "poppy") {
+    const cup = new THREE.IcosahedronGeometry(0.06, 1);
+    cup.scale(1, 0.6, 1);
+    cup.translate(0, 0.37, 0);
+    paintUniform(cup, new THREE.Color(FLOWER_HUES.poppy.head));
+    parts.push(cup.toNonIndexed());
+    const core = new THREE.IcosahedronGeometry(0.02, 0);
+    core.translate(0, 0.4, 0);
+    paintUniform(core, new THREE.Color(FLOWER_HUES.poppy.core));
+    parts.push(core.toNonIndexed());
+  } else if (kind === "babys") {
+    for (let i = 0; i < 7; i++) {
+      const dot = new THREE.IcosahedronGeometry(0.016, 0);
+      const a = i * 2.4;
+      dot.translate(Math.cos(a) * 0.045, 0.36 + Math.sin(i * 1.3) * 0.03, Math.sin(a) * 0.045);
+      paintUniform(dot, new THREE.Color(FLOWER_HUES.babys.head));
+      parts.push(dot.toNonIndexed());
+    }
+  } else {
+    // daisy: ring of petals
+    for (let i = 0; i < 8; i++) {
+      const petal = new THREE.CapsuleGeometry(0.012, 0.05, 2, 5);
+      petal.scale(1, 1, 0.4);
+      petal.rotateX(Math.PI / 2);
+      petal.translate(0, 0.04, 0);
+      petal.rotateX(-0.4);
+      petal.rotateY((i / 8) * Math.PI * 2);
+      petal.translate(0, 0.36, 0);
+      paintUniform(petal, new THREE.Color(FLOWER_HUES.daisy.head));
+      parts.push(petal.toNonIndexed());
+    }
+    const core = new THREE.IcosahedronGeometry(0.024, 0);
+    core.translate(0, 0.37, 0);
+    paintUniform(core, new THREE.Color(FLOWER_HUES.daisy.core));
+    parts.push(core.toNonIndexed());
+  }
+  const merged = mergeGeometries(parts, false)!;
+  merged.computeVertexNormals();
+  merged.computeBoundingSphere();
+  return merged;
+}
+
+const KINDS: FlowerKind[] = ["daisy", "lavender", "poppy", "babys"];
+
+export function Wildflowers() {
+  const quality = useStore((s) => s.quality);
+  const data = useMemo(() => {
+    let s = 77;
+    const rnd = () => {
+      s = (s * 16807) % 2147483647;
+      return (s - 1) / 2147483646;
+    };
+    const out: { x: number; z: number; y: number; s: number; rot: number; kind: FlowerKind }[] = [];
+    const per = quality === "rich" ? 10 : 5;
+    for (const f of FLOWER_FIELDS) {
+      for (let i = 0; i < per; i++) {
+        const a = rnd() * Math.PI * 2;
+        const r = Math.sqrt(rnd()) * f.r;
+        const x = f.c[0] + Math.cos(a) * r;
+        const z = f.c[1] + Math.sin(a) * r;
+        const h = terrainHeight(x, z);
+        if (h === -Infinity) continue;
+        out.push({ x, z, y: h, s: 0.8 + rnd() * 0.5, rot: rnd() * Math.PI * 2, kind: KINDS[Math.floor(rnd() * KINDS.length)] });
+      }
+    }
+    // a few scattered in the wild via noise, second layer
+    let guard = 0;
+    const IS = ISLANDS;
+    while (out.length < (quality === "rich" ? 130 : 60) && guard < 1200) {
+      guard++;
+      const isl = IS[Math.floor(rnd() * IS.length)];
+      const a = rnd() * Math.PI * 2;
+      const r = Math.sqrt(rnd()) * (isl.r - 2);
+      const x = isl.c[0] + Math.cos(a) * r;
+      const z = isl.c[1] + Math.sin(a) * r;
+      const h = terrainHeight(x, z);
+      if (h === -Infinity || avoidsPOI(x, z, 0.3)) continue;
+      const clump = fbm(x * 0.27 + 55, z * 0.27 + 21, 3);
+      if (rnd() > clump * 1.15) continue;
+      out.push({ x, z, y: h, s: 0.75 + rnd() * 0.55, rot: rnd() * Math.PI * 2, kind: KINDS[Math.floor(rnd() * KINDS.length)] });
+    }
+    return out;
+  }, [quality]);
+
+  const geos = useMemo(() => {
+    const map = {} as Record<FlowerKind, THREE.BufferGeometry>;
+    KINDS.forEach((k) => (map[k] = flowerGeometry(k)));
+    return map;
+  }, []);
+
+  // gentle sway via a group rotation is overkill; use a lightweight shader-free approach:
+  // animate the whole group's subtle tilt — flowers also get wind from the grass feel
+  const group = useRef<THREE.Group>(null);
+  useFrame((state) => {
+    if (group.current) {
+      const t = state.clock.elapsedTime;
+      group.current.rotation.z = Math.sin(t * 1.1) * 0.004;
+      group.current.rotation.x = Math.cos(t * 0.9) * 0.003;
+    }
+  });
+
+  return (
+    <group ref={group}>
+      {data.map((f, i) => (
+        <mesh key={i} geometry={geos[f.kind]} position={[f.x, f.y, f.z]} rotation={[0, f.rot, 0]} scale={f.s}>
+          <meshStandardMaterial vertexColors roughness={0.8} flatShading />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/* ============================================================
+   Flower heart + field blooms (kept from previous version)
    ============================================================ */
 
 const FLOWER_PALETTE = ["#ff8fb3", "#ffd27a", "#b9a5ff", "#fff3f5", "#7ee8d8", "#ff9ec7"].map((c) => new THREE.Color(c));
@@ -135,7 +495,7 @@ export function Flowers() {
       return (seed - 1) / 2147483646;
     };
     const out: { x: number; z: number; y: number; s: number; color: THREE.Color }[] = [];
-    const perField = quality === "rich" ? 34 : 18;
+    const perField = quality === "rich" ? 26 : 14;
     for (const f of FLOWER_FIELDS) {
       for (let i = 0; i < perField; i++) {
         const a = rnd() * Math.PI * 2;
@@ -147,7 +507,6 @@ export function Flowers() {
         out.push({ x, z, y: h, s: 0.7 + rnd() * 0.7, color: FLOWER_PALETTE[Math.floor(rnd() * FLOWER_PALETTE.length)] });
       }
     }
-    // the flower heart — petals along a classic heart curve
     const { c, scale } = FLOWER_HEART;
     const n = 46;
     for (let i = 0; i < n; i++) {
@@ -160,7 +519,6 @@ export function Flowers() {
       if (h === -Infinity) continue;
       out.push({ x, z, y: h, s: 0.85 + rnd() * 0.5, color: HEART_PALETTE[i % HEART_PALETTE.length] });
     }
-    // a few inside the heart
     for (let i = 0; i < 8; i++) {
       const t = rnd() * Math.PI * 2;
       const k = rnd() * 0.45;

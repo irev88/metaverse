@@ -5,6 +5,8 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { fx, playerState } from "@/lib/input";
 import { ISLANDS } from "@/lib/layout";
+import { terrainHeight } from "@/lib/terrain";
+import { skyState } from "./Sky";
 
 /* ---------- helpers ---------- */
 
@@ -607,6 +609,140 @@ export function Birds() {
       <Bird phase={4.2} radius={66} height={27} speed={-0.055} />
       <Bird phase={5.5} radius={78} height={33} speed={0.045} />
     </group>
+  );
+}
+
+/* ---------- ground mist — knee-high, drifting, catches the light ---------- */
+
+export function GroundMist() {
+  const tex = useMemo(glowTexture, []);
+  const refs = useRef<(THREE.Sprite | null)[]>([]);
+  const specs = useMemo(() => {
+    let s = 311;
+    const rnd = () => {
+      s = (s * 16807) % 2147483647;
+      return (s - 1) / 2147483646;
+    };
+    const out: { x: number; z: number; y: number; scale: number; speed: number; phase: number }[] = [];
+    let guard = 0;
+    while (out.length < 16 && guard < 400) {
+      guard++;
+      const isl = ISLANDS[Math.floor(rnd() * ISLANDS.length)];
+      const a = rnd() * Math.PI * 2;
+      const r = Math.sqrt(rnd()) * (isl.r - 3);
+      const x = isl.c[0] + Math.cos(a) * r;
+      const z = isl.c[1] + Math.sin(a) * r;
+      const h = terrainHeight(x, z);
+      if (h === -Infinity) continue;
+      out.push({ x, z, y: h + 0.45, scale: 6 + rnd() * 9, speed: 0.1 + rnd() * 0.16, phase: rnd() * 20 });
+    }
+    return out;
+  }, []);
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    refs.current.forEach((sp, i) => {
+      if (!sp) return;
+      const s = specs[i];
+      sp.position.x = s.x + Math.sin(t * s.speed + s.phase) * 2.2;
+      sp.position.z = s.z + Math.cos(t * s.speed * 0.8 + s.phase) * 1.6;
+      const warm = 0.35 + 0.65 * skyState.phase;
+      const mat = sp.material as THREE.SpriteMaterial;
+      mat.opacity = (0.05 + Math.sin(t * 0.3 + s.phase) * 0.015) * (0.8 + 0.5 * skyState.phase);
+      mat.color.setRGB(0.75 + warm * 0.25, 0.78 + warm * 0.14, 0.85 - warm * 0.12);
+    });
+  });
+  return (
+    <group>
+      {specs.map((s, i) => (
+        <sprite
+          key={i}
+          ref={(el) => {
+            refs.current[i] = el;
+          }}
+          position={[s.x, s.y, s.z]}
+          scale={[s.scale, s.scale * 0.32, 1]}
+        >
+          <spriteMaterial map={tex} transparent opacity={0.05} depthWrite={false} />
+        </sprite>
+      ))}
+    </group>
+  );
+}
+
+/* ---------- floating pollen motes — faint warm specks ---------- */
+
+const pollenVert = /* glsl */ `
+  attribute float aSeed;
+  uniform float uTime;
+  uniform float uDpr;
+  varying float vA;
+  void main() {
+    vec3 p = position;
+    p.x += sin(uTime * 0.16 + aSeed * 31.0) * 0.9;
+    p.y += sin(uTime * 0.11 + aSeed * 17.0) * 0.45;
+    p.z += cos(uTime * 0.13 + aSeed * 23.0) * 0.9;
+    vA = 0.35 + 0.3 * sin(uTime * 0.7 + aSeed * 40.0);
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    gl_PointSize = 3.0 * uDpr * (120.0 / -mv.z);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const pollenFrag = /* glsl */ `
+  varying float vA;
+  void main() {
+    float d = length(gl_PointCoord - 0.5);
+    float a = smoothstep(0.5, 0.1, d) * vA;
+    gl_FragColor = vec4(1.0, 0.92, 0.75, a);
+  }
+`;
+
+export function Pollen() {
+  const mat = useRef<THREE.ShaderMaterial>(null);
+  const data = useMemo(() => {
+    const pos: number[] = [];
+    const seeds: number[] = [];
+    let s = 613;
+    const rnd = () => {
+      s = (s * 16807) % 2147483647;
+      return (s - 1) / 2147483646;
+    };
+    for (let i = 0; i < 150; i++) {
+      const isl = ISLANDS[Math.floor(rnd() * ISLANDS.length)];
+      const a = rnd() * Math.PI * 2;
+      const r = Math.sqrt(rnd()) * (isl.r - 2);
+      const x = isl.c[0] + Math.cos(a) * r;
+      const z = isl.c[1] + Math.sin(a) * r;
+      const h = terrainHeight(x, z);
+      if (h === -Infinity) continue;
+      pos.push(x, h + 0.5 + rnd() * 1.8, z);
+      seeds.push(rnd() * 100);
+    }
+    return { pos: new Float32Array(pos), seeds: new Float32Array(seeds) };
+  }, []);
+  const uniforms = useMemo(
+    () => ({ uTime: { value: 0 }, uDpr: { value: Math.min(window.devicePixelRatio || 1, 2) } }),
+    [],
+  );
+  useFrame((state) => {
+    if (mat.current) mat.current.uniforms.uTime.value = state.clock.elapsedTime;
+  });
+  return (
+    <points>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[data.pos, 3]} />
+        <bufferAttribute attach="attributes-aSeed" args={[data.seeds, 1]} />
+      </bufferGeometry>
+      <shaderMaterial
+        ref={mat}
+        vertexShader={pollenVert}
+        fragmentShader={pollenFrag}
+        uniforms={uniforms}
+        transparent
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </points>
   );
 }
 

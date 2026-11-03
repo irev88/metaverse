@@ -2,19 +2,20 @@
 
 import { Suspense, useEffect, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Bloom, EffectComposer, Noise, ToneMapping, Vignette } from "@react-three/postprocessing";
+import { Bloom, DepthOfField, EffectComposer, Noise, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import * as THREE from "three";
 import { Sky, skyState } from "./Sky";
 import { treeFx } from "@/lib/fx";
 import { Island } from "./Island";
 import { Terrain } from "./Terrain";
-import { Bushes, Ferns, Rocks, Trees } from "./Trees";
-import { Flowers, Grass } from "./Grass";
+import { Trees } from "./Trees";
+import { Bushes, Clover, Ferns, Rocks } from "./Rocks";
+import { Flowers, Grass, Wildflowers } from "./Grass";
 import { Rabbits, SheepFlock } from "./Animals";
 import { CottageYard, Mailbox, Picnic, Well } from "./Props";
 import { Campfire, Observatory, Orrery, Pond, Portals, RoseArch, StarChart, Swing, Telescope, WishTree } from "./POIs";
-import { Butterflies, DriftingLanterns, Fireflies, HeartBurst, Petals, SparkleTrail, Birds } from "./Particles";
+import { Butterflies, DriftingLanterns, Fireflies, GroundMist, HeartBurst, Petals, Pollen, SparkleTrail, Birds } from "./Particles";
 import { Player } from "./Player";
 import { Stardust } from "./Stardust";
 import { Hud } from "../hud/Hud";
@@ -45,15 +46,15 @@ function PerfProbe() {
 /* Colors for the dusk⇄dawn atmosphere drift */
 const C = {
   ambN: new THREE.Color("#8fa3d9"),
-  ambD: new THREE.Color("#c4a8c8"),
+  ambD: new THREE.Color("#d4b0a8"),
   keyN: new THREE.Color("#b9c8ff"),
-  keyD: new THREE.Color("#ffd9c4"),
+  keyD: new THREE.Color("#ffc478"),
   moonN: new THREE.Color("#aebcff"),
   moonD: new THREE.Color("#e8d8ff"),
   hemiN: new THREE.Color("#3b4a86"),
-  hemiD: new THREE.Color("#7a5f9e"),
+  hemiD: new THREE.Color("#8fa8ce"),
   fogN: new THREE.Color("#0a0e24"),
-  fogD: new THREE.Color("#2a1c3c"),
+  fogD: new THREE.Color("#4a3a58"),
   fogDark: new THREE.Color("#04050c"),
 };
 
@@ -183,12 +184,12 @@ export default function World() {
         <fogExp2 attach="fog" args={["#0a0e24", 0.0042]} />
 
         <ambientLight ref={ambRef} intensity={0.34} color="#8fa3d9" />
-        <hemisphereLight ref={hemiRef} args={["#3b4a86", "#1c1430", 0.38]} />
+        <hemisphereLight ref={hemiRef} args={["#3b4a86", "#1c1430", 0.42]} />
         {/* starlight key */}
         <directionalLight
           ref={keyRef}
           castShadow={rich}
-          position={[36, 52, 18]}
+          position={[40, 14, 20]}
           intensity={0.85}
           color="#b9c8ff"
           shadow-mapSize-width={rich ? 4096 : 2048}
@@ -211,8 +212,10 @@ export default function World() {
           <Rocks />
           <Bushes />
           <Ferns />
+          <Clover />
           <Grass />
           <Flowers />
+          <Wildflowers />
           <Rabbits />
           <SheepFlock />
           <Island />
@@ -232,6 +235,8 @@ export default function World() {
           <StarChart />
           <Stardust />
           <Fireflies />
+          <GroundMist />
+          <Pollen />
           <DriftingLanterns />
           <Petals center={[52, -6]} />
           <Butterflies />
@@ -247,6 +252,7 @@ export default function World() {
         {rich ? (
           <EffectComposer multisampling={0}>
             <Bloom intensity={0.85} luminanceThreshold={0.55} luminanceSmoothing={0.2} mipmapBlur radius={0.7} />
+            <DepthOfField focusDistance={0.028} focalLength={0.42} bokehScale={2.4} height={480} />
             <Noise opacity={0.022} />
             <Vignette offset={0.25} darkness={0.62} />
             <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />

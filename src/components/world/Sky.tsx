@@ -34,10 +34,11 @@ const domeFrag = /* glsl */ `
   uniform float uPhase;
   varying float vH;
   void main() {
-    vec3 zenith  = mix(vec3(0.008, 0.011, 0.042), vec3(0.055, 0.045, 0.135), uPhase);
-    vec3 mid     = mix(vec3(0.035, 0.045, 0.120), vec3(0.115, 0.085, 0.215), uPhase);
-    vec3 horizon = mix(vec3(0.070, 0.085, 0.205), vec3(0.29, 0.19, 0.29), uPhase);
-    vec3 glow    = mix(vec3(0.075, 0.115, 0.185), vec3(0.33, 0.21, 0.23), uPhase);
+    // dawn drifts into a soft pastel: peach horizon -> lavender mid -> pale blue zenith
+    vec3 zenith  = mix(vec3(0.008, 0.011, 0.042), vec3(0.36, 0.51, 0.72), uPhase);
+    vec3 mid     = mix(vec3(0.035, 0.045, 0.120), vec3(0.62, 0.52, 0.74), uPhase);
+    vec3 horizon = mix(vec3(0.070, 0.085, 0.205), vec3(0.95, 0.72, 0.56), uPhase);
+    vec3 glow    = mix(vec3(0.075, 0.115, 0.185), vec3(0.98, 0.78, 0.62), uPhase);
     vec3 c = mix(mid, zenith, smoothstep(0.05, 0.72, vH));
     c = mix(horizon, c, smoothstep(-0.02, 0.26, vH));
     c += glow * smoothstep(0.22, 0.0, abs(vH - 0.045)) * 0.55;
@@ -769,8 +770,9 @@ export function Sky() {
   const rich = quality === "rich";
 
   useFrame((state, dt) => {
-    // advance the slow dusk⇄dawn cycle (5-minute loop)
-    skyState.phase = 0.5 + 0.5 * Math.sin((state.clock.elapsedTime * Math.PI * 2) / 300 - Math.PI / 2);
+    // advance the dusk⇄dawn cycle; eased so the world lingers in golden hour
+    const raw = 0.5 + 0.5 * Math.sin((state.clock.elapsedTime * Math.PI * 2) / 420 - Math.PI / 2);
+    skyState.phase = 1 - Math.pow(1 - raw, 0.55);
   });
 
   return (
