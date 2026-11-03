@@ -78,10 +78,7 @@ function meadowGeometry(): THREE.BufferGeometry {
   head.translate(0, 0.05, 0);
   head.rotateX(0.35);
   head.translate(0, 0.5, 0.48 * 0.62 * 0.48);
-  head.scale(1, 1, 1);
-  const merged = mergeGeometries([blade.index ? blade.toNonIndexed() : blade, head.toNonIndexed()], false)!;
-  merged.computeVertexNormals();
-  merged.computeBoundingSphere();
+  const merged = mergeAll([blade, head]);
   return merged;
 }
 
@@ -96,12 +93,8 @@ function ornamentalGeometry(): THREE.BufferGeometry {
   const puff = new THREE.IcosahedronGeometry(0.075, 1);
   puff.scale(1, 1.7, 1);
   puff.translate(0, 0.62, 0.14);
-  paintUniform(puff, new THREE.Color("#e8dcc0"));
   parts.push(puff.toNonIndexed());
-  const merged = mergeGeometries(parts, false)!;
-  merged.computeVertexNormals();
-  merged.computeBoundingSphere();
-  return merged;
+  return mergeAll(parts);
 }
 
 function paintUniform(geo: THREE.BufferGeometry, c: THREE.Color) {
@@ -113,6 +106,26 @@ function paintUniform(geo: THREE.BufferGeometry, c: THREE.Color) {
     colors[i * 3 + 2] = c.b;
   }
   geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+}
+
+/**
+ * Safe merge: toNonIndexed every part (three.js can't merge mixed index state)
+ * and make vertex attributes uniform — if ANY part has a "color" attribute,
+ * fill the ones missing it with white, because mergeGeometries() returns null
+ * on mismatched attribute sets (crashes downstream on the null).
+ */
+function mergeAll(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const normalized = parts.map((p) => (p.index ? p.toNonIndexed() : p));
+  if (normalized.some((p) => p.attributes.color)) {
+    const white = new THREE.Color(1, 1, 1);
+    normalized.forEach((p) => {
+      if (!p.attributes.color) paintUniform(p, white);
+    });
+  }
+  const merged = mergeGeometries(normalized, false);
+  if (!merged) throw new Error(`mergeAll: ${parts.length} parts have incompatible attributes`);
+  merged.computeVertexNormals();
+  return merged;
 }
 
 /* ---------- shared translucent wind shader ---------- */
@@ -400,10 +413,7 @@ function flowerGeometry(kind: FlowerKind): THREE.BufferGeometry {
     paintUniform(core, new THREE.Color(FLOWER_HUES.daisy.core));
     parts.push(core.toNonIndexed());
   }
-  const merged = mergeGeometries(parts, false)!;
-  merged.computeVertexNormals();
-  merged.computeBoundingSphere();
-  return merged;
+  return mergeAll(parts);
 }
 
 const KINDS: FlowerKind[] = ["daisy", "lavender", "poppy", "babys"];
