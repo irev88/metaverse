@@ -99,15 +99,14 @@ function injectHybridDragonShader(
           );
         }
 
-        // 3D Cellular Voronoi evaluator for large, sculpted Night Fury armor plates on distal legs, feet, brows & snout!
-        // Returns vec4(domeHeight, gradX, gradY, gradZ) in object space.
-        vec4 evalMacroArmorPlate3D(vec3 p) {
-          vec3 sp = p * 34.0; // ~2.9 cm bold reptilian shield scutes!
+        // Multi-frequency 3D Cellular Voronoi evaluator for smooth, natural reptilian scale gradation:
+        // Bridges vaguely from fine body hide -> medium transitional limb scales -> larger distal paw/snout scutes!
+        float evalArmorScuteDome3D(vec3 p, float cellFreq) {
+          vec3 sp = p * cellFreq;
           vec3 ip = floor(sp);
           vec3 fp = fract(sp);
           float d1 = 8.0;
           float d2 = 8.0;
-          vec3 nearestVec = vec3(0.0);
           for (int dz = -1; dz <= 1; dz++) {
             for (int dy = -1; dy <= 1; dy++) {
               for (int dx = -1; dx <= 1; dx++) {
@@ -123,39 +122,54 @@ function injectHybridDragonShader(
                 if (d < d1) {
                   d2 = d1;
                   d1 = d;
-                  nearestVec = r;
                 } else if (d < d2) {
                   d2 = d;
                 }
               }
             }
           }
-          float border = clamp((d2 - d1) / 0.28, 0.0, 1.0);
-          float dome = smoothstep(0.0, 0.42, border) * (1.0 - 0.32 * d1 * d1);
-          vec3 outGrad = -normalize(nearestVec + vec3(1e-5)) * (1.0 - smoothstep(0.0, 0.58, d1)) * smoothstep(0.02, 0.35, border);
-          return vec4(dome, outGrad);
+          float border = clamp((d2 - d1) / 0.32, 0.0, 1.0);
+          return smoothstep(0.0, 0.48, border) * (1.0 - 0.26 * d1 * d1);
+        }
+
+        // Evaluates organically dithered, vague multi-tier scale blending (zero sharp boundary lines!)
+        vec2 evalBlendedScuteHierarchy(vec3 p, float rawAnatomyX) {
+          float zoneNoise =
+            (noise3D(p * 8.5 + vec3(2.1, 0.7, 4.3)) - 0.5) * 0.52 +
+            (noise3D(p * 21.0 - vec3(1.4, 3.8, 0.9)) - 0.5) * 0.30;
+          float z = rawAnatomyX + zoneNoise;
+          float mesoW = smoothstep(0.42, 1.38, z);
+          float macroW = smoothstep(0.96, 1.96, z);
+          float totalW = clamp(mesoW * 0.55 + macroW * 0.45, 0.0, 1.0);
+          if (totalW <= 0.005) return vec2(0.5, 0.0);
+          float mesoDome = evalArmorScuteDome3D(p, 64.0);
+          float macroDome = macroW > 0.005 ? evalArmorScuteDome3D(p + vec3(0.37, 0.19, 0.53), 35.0) : mesoDome;
+          float dome = mix(mesoDome, macroDome, smoothstep(0.0, 1.0, macroW));
+          return vec2(dome, totalW);
         }`
       )
       .replace(
         '#include <map_fragment>',
         `#include <map_fragment>
-        // Three-tier scale hierarchy: fine pebble hide (0..1) -> bold, large 3D Voronoi armor plates (1..2) on distal legs, feet & head!
-        float macroWeight = clamp(vAnatomyData.x, 0.0, 1.0);
-        float plateArmor = clamp(vAnatomyData.x - 1.0, 0.0, 1.0);
+        // Smooth, vaguely blended multi-tier scale hierarchy across body, limbs, paws & head!
+        float scaleDither = (noise3D(vObjPos * 10.5) - 0.5) * 0.34;
+        float macroWeight = smoothstep(0.08, 0.96, vAnatomyData.x + scaleDither);
         float scarWeight = clamp(vAnatomyData.y, 0.0, 1.0);
         float thinness = clamp(vAnatomyData.w, 0.0, 1.0);
 
         #ifdef USE_MAP
           vec4 fineAlbedo = texture2D(map, vMapUv * 2.85);
-          diffuseColor.rgb = mix(fineAlbedo.rgb * 0.92, diffuseColor.rgb * 1.12, macroWeight);
+          diffuseColor.rgb = mix(fineAlbedo.rgb * 0.94, diffuseColor.rgb * 1.08, macroWeight);
         #endif
 
-        if (plateArmor > 0.01 && !${isWingMembrane ? 'true' : 'false'}) {
-          vec4 plate = evalMacroArmorPlate3D(vObjPos);
-          // Deep obsidian-charcoal interstitial groove + slightly brighter slate-sheen crown on large scutes!
-          vec3 plateCrown = diffuseColor.rgb * 1.48 + vec3(0.018, 0.022, 0.028);
-          vec3 plateGroove = diffuseColor.rgb * 0.22;
-          diffuseColor.rgb = mix(diffuseColor.rgb, mix(plateGroove, plateCrown, plate.x), plateArmor * 0.92);
+        if (vAnatomyData.x > 0.18 && !${isWingMembrane ? 'true' : 'false'}) {
+          vec2 scute = evalBlendedScuteHierarchy(vObjPos, vAnatomyData.x);
+          if (scute.y > 0.005) {
+            // Subtle, natural obsidian-slate tonal modulation so small & large scales merge seamlessly!
+            vec3 plateCrown = diffuseColor.rgb * 1.22 + vec3(0.009, 0.011, 0.015);
+            vec3 plateGroove = diffuseColor.rgb * 0.52;
+            diffuseColor.rgb = mix(diffuseColor.rgb, mix(plateGroove, plateCrown, scute.x), scute.y * 0.68);
+          }
         }
 
         // Subtle Night Fury manta-ray flank mottling
@@ -174,17 +188,18 @@ function injectHybridDragonShader(
       .replace(
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
-        float macroRWeight = clamp(vAnatomyData.x, 0.0, 1.0);
-        float plateRArmor = clamp(vAnatomyData.x - 1.0, 0.0, 1.0);
+        float rScaleDither = (noise3D(vObjPos * 10.5) - 0.5) * 0.34;
+        float macroRWeight = smoothstep(0.08, 0.96, vAnatomyData.x + rScaleDither);
         float scarRWeight = clamp(vAnatomyData.y, 0.0, 1.0);
         #ifdef USE_ROUGHNESSMAP
           float fineRough = texture2D(roughnessMap, vRoughnessMapUv * 2.85).g;
-          roughnessFactor = mix(fineRough * 1.06, roughnessFactor * 0.84, macroRWeight);
+          roughnessFactor = mix(fineRough * 1.04, roughnessFactor * 0.88, macroRWeight);
         #endif
-        if (plateRArmor > 0.01 && !${isWingMembrane ? 'true' : 'false'}) {
-          vec4 plateR = evalMacroArmorPlate3D(vObjPos);
-          // Glossy keratin-shield scute crowns (0.22) vs matte crevices (0.78) so individual large plates catch crisp rim light!
-          roughnessFactor = mix(roughnessFactor, mix(0.78, 0.22, plateR.x), plateRArmor * 0.88);
+        if (vAnatomyData.x > 0.18 && !${isWingMembrane ? 'true' : 'false'}) {
+          vec2 scuteR = evalBlendedScuteHierarchy(vObjPos, vAnatomyData.x);
+          if (scuteR.y > 0.005) {
+            roughnessFactor = mix(roughnessFactor, mix(0.66, 0.30, scuteR.x), scuteR.y * 0.62);
+          }
         }
         roughnessFactor = mix(roughnessFactor, 0.44, scarRWeight * 0.75);
         roughnessFactor = mix(roughnessFactor, 0.072, uLightningCloak * 0.88);
@@ -209,21 +224,23 @@ function injectHybridDragonShader(
         #elif defined( USE_NORMALMAP_TANGENTSPACE )
           vec3 mapNMacro = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
           vec3 mapNFine = texture2D( normalMap, vNormalMapUv * 2.85 ).xyz * 2.0 - 1.0;
-          float mScaleW = clamp(vAnatomyData.x, 0.0, 1.0);
-          float plateNW = clamp(vAnatomyData.x - 1.0, 0.0, 1.0);
+          float nScaleDither = (noise3D(vObjPos * 10.5) - 0.5) * 0.34;
+          float mScaleW = smoothstep(0.08, 0.96, vAnatomyData.x + nScaleDither);
           float scarW = clamp(vAnatomyData.y, 0.0, 1.0);
+          vec2 scuteN = (vAnatomyData.x > 0.18 && !${isWingMembrane ? 'true' : 'false'})
+            ? evalBlendedScuteHierarchy(vObjPos, vAnatomyData.x)
+            : vec2(0.5, 0.0);
           vec3 blendedMapN = normalize(mix(
-            vec3(mapNFine.xy * 0.82, max(mapNFine.z, 0.15)),
-            vec3(mapNMacro.xy * 1.45, max(mapNMacro.z, 0.15)),
+            vec3(mapNFine.xy * 0.90, max(mapNFine.z, 0.15)),
+            vec3(mapNMacro.xy * 1.28, max(mapNMacro.z, 0.15)),
             mScaleW
           ));
           blendedMapN.xy *= (1.0 - scarW * 0.72);
-          blendedMapN.xy *= normalScale * (1.0 - plateNW * 0.55);
+          blendedMapN.xy *= normalScale * (1.0 - scuteN.y * 0.38);
           vec3 tbnN = tbn * blendedMapN;
           normal = dot(tbnN, tbnN) > 1e-8 ? normalize(tbnN) : normal;
-          if (plateNW > 0.01 && !${isWingMembrane ? 'true' : 'false'}) {
-            vec4 plateN = evalMacroArmorPlate3D(vObjPos);
-            float plateBumpH = plateN.x * plateNW * 0.020 * (1.0 - scarW * 0.8);
+          if (scuteN.y > 0.005 && !${isWingMembrane ? 'true' : 'false'}) {
+            float plateBumpH = scuteN.x * scuteN.y * 0.013 * (1.0 - scarW * 0.8);
             vec3 dPdx = dFdx( -vViewPosition );
             vec3 dPdy = dFdy( -vViewPosition );
             vec3 r1 = cross( dPdy, normal );

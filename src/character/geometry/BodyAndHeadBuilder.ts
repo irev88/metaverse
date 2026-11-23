@@ -1063,17 +1063,18 @@ function buildSingleMuscularLimb(
         digitBulge += 0.16 * pawZone * Math.max(-0.12, fourKnuckles) * smoothstep(-0.35, 0.45, cosT);
       }
 
-      // Sculpted 3D hexagonal/pebble armor scute domes on lower forearm/shin & dorsal foot (refs 04 & 06)!
-      const anteriorOuterMask = smoothstep(-0.25, 0.55, cosT + 0.35 * isOuterAspect);
-      const distalArmorZone = smoothstep(0.36, 0.68, rootToPaw);
+      // Gradual, organic reptilian scute transition down the limb (no abrupt mid-leg cuff line!)
+      const anteriorOuterMask = smoothstep(-0.82, 0.78, cosT + 0.35 * isOuterAspect);
+      const distalArmorZone = Math.pow(smoothstep(0.08, 0.94, rootToPaw), 1.42);
+      const pawTipDomeZone = Math.pow(smoothstep(0.56, 0.95, rootToPaw), 1.75);
       const scuteCellU = rootToPaw * 22.0;
       const scuteCellV = vFrac * 14.0 + Math.floor(scuteCellU) * 0.5;
       const scuteDome =
         Math.max(0, Math.sin(scuteCellU * Math.PI)) *
         Math.max(0, Math.sin(scuteCellV * Math.PI)) *
-        0.0038 *
+        0.0018 *
         anteriorOuterMask *
-        distalArmorZone;
+        pawTipDomeZone;
 
       const effW = rWidth * latFlushFactor * digitBulge + scuteDome;
       const effD = rDepth * digitBulge + scuteDome;
@@ -1095,8 +1096,8 @@ function buildSingleMuscularLimb(
       uvs[vIdx * 2] = rootToPaw * 1.35;
       uvs[vIdx * 2 + 1] = vFrac * 0.85;
 
-      // Bold, unmistakable macro armor scale plates (up to 1.98) on distal legs & tops of feet!
-      anatomy[vIdx * 4] = 0.36 + 1.62 * anteriorOuterMask * distalArmorZone;
+      // Smooth continuous gradient from fine upper-limb hide (0.34) through medium mid-limb scales into distal paw scutes (1.82)
+      anatomy[vIdx * 4] = 0.34 + 1.48 * anteriorOuterMask * distalArmorZone;
 
       const skin = computeChainSkinWeight(pos, chainIndices, chainPositions, 3.5);
       const trunkBlend = smoothstep(0.24, 0.0, rootToPaw) * 0.72;

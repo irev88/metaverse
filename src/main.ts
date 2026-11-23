@@ -217,6 +217,9 @@ async function bootstrap(): Promise<void> {
       onMistDensityChange(mist) {
         atmosphere.setMistDensity(mist, scene);
       },
+      onRainIntensityChange(rain) {
+        atmosphere.setRainIntensity(rain);
+      },
       onOceanParamsChange(patch) {
         cliffWorld.ocean.setOceanParams(patch);
       },
@@ -368,7 +371,7 @@ async function bootstrap(): Promise<void> {
   toothlessController.update(0.016);
   lightFuryController.update(0.016);
   atmosphere.update(0, new THREE.Vector3(0, 1.15, 0.35), camera.position);
-  cliffWorld.update(0);
+  cliffWorld.update(0, camera.position);
   composer.render();
 
   const clock = new THREE.Clock();
@@ -521,7 +524,7 @@ async function bootstrap(): Promise<void> {
     lightFuryAsset.updateAutoLOD(camDist);
 
     atmosphere.update(elapsed, flightStep.worldFocus, camera.position);
-    cliffWorld.update(elapsed);
+    cliffWorld.update(elapsed, camera.position);
 
     fpsAccum += dt;
     fpsFrames++;

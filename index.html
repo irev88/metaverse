@@ -27,8 +27,8 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #070a12;
-        color: #f3efe9;
+        background: #060912;
+        color: #f4f0eb;
       }
       #loading-curtain {
         position: fixed;
@@ -38,64 +38,173 @@
         flex-direction: column;
         justify-content: space-between;
         align-items: center;
-        padding: clamp(24px, 5vh, 52px) clamp(20px, 5vw, 64px);
+        overflow: hidden;
+        padding: clamp(20px, 4.2vh, 46px) clamp(18px, 4.8vw, 60px);
         background:
-          radial-gradient(ellipse 92% 58% at 50% 88%, rgba(232, 178, 166, 0.16) 0%, rgba(162, 152, 198, 0.08) 42%, transparent 76%),
-          radial-gradient(ellipse 75% 50% at 50% 18%, rgba(124, 164, 212, 0.10) 0%, transparent 70%),
-          linear-gradient(180deg, #060911 0%, #0b1220 54%, #161d2e 84%, #1d2030 100%);
-        transition: opacity 1.15s cubic-bezier(0.22, 1, 0.36, 1), visibility 1.15s ease;
+          radial-gradient(ellipse 96% 56% at 50% 92%, rgba(235, 172, 146, 0.20) 0%, rgba(168, 148, 198, 0.10) 42%, transparent 76%),
+          radial-gradient(ellipse 80% 52% at 50% 14%, rgba(110, 162, 224, 0.14) 0%, transparent 72%),
+          linear-gradient(180deg, #050811 0%, #0a1222 50%, #141d30 82%, #1d2133 100%);
+        transition:
+          opacity 1.15s cubic-bezier(0.22, 1, 0.36, 1),
+          transform 1.25s cubic-bezier(0.22, 1, 0.36, 1),
+          filter 1.15s cubic-bezier(0.22, 1, 0.36, 1),
+          visibility 1.2s ease;
       }
       #loading-curtain.is-dissolving {
         opacity: 0;
+        transform: scale(1.035);
+        filter: blur(10px);
         visibility: hidden;
         pointer-events: none;
+      }
+      #lc-ambient-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 0;
+      }
+      .lc-aurora-glow {
+        position: absolute;
+        inset: -18% -10% auto -10%;
+        height: 62%;
+        pointer-events: none;
+        z-index: 0;
+        background:
+          radial-gradient(ellipse 52% 38% at 32% 36%, rgba(118, 186, 236, 0.13), transparent 72%),
+          radial-gradient(ellipse 48% 36% at 68% 42%, rgba(236, 178, 196, 0.12), transparent 72%);
+        filter: blur(26px);
+        animation: lcAuroraBreathe 9s ease-in-out infinite alternate;
+      }
+      @keyframes lcAuroraBreathe {
+        0% { transform: translate3d(-2%, -1%, 0) scale(0.98); opacity: 0.72; }
+        100% { transform: translate3d(2%, 2%, 0) scale(1.05); opacity: 1; }
       }
     </style>
   </head>
   <body>
     <div id="loading-curtain" role="status" aria-live="polite">
+      <canvas id="lc-ambient-canvas" aria-hidden="true"></canvas>
+      <div class="lc-aurora-glow" aria-hidden="true"></div>
+
       <div class="lc-top-meta">
-        <span>NORTH SEA ARCHIPELAGO &middot; 62&deg;14&prime;N</span>
+        <span class="lc-live-coord">
+          <span class="lc-live-dot"></span>
+          NORTH SEA ARCHIPELAGO &middot; 62&deg;14&prime;N 07&deg;11&prime;W
+        </span>
         <span class="lc-meta-sep"></span>
-        <span>WEBGL2 REALTIME ATELIER</span>
+        <span>228-BONE WEBGL2 REALTIME ATELIER</span>
       </div>
 
       <div class="lc-centerpiece">
         <div class="lc-emblem-wrap" aria-hidden="true">
-          <svg class="lc-emblem" viewBox="0 0 120 120" fill="none">
-            <circle cx="60" cy="60" r="52" stroke="url(#twilightRing)" stroke-width="0.75" stroke-dasharray="2 3" opacity="0.55" />
-            <path d="M22 66 C34 34, 72 24, 96 48" stroke="url(#wingArcWarm)" stroke-width="1.25" stroke-linecap="round" />
-            <path d="M98 54 C86 86, 48 96, 24 72" stroke="url(#wingArcCool)" stroke-width="1.25" stroke-linecap="round" />
-            <circle cx="60" cy="60" r="2.2" fill="#f3dfc8" />
+          <div class="lc-emblem-halo"></div>
+          <svg class="lc-emblem" viewBox="0 0 160 160" fill="none">
             <defs>
-              <linearGradient id="twilightRing" x1="10" y1="10" x2="110" y2="110" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stop-color="#e8c7b8" stop-opacity="0.7" />
-                <stop offset="50%" stop-color="#a8c4e6" stop-opacity="0.3" />
-                <stop offset="100%" stop-color="#e8c7b8" stop-opacity="0.7" />
+              <linearGradient id="twilightRing" x1="16" y1="16" x2="144" y2="144" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#f0d2bc" stop-opacity="0.72" />
+                <stop offset="50%" stop-color="#9ec4ee" stop-opacity="0.28" />
+                <stop offset="100%" stop-color="#ecc0d0" stop-opacity="0.72" />
               </linearGradient>
-              <linearGradient id="wingArcWarm" x1="22" y1="66" x2="96" y2="48" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stop-color="#e8c5b0" stop-opacity="0.05" />
-                <stop offset="55%" stop-color="#f2d5c4" stop-opacity="0.88" />
-                <stop offset="100%" stop-color="#f7e7dc" stop-opacity="0.95" />
+              <linearGradient id="wingArcWarm" x1="26" y1="90" x2="134" y2="62" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#7ec8f8" stop-opacity="0.0" />
+                <stop offset="48%" stop-color="#9fd8f8" stop-opacity="0.78" />
+                <stop offset="100%" stop-color="#f7e4d2" stop-opacity="0.98" />
               </linearGradient>
-              <linearGradient id="wingArcCool" x1="98" y1="54" x2="24" y2="72" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stop-color="#a9c8ec" stop-opacity="0.05" />
-                <stop offset="55%" stop-color="#c6daf4" stop-opacity="0.85" />
-                <stop offset="100%" stop-color="#f0c8dc" stop-opacity="0.95" />
+              <linearGradient id="wingArcCool" x1="134" y1="70" x2="26" y2="98" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#f2c4d8" stop-opacity="0.0" />
+                <stop offset="52%" stop-color="#f2cede" stop-opacity="0.82" />
+                <stop offset="100%" stop-color="#d4e6fc" stop-opacity="0.98" />
               </linearGradient>
+              <radialGradient id="coreStarGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#fff6ec" stop-opacity="1" />
+                <stop offset="45%" stop-color="#f2d5be" stop-opacity="0.65" />
+                <stop offset="100%" stop-color="#adc8e8" stop-opacity="0" />
+              </radialGradient>
             </defs>
+
+            <!-- Outer slow-rotating nautical astrolabe ring -->
+            <g class="lc-ring-outer">
+              <circle cx="80" cy="80" r="70" stroke="url(#twilightRing)" stroke-width="0.75" stroke-opacity="0.48" />
+              <circle cx="80" cy="80" r="64" stroke="url(#twilightRing)" stroke-width="0.75" stroke-dasharray="1.5 4.5" opacity="0.62" />
+              <path d="M80 6 V13 M80 147 V154 M6 80 H13 M147 80 H154" stroke="#ebd0b7" stroke-opacity="0.55" stroke-width="1" stroke-linecap="round" />
+            </g>
+
+            <!-- Inner counter-rotating celestial compass ring -->
+            <g class="lc-ring-inner">
+              <circle cx="80" cy="80" r="49" stroke="#bfd6f2" stroke-opacity="0.22" stroke-width="0.7" stroke-dasharray="6 5" />
+              <polygon points="80,25 82.2,31 77.8,31" fill="#ebd0b7" fill-opacity="0.65" />
+              <polygon points="80,135 82.2,129 77.8,129" fill="#adc8e8" fill-opacity="0.55" />
+            </g>
+
+            <!-- Synchronized Twin Dragon Glide Trails & Silhouettes -->
+            <g class="lc-duet-orbit">
+              <path
+                class="lc-glide-arc lc-glide-nf"
+                d="M28 88 C42 44, 96 32, 130 64"
+                stroke="url(#wingArcWarm)"
+                stroke-width="1.85"
+                stroke-linecap="round"
+              />
+              <!-- Night Fury (Toothless) crisp stylized glider silhouette at arc head -->
+              <path
+                class="lc-dragon-glyph lc-glyph-nf"
+                d="M129 63 L120 55 L123 62 L115 65 L124 65 L127 72 L128 65 L135 66 Z"
+                fill="#f6e3cf"
+              />
+
+              <path
+                class="lc-glide-arc lc-glide-lf"
+                d="M132 72 C118 116, 64 128, 30 96"
+                stroke="url(#wingArcCool)"
+                stroke-width="1.85"
+                stroke-linecap="round"
+              />
+              <!-- Light Fury crisp stylized glider silhouette at counter-arc head -->
+              <path
+                class="lc-dragon-glyph lc-glyph-lf"
+                d="M31 97 L40 105 L37 98 L45 95 L36 95 L33 88 L32 95 L25 94 Z"
+                fill="#e2eeff"
+              />
+            </g>
+
+            <!-- Pulsing Horizon Convergence Star -->
+            <circle class="lc-core-aura" cx="80" cy="80" r="13" fill="url(#coreStarGlow)" />
+            <path d="M80 71 L81.8 78.2 L89 80 L81.8 81.8 L80 89 L78.2 81.8 L71 80 L78.2 78.2 Z" fill="#fff4e8" opacity="0.92" />
           </svg>
         </div>
 
-        <p class="lc-eyebrow">NIGHT FURY &amp; LIGHT FURY</p>
+        <p class="lc-eyebrow">NIGHT FURY &amp; LIGHT FURY &middot; INTERACTIVE SANCTUARY</p>
         <h1 class="lc-title">Where Dusk Meets <em>the Open Tide</em></h1>
         <p class="lc-epigraph">
-          Two silhouettes poised above basalt cliffs and restless northern swells&mdash;an interactive study in anatomy, luminescence, and flight.
+          Two silhouettes poised above rain-kissed basalt cliffs, crashing northern surf, and plunging sea-cove cascades&mdash;a study in anatomy, luminescence, and flight.
         </p>
+
+        <div class="lc-stage-pills" id="lc-stage-pills" aria-hidden="true">
+          <div class="lc-stage-pill is-active" data-step="0">
+            <span class="lc-pill-dot"></span>
+            <span>Archipelago &amp; Tide</span>
+          </div>
+          <div class="lc-stage-pill" data-step="1">
+            <span class="lc-pill-dot"></span>
+            <span>Night Fury Rig</span>
+          </div>
+          <div class="lc-stage-pill" data-step="2">
+            <span class="lc-pill-dot"></span>
+            <span>Light Fury Cloak</span>
+          </div>
+          <div class="lc-stage-pill" data-step="3">
+            <span class="lc-pill-dot"></span>
+            <span>Flight &amp; Shaders</span>
+          </div>
+        </div>
 
         <div class="lc-progress-block">
           <div class="lc-progress-track">
-            <div class="lc-progress-fill" id="lc-progress-fill"></div>
+            <div class="lc-progress-fill" id="lc-progress-fill">
+              <span class="lc-progress-comet"></span>
+            </div>
           </div>
           <div class="lc-progress-meta">
             <span class="lc-stage-text" id="lc-stage-text">Awakening coastal twilight&hellip;</span>
@@ -109,6 +218,120 @@
         <span>SPACE &mdash; COURTSHIP FLIGHT &middot; ? &mdash; CONTROLS GUIDE</span>
       </div>
     </div>
+
+    <script>
+      (function () {
+        var canvas = document.getElementById('lc-ambient-canvas');
+        if (!canvas || !canvas.getContext) return;
+        var ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        var dpr = Math.min(window.devicePixelRatio || 1, 2);
+        var w = 0, h = 0, rafId = 0, start = performance.now();
+
+        function resize() {
+          w = window.innerWidth;
+          h = window.innerHeight;
+          canvas.width = Math.max(1, Math.floor(w * dpr));
+          canvas.height = Math.max(1, Math.floor(h * dpr));
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        var embers = [];
+        for (var i = 0; i < 46; i++) {
+          embers.push({
+            x: Math.random(),
+            y: Math.random(),
+            r: 0.8 + Math.random() * 2.1,
+            vx: (Math.random() - 0.35) * 0.018,
+            vy: -0.012 - Math.random() * 0.026,
+            phase: Math.random() * 6.28,
+            warm: Math.random() > 0.45
+          });
+        }
+
+        var rain = [];
+        for (var j = 0; j < 44; j++) {
+          rain.push({
+            x: Math.random(),
+            y: Math.random(),
+            len: 14 + Math.random() * 22,
+            speed: 0.45 + Math.random() * 0.45,
+            alpha: 0.04 + Math.random() * 0.09
+          });
+        }
+
+        function frame(now) {
+          var curtain = document.getElementById('loading-curtain');
+          if (!curtain) {
+            window.removeEventListener('resize', resize);
+            return;
+          }
+          var t = (now - start) * 0.001;
+          ctx.clearRect(0, 0, w, h);
+
+          // 1. Soft slanted coastal twilight rain threads
+          ctx.lineWidth = 1;
+          for (var j = 0; j < rain.length; j++) {
+            var rd = rain[j];
+            var rx = ((rd.x + t * rd.speed * 0.14) % 1.15 - 0.075) * w;
+            var ry = ((rd.y + t * rd.speed) % 1.15 - 0.075) * h;
+            ctx.strokeStyle = 'rgba(196, 218, 246,' + rd.alpha.toFixed(3) + ')';
+            ctx.beginPath();
+            ctx.moveTo(rx, ry);
+            ctx.lineTo(rx + rd.len * 0.24, ry + rd.len);
+            ctx.stroke();
+          }
+
+          // 2. Rising bioluminescent & sunlit sea-spray embers
+          for (var i = 0; i < embers.length; i++) {
+            var em = embers[i];
+            var ex = ((em.x + t * em.vx + Math.sin(t * 0.7 + em.phase) * 0.018) % 1 + 1) % 1 * w;
+            var ey = ((em.y + t * em.vy) % 1 + 1) % 1 * h;
+            var pulse = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2.1 + em.phase));
+            ctx.fillStyle = em.warm
+              ? 'rgba(244, 214, 186,' + (0.28 * pulse).toFixed(3) + ')'
+              : 'rgba(168, 208, 248,' + (0.26 * pulse).toFixed(3) + ')';
+            ctx.beginPath();
+            ctx.arc(ex, ey, em.r, 0, 6.283);
+            ctx.fill();
+          }
+
+          // 3. Three gentle rolling North Sea horizon wave silhouettes at bottom
+          for (var layer = 0; layer < 3; layer++) {
+            var baseH = h - (22 + layer * 16);
+            var amp = 6 + layer * 3.5;
+            var spd = (0.65 - layer * 0.16) * (layer % 2 === 0 ? 1 : -1);
+            ctx.beginPath();
+            ctx.moveTo(0, h);
+            for (var x = 0; x <= w + 24; x += 24) {
+              var wy =
+                baseH +
+                Math.sin(x * 0.0065 + t * spd + layer * 1.7) * amp +
+                Math.cos(x * 0.013 - t * spd * 0.7) * (amp * 0.42);
+              ctx.lineTo(x, wy);
+            }
+            ctx.lineTo(w, h);
+            ctx.closePath();
+            ctx.fillStyle =
+              layer === 0
+                ? 'rgba(138, 178, 218, 0.045)'
+                : layer === 1
+                ? 'rgba(226, 186, 178, 0.038)'
+                : 'rgba(8, 13, 24, 0.42)';
+            ctx.fill();
+          }
+
+          rafId = requestAnimationFrame(frame);
+        }
+        rafId = requestAnimationFrame(frame);
+        window.__stopLoadingAmbient = function () {
+          if (rafId) cancelAnimationFrame(rafId);
+          window.removeEventListener('resize', resize);
+        };
+      })();
+    </script>
 
     <div id="canvas-container"></div>
     <div id="hud-root" class="hud-entering"></div>

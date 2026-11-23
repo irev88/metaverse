@@ -31,6 +31,7 @@ export interface WeatherPresetConfig {
   cloudLitColor: number;
   cloudCoverage: number;      // [0, 1]
   mistDensity: number;        // aerial perspective density
+  rainIntensity: number;      // [0, 1] physical precipitation & splash intensity
   exposure: number;
   nightFactor: number;        // [0, 1] stars & moon disc
   auroraIntensity: number;    // [0, 1] subtle boreal ribbon
@@ -63,6 +64,7 @@ export const WEATHER_PRESETS: Record<WeatherPresetId, WeatherPresetConfig> = {
     cloudLitColor: 0xf29a5e,
     cloudCoverage: 0.46,
     mistDensity: 0.0021,
+    rainIntensity: 0.36,
     exposure: 1.14,
     nightFactor: 0.0,
     auroraIntensity: 0.0,
@@ -93,6 +95,7 @@ export const WEATHER_PRESETS: Record<WeatherPresetId, WeatherPresetConfig> = {
     cloudLitColor: 0xffffff,
     cloudCoverage: 0.26,
     mistDensity: 0.0013,
+    rainIntensity: 0.0,
     exposure: 1.10,
     nightFactor: 0.0,
     auroraIntensity: 0.0,
@@ -123,6 +126,7 @@ export const WEATHER_PRESETS: Record<WeatherPresetId, WeatherPresetConfig> = {
     cloudLitColor: 0xea7e78,
     cloudCoverage: 0.42,
     mistDensity: 0.0024,
+    rainIntensity: 0.24,
     exposure: 1.18,
     nightFactor: 0.22,
     auroraIntensity: 0.0,
@@ -153,6 +157,7 @@ export const WEATHER_PRESETS: Record<WeatherPresetId, WeatherPresetConfig> = {
     cloudLitColor: 0x9aa8b5,
     cloudCoverage: 0.86,
     mistDensity: 0.0042,
+    rainIntensity: 0.58,
     exposure: 1.16,
     nightFactor: 0.0,
     auroraIntensity: 0.0,
@@ -183,6 +188,7 @@ export const WEATHER_PRESETS: Record<WeatherPresetId, WeatherPresetConfig> = {
     cloudLitColor: 0x2c4668,
     cloudCoverage: 0.24,
     mistDensity: 0.0018,
+    rainIntensity: 0.16,
     exposure: 1.26,
     nightFactor: 1.0,
     auroraIntensity: 0.65,
@@ -213,6 +219,7 @@ export const WEATHER_PRESETS: Record<WeatherPresetId, WeatherPresetConfig> = {
     cloudLitColor: 0x5e7082,
     cloudCoverage: 0.92,
     mistDensity: 0.0036,
+    rainIntensity: 1.0,
     exposure: 1.18,
     nightFactor: 0.0,
     auroraIntensity: 0.0,
@@ -235,6 +242,7 @@ export interface AtmosphereSharedUniforms {
   uCloudLitColor: { value: THREE.Color };
   uCloudCoverage: { value: number };
   uMistDensity: { value: number };
+  uRainIntensity: { value: number };
   uNightFactor: { value: number };
   uAuroraIntensity: { value: number };
   uWaterDeepColor: { value: THREE.Color };
@@ -259,6 +267,7 @@ export interface NordicAtmosphereController {
     scene: THREE.Scene
   ) => void;
   setMistDensity: (density: number, scene: THREE.Scene) => void;
+  setRainIntensity: (intensity: number) => void;
   setSunElevation: (
     elevDeg: number,
     renderer: THREE.WebGLRenderer,
@@ -461,6 +470,7 @@ export function createNordicAtmosphere(
     uCloudLitColor: { value: new THREE.Color(initCfg.cloudLitColor) },
     uCloudCoverage: { value: initCfg.cloudCoverage },
     uMistDensity: { value: initCfg.mistDensity },
+    uRainIntensity: { value: initCfg.rainIntensity },
     uNightFactor: { value: initCfg.nightFactor },
     uAuroraIntensity: { value: initCfg.auroraIntensity },
     uWaterDeepColor: { value: new THREE.Color(initCfg.waterDeepColor) },
@@ -574,6 +584,7 @@ export function createNordicAtmosphere(
       sharedUniforms.uCloudLitColor.value.setHex(cfg.cloudLitColor);
       sharedUniforms.uCloudCoverage.value = cfg.cloudCoverage;
       sharedUniforms.uMistDensity.value = cfg.mistDensity;
+      sharedUniforms.uRainIntensity.value = cfg.rainIntensity;
       sharedUniforms.uNightFactor.value = cfg.nightFactor;
       sharedUniforms.uAuroraIntensity.value = cfg.auroraIntensity;
       sharedUniforms.uWaterDeepColor.value.setHex(cfg.waterDeepColor);
@@ -605,6 +616,10 @@ export function createNordicAtmosphere(
       const dVal = THREE.MathUtils.clamp(density, 0.0005, 0.0075);
       sharedUniforms.uMistDensity.value = dVal;
       fog.density = dVal;
+    },
+
+    setRainIntensity(intensity: number) {
+      sharedUniforms.uRainIntensity.value = THREE.MathUtils.clamp(intensity, 0.0, 1.0);
     },
 
     setSunElevation(elevDeg: number, _glRenderer: THREE.WebGLRenderer, targetScene: THREE.Scene) {

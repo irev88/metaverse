@@ -94,6 +94,7 @@ export interface RigStudioHUDCallbacks {
   onSelectWeatherPreset: (presetId: WeatherPresetId) => void;
   onSunElevationChange: (elevDeg: number) => void;
   onMistDensityChange: (mist: number) => void;
+  onRainIntensityChange: (rain: number) => void;
   onOceanParamsChange: (patch: Partial<OceanWaveParams>) => void;
   onFlightResetCamera: () => void;
   onFlightSpeedChange: (speedMultiplier: number) => void;
@@ -1034,6 +1035,26 @@ export function createRigStudioHUD(
     callbacks.onMistDensityChange(fromMistSlider(s));
   });
 
+  const initRainVal = initPresetObj.rainIntensity;
+  const rainRow = document.createElement('div');
+  rainRow.className = 'control-row';
+  rainRow.innerHTML = `
+    <div class="control-label-line">
+      <span>Coastal Rain &amp; Splash Physics</span>
+      <span class="control-val" id="rain-val">${initRainVal.toFixed(2)}</span>
+    </div>
+    <input type="range" id="rain-slider" min="0" max="1" step="0.01" value="${initRainVal.toFixed(2)}" />
+  `;
+  const rainSlider = rainRow.querySelector('#rain-slider') as HTMLInputElement;
+  const rainVal = rainRow.querySelector('#rain-val') as HTMLElement;
+  syncSliderFill(rainSlider);
+  rainSlider.addEventListener('input', () => {
+    const r = parseFloat(rainSlider.value);
+    rainVal.textContent = r.toFixed(2);
+    syncSliderFill(rainSlider);
+    callbacks.onRainIntensityChange(r);
+  });
+
   let seaPresetDescEl: HTMLElement | null = null;
 
   const applyWeatherPresetUI = (presetId: WeatherPresetId) => {
@@ -1048,6 +1069,9 @@ export function createRigStudioHUD(
     mistSlider.value = ms.toFixed(2);
     mistVal.textContent = ms.toFixed(2);
     syncSliderFill(mistSlider);
+    rainSlider.value = wp.rainIntensity.toFixed(2);
+    rainVal.textContent = wp.rainIntensity.toFixed(2);
+    syncSliderFill(rainSlider);
     callbacks.onSelectWeatherPreset(wp.id);
 
     let pairedSea: { idx: number; desc: string; params: OceanWaveParams } | null = null;
@@ -1084,6 +1108,7 @@ export function createRigStudioHUD(
   secWorld.appendChild(weatherGrid);
   secWorld.appendChild(elevRow);
   secWorld.appendChild(mistRow);
+  secWorld.appendChild(rainRow);
 
   // Curated One-Click Scene Moments (Syncs Sky + Ocean + Both Dragons!)
   const momentChips: HTMLButtonElement[] = [];

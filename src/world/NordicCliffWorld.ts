@@ -6,7 +6,7 @@ import { createNorthSeaOcean, NorthSeaOceanController } from './NorthSeaOcean';
 export interface NordicWorldScene {
   group: THREE.Group;
   ocean: NorthSeaOceanController;
-  update: (timeSec: number) => void;
+  update: (timeSec: number, cameraPos?: THREE.Vector3) => void;
 }
 
 export const SEA_LEVEL_Y = -11.5;
@@ -124,31 +124,32 @@ function evalSteppedRockyCliffDescent(
   // Multi-scale lateral buttress & sea-cave warping so vertical cliff faces weave in and out organically!
   const macroButtress = fbm2D(wx * 0.052 + seed * 1.3, wz * 0.052 - seed * 1.7, 3) - 0.5;
   const mesoButtress = roundedRidge2D(wx * 0.115 - seed * 2.1, wz * 0.115 + seed * 1.4, 2) - 0.48;
+  const diagChute = roundedRidge2D((wx * 0.86 + wz * 0.50) * 0.17 + seed * 2.9, (wz * 0.86 - wx * 0.50) * 0.14 - seed, 2) - 0.48;
   const fineJoint = fbm2D(wx * 0.24 + seed * 0.9, wz * 0.24 - seed * 2.3, 2) - 0.5;
   const warpedT = THREE.MathUtils.clamp(
-    rawT - (macroButtress * 0.34 + mesoButtress * 0.24 + fineJoint * 0.11) * midMask,
+    rawT - (macroButtress * 0.40 + mesoButtress * 0.28 + diagChute * 0.18 + fineJoint * 0.12) * midMask,
     0.0,
     1.0
   );
 
   // Discontinuous staggered mid-cliff basalt benches (never continuous horizontal stripes!)
   const benchPresence = smoothstep(
-    0.28,
-    0.74,
+    0.24,
+    0.72,
     fbm2D(wx * 0.058 + seed * 1.7, wz * 0.058 - seed * 1.3, 2)
   );
-  const benchLevel = 0.36 + 0.24 * (fbm2D(wx * 0.085 - seed, wz * 0.085 + seed, 2) - 0.5);
+  const benchLevel = 0.36 + 0.26 * (fbm2D(wx * 0.085 - seed, wz * 0.085 + seed, 2) - 0.5);
 
-  const upperScarp = smoothstep(0.0, 0.42, warpedT);
-  const lowerScarp = smoothstep(0.56, 1.0, warpedT);
+  const upperScarp = smoothstep(0.0, 0.38, warpedT);
+  const lowerScarp = smoothstep(0.58, 1.0, warpedT);
   const steppedFrac = upperScarp * benchLevel + lowerScarp * (1.0 - benchLevel);
-  const sheerFrac = Math.pow(warpedT, 0.80);
-  const baseFrac = THREE.MathUtils.lerp(sheerFrac, steppedFrac, benchPresence * 0.76);
+  const sheerFrac = Math.pow(warpedT, 0.78);
+  const baseFrac = THREE.MathUtils.lerp(sheerFrac, steppedFrac, benchPresence * 0.82);
 
   // Blunt weathered rock ribs & recessed vertical chutes along the cliff wall (clamped below uplandY so zero spikes!)
-  const ribNoise = roundedRidge2D(wx * 0.13 + seed * 2.1, wz * 0.13 - seed * 1.9, 2);
-  const blockFracture = fbm2D(wx * 0.26 - seed, wz * 0.26 + seed * 2.3, 2) - 0.5;
-  const rockRibLift = ((ribNoise - 0.48) * 2.8 + blockFracture * 1.65) * midMask;
+  const ribNoise = roundedRidge2D(wx * 0.14 + seed * 2.1, wz * 0.14 - seed * 1.9, 2);
+  const blockFracture = fbm2D(wx * 0.27 - seed, wz * 0.27 + seed * 2.3, 2) - 0.5;
+  const rockRibLift = ((ribNoise - 0.48) * 3.4 + blockFracture * 2.05 + diagChute * 1.65) * midMask;
 
   // Emergent dark wave-cut rocky shore shelf / tidal reef bench right near SEA_LEVEL_Y (-11.5m .. -9.9m)!
   const shoreShelfNoise = fbm2D(wx * 0.095 + seed * 3.1, wz * 0.095 - seed * 2.7, 3);
@@ -1035,8 +1036,8 @@ function applyVerticalCliffWallRelief(
  *   stepped horizontal basalt shelves, and emergent dark rocky surf aprons so the vertical walls are NEVER flat or straight!
  */
 function buildFaroeseHeadlandSeaArchGeometry(spec: FaroeseSeaArchSpec): THREE.BufferGeometry {
-  const uSegs = 120;
-  const vSegs = 68;
+  const uSegs = 128;
+  const vSegs = 72;
 
   const ringCount = uSegs + 1;
   const loopVerts = vSegs + 1;
@@ -1050,81 +1051,109 @@ function buildFaroeseHeadlandSeaArchGeometry(spec: FaroeseSeaArchSpec): THREE.Bu
   for (let iu = 0; iu <= uSegs; iu++) {
     const u = iu / uSegs;
     const xRaw = (u - 0.5) * 2.0 * spec.halfLength;
+    const endSign = u < 0.5 ? -1.0 : 1.0;
+    const distFromEnd = Math.min(u, 1.0 - u);
 
     // Organic S-curved headland spine with multi-meter rock-joint jogs (never a straight slab!)
     const zCenter =
-      Math.sin(u * Math.PI * 1.65 + spec.seed) * 2.45 +
-      Math.cos(u * Math.PI * 2.9 - spec.seed * 0.7) * 1.05 +
-      (fbm2D(u * 4.2 + spec.seed, 1.7, 3) - 0.5) * 2.15;
+      Math.sin(u * Math.PI * 1.65 + spec.seed) * 2.65 +
+      Math.cos(u * Math.PI * 2.9 - spec.seed * 0.7) * 1.25 +
+      (fbm2D(u * 4.2 + spec.seed, 1.7, 3) - 0.5) * 2.35;
 
-    const endCliffTaper = smoothstep(0.0, 0.085, u) * smoothstep(1.0, 0.915, u);
-    // Broad, gently inclined grassy headland ridge (smooth weathered profile — zero sharp spikes!)
+    // Gradual stepped 3D rocky cape descent over the outer 24% of each headland end (ZERO sliced flat end-bulkheads!)
+    const rawCapeT = smoothstep(0.0, 0.24, distFromEnd);
+    const capeBenchStep =
+      rawCapeT +
+      0.085 * Math.sin(rawCapeT * Math.PI * 3.0 + spec.seed * 0.8) * Math.sin(rawCapeT * Math.PI);
+    const endCliffTaper = THREE.MathUtils.clamp(capeBenchStep, 0.0, 1.0);
+    // Collapse the submerged terminal rings cleanly at u=0 and u=1 so underwater end-caps are 100% watertight!
+    const submergedTipCollapse = smoothstep(0.0, 0.035, distFromEnd);
+
+    // Broad, gently inclined grassy headland ridge with stepped basalt shoulders
     const gentleCuestaSlope = (0.5 - u) * 2.2 + Math.sin(u * Math.PI) * 0.85;
     const naturalShoulderWave =
-      (fbm2D(xRaw * 0.09 + spec.seed, zCenter * 0.09, 3) - 0.5) * 1.15 +
-      (roundedRidge2D(xRaw * 0.08 + spec.seed, 2.3, 2) - 0.48) * 0.65;
+      (fbm2D(xRaw * 0.09 + spec.seed, zCenter * 0.09, 3) - 0.5) * 1.35 +
+      (roundedRidge2D(xRaw * 0.08 + spec.seed, 2.3, 2) - 0.48) * 0.85;
     const yTopBase = spec.plateauTopY + gentleCuestaSlope + naturalShoulderWave;
-    const yTop = THREE.MathUtils.lerp(SEA_LEVEL_Y - 3.2, yTopBase, endCliffTaper);
+    const yTop = THREE.MathUtils.lerp(SEA_LEVEL_Y - 18.5, yTopBase, endCliffTaper);
 
     // Natural wave-carved basalt arch opening
     const shiftedX = xRaw - spec.openingHalfSpan * 0.06;
     const normSpan = Math.abs(shiftedX) / spec.openingHalfSpan;
-    const archWindowMask = 1.0 - smoothstep(0.76, 1.16, normSpan);
+    const archWindowMask = 1.0 - smoothstep(0.74, 1.18, normSpan);
     const roundedVault = Math.pow(Math.max(0, 1.0 - Math.min(1.0, normSpan * normSpan)), 0.88);
-    const vaultIrreg =
-      (fbm2D(xRaw * 0.35 - spec.seed, 2.1, 3) - 0.5) * 0.75;
+    const vaultIrreg = (fbm2D(xRaw * 0.35 - spec.seed, 2.1, 3) - 0.5) * 0.95;
     const tunnelCeilingY =
-      (SEA_LEVEL_Y - 5.2) + (spec.vaultCrownY + 0.35 - (SEA_LEVEL_Y - 5.2)) * roundedVault + vaultIrreg;
+      SEA_LEVEL_Y - 5.2 + (spec.vaultCrownY + 0.35 - (SEA_LEVEL_Y - 5.2)) * roundedVault + vaultIrreg;
     const yBot = THREE.MathUtils.lerp(ISLAND_SKIRT_BASE_Y, tunnelCeilingY, archWindowMask);
 
-    // Strong variable pier buttresses & alcoves along the headland length
+    // Bold variable pier buttresses, rock spurs & recessed coves along the headland length
     const pierButtress =
       1.0 +
-      0.44 * (1.0 - archWindowMask) +
-      0.28 * Math.sin(u * Math.PI * 3.4 + spec.seed * 1.3) +
-      0.22 * (fbm2D(u * 5.2 + spec.seed, 6.2, 3) - 0.5);
-    const baseHalfW = spec.halfThickness * pierButtress * (0.46 + 0.54 * endCliffTaper);
+      0.48 * (1.0 - archWindowMask) +
+      0.34 * Math.sin(u * Math.PI * 3.6 + spec.seed * 1.3) +
+      0.30 * (fbm2D(u * 5.6 + spec.seed, 6.2, 3) - 0.5);
+    const baseHalfW =
+      spec.halfThickness * pierButtress * (0.28 + 0.72 * Math.pow(endCliffTaper, 0.65)) * submergedTipCollapse;
 
     for (let iv = 0; iv <= vSegs; iv++) {
       const v = iv / vSegs;
       const phi = v * Math.PI * 2.0;
       const sinPhi = Math.sin(phi);
       const cosPhi = Math.cos(phi);
-      // Natural rounded-blocky cliff cross-section (0.68 avoids artificial flat box-wall slabs!)
-      const localZFrac = Math.sign(sinPhi) * Math.pow(Math.abs(sinPhi), 0.68);
-      const localYFrac = 0.5 + 0.5 * Math.sign(cosPhi) * Math.pow(Math.abs(cosPhi), 0.64);
-      const onVerticalWall = Math.pow(Math.abs(sinPhi), 0.95);
+      // Natural rounded-craggy cross-section (0.78 avoids flat slab walls!)
+      const localZFrac = Math.sign(sinPhi) * Math.pow(Math.abs(sinPhi), 0.78);
+      const localYFrac = 0.5 + 0.5 * Math.sign(cosPhi) * Math.pow(Math.abs(cosPhi), 0.70);
+      const onVerticalWall = Math.pow(Math.abs(sinPhi), 0.88) * submergedTipCollapse;
 
-      const crossTilt = (0.28 - 0.36 * localZFrac) * Math.max(0, cosPhi) * endCliffTaper;
+      const crossTilt = (0.32 - 0.42 * localZFrac) * Math.max(0, cosPhi) * endCliffTaper;
       let wy = THREE.MathUtils.lerp(yBot, yTop, localYFrac) + crossTilt;
 
       if (cosPhi < -0.22 && archWindowMask > 0.05) {
-        wy += (-cosPhi - 0.22) * (1.0 - localZFrac * localZFrac) * 1.05 * archWindowMask;
+        wy += (-cosPhi - 0.22) * (1.0 - localZFrac * localZFrac) * 1.15 * archWindowMask;
       }
 
-      // Independent left/right 3D cliff-wall buttress ribs, recessed sea-caves & stepped strata ledges!
+      // Deep independent left/right 3D cliff-wall buttress ribs, diagonal fractures & stepped basalt ledges!
       const sideSeed = sinPhi >= 0 ? spec.seed + 11.7 : spec.seed - 19.3;
       const sideButtress =
-        (fbm2D(xRaw * 0.14 + sideSeed, wy * 0.11, 3) - 0.48) * 2.25 +
-        (roundedRidge2D(xRaw * 0.22 - sideSeed, wy * 0.08, 2) - 0.48) * 1.35;
-      const strataStep = Math.sin(wy * 1.15 + xRaw * 0.08 + sideSeed) * 0.38;
+        (fbm2D(xRaw * 0.13 + sideSeed, wy * 0.10, 3) - 0.48) * 3.15 +
+        (roundedRidge2D(xRaw * 0.21 - sideSeed, wy * 0.085 + xRaw * 0.04, 2) - 0.48) * 1.95 +
+        Math.sin(xRaw * 0.36 + wy * 0.18 + sideSeed) * 0.65;
+      const strataStep =
+        Math.sin(wy * 1.05 + xRaw * 0.07 + sideSeed) * 0.52 +
+        (Math.abs(((wy * 0.28 + 10.0) % 1.0) - 0.5) - 0.25) * 0.75;
 
       // Emergent dark rocky wave-cut plinth right at SEA_LEVEL_Y (-11.5m)
       const seaPlinth =
-        Math.exp(-Math.pow((wy - (SEA_LEVEL_Y + 0.15)) / 2.2, 2.0)) *
-        (1.65 + 0.95 * fbm2D(xRaw * 0.18 + sideSeed, 3.7, 2)) *
-        (1.0 - archWindowMask * 0.72);
+        Math.exp(-Math.pow((wy - (SEA_LEVEL_Y + 0.15)) / 2.3, 2.0)) *
+        (1.95 + 1.25 * fbm2D(xRaw * 0.18 + sideSeed, 3.7, 2)) *
+        (1.0 - archWindowMask * 0.72) *
+        submergedTipCollapse;
 
       const wallRelief = evalCliffWallStrataAndButtresses(xRaw, zCenter + localZFrac * 5.0, wy, sideSeed);
-      const wallFade = onVerticalWall * smoothstep(-22.0, -14.0, wy);
+      const wallFade = onVerticalWall * smoothstep(-24.0, -14.5, wy);
       const effHalfW = Math.max(
-        1.45,
-        baseHalfW + seaPlinth + (sideButtress + strataStep + wallRelief.radialOffset * 0.85) * wallFade
+        0.0,
+        baseHalfW + seaPlinth + (sideButtress + strataStep + wallRelief.radialOffset * 1.05) * wallFade
       );
 
-      const px = xRaw + (fbm2D(wy * 0.14 + sideSeed, u * 4.0, 2) - 0.5) * 0.85 * wallFade;
-      const pz = zCenter + localZFrac * effHalfW;
-      const py = wy + wallRelief.verticalLedgeOffset * 0.52 * onVerticalWall;
+      // 3D Sculpted Rocky Cape Nose at both headland ends (projects craggy 3D ridges & stepped shelves outward!)
+      const capeZone = (1.0 - smoothstep(0.02, 0.30, distFromEnd)) * submergedTipCollapse;
+      const centerProwMask = Math.pow(Math.max(0.0, 1.0 - Math.min(1.0, localZFrac * localZFrac * 0.85)), 0.75);
+      const lowerBenchMask = 1.0 - 0.55 * smoothstep(SEA_LEVEL_Y - 1.0, spec.plateauTopY, wy);
+      const craggyNoseSpur =
+        endSign *
+        capeZone *
+        (3.8 * centerProwMask * lowerBenchMask +
+          (fbm2D(wy * 0.15 + sideSeed, localZFrac * 2.1 + endSign * 3.1, 3) - 0.42) * 2.85 +
+          (roundedRidge2D(localZFrac * 2.8 - sideSeed, wy * 0.12, 2) - 0.45) * 1.75);
+
+      const px =
+        xRaw +
+        craggyNoseSpur +
+        (fbm2D(wy * 0.14 + sideSeed, u * 4.8, 3) - 0.5) * 1.35 * wallFade;
+      const pz = zCenter * submergedTipCollapse + localZFrac * effHalfW;
+      const py = wy + wallRelief.verticalLedgeOffset * 0.68 * onVerticalWall * submergedTipCollapse;
 
       const idx = iu * loopVerts + iv;
       positions[idx * 3] = px;
@@ -1135,16 +1164,16 @@ function buildFaroeseHeadlandSeaArchGeometry(spec: FaroeseSeaArchSpec): THREE.Bu
     }
   }
 
-  // End-cap center vertices at u = 0 and u = 1
+  // Deeply submerged watertight terminal vertices at u = 0 and u = 1 (-34.5m, 23m below sea level!)
   const cap0Idx = bodyVerts;
   const cap1Idx = bodyVerts + 1;
   positions[cap0Idx * 3] = -spec.halfLength;
-  positions[cap0Idx * 3 + 1] = SEA_LEVEL_Y - 12.0;
+  positions[cap0Idx * 3 + 1] = SEA_LEVEL_Y - 23.0;
   positions[cap0Idx * 3 + 2] = 0;
   uvs[cap0Idx * 2] = 0.0;
   uvs[cap0Idx * 2 + 1] = 0.5;
   positions[cap1Idx * 3] = spec.halfLength;
-  positions[cap1Idx * 3 + 1] = SEA_LEVEL_Y - 12.0;
+  positions[cap1Idx * 3 + 1] = SEA_LEVEL_Y - 23.0;
   positions[cap1Idx * 3 + 2] = 0;
   uvs[cap1Idx * 2] = 3.8;
   uvs[cap1Idx * 2 + 1] = 0.5;
@@ -1228,29 +1257,33 @@ function buildTabularSeaStackGeometry(spec: TabularSeaStackSpec): THREE.BufferGe
       const cosT = Math.cos(theta);
       const sinT = Math.sin(theta);
 
-      const basePlan = evalPlanRadius(cosT, sinT, theta, tWall);
-      const rimWave =
-        (fbm2D(basePlan.lx * 0.18 + spec.seed, basePlan.lz * 0.18 - spec.seed, 2) - 0.5) * 0.85;
-      const rimY = spec.topY + basePlan.lx * spec.topSlopeX + rimWave * (1.0 - sCrown * 0.65);
-
-      // Smooth C^infinity tabular/whaleback bevel cap (zero slope at sCrown = 1 -> flat/weathered top!)
+      // Smooth C^infinity tabular/whaleback bevel cap (100% watertight single-height convergence at sCrown = 1!)
       const crownRadialScale = inCrown ? Math.cos(sCrown * Math.PI * 0.5) : 1.0;
       const crownBevelLift = inCrown ? Math.sin(sCrown * Math.PI * 0.5) * bevelHeight : 0.0;
 
-      // Stepped horizontal basalt benches along the vertical stack wall
-      const stepT = tWall + 0.028 * Math.sin(tWall * 18.0 + spec.seed + theta * 0.5);
+      const basePlan = evalPlanRadius(cosT, sinT, theta, tWall);
+      const rimWave =
+        (fbm2D(basePlan.lx * 0.18 + spec.seed, basePlan.lz * 0.18 - spec.seed, 2) - 0.5) * 0.85;
+      // Scale angular slope & rim undulation by crownRadialScale so r -> 0 converges identically to spec.topY!
+      const rimY = spec.topY + (basePlan.lx * spec.topSlopeX + rimWave) * crownRadialScale;
+
+      // Stepped horizontal basalt benches along the vertical stack wall (attenuated cleanly to 0 at tWall = 0 and 1!)
+      const stepWave =
+        0.034 * Math.sin(tWall * 18.0 + spec.seed + theta * 0.5) * Math.sin(tWall * Math.PI);
+      const stepT = THREE.MathUtils.clamp(tWall + stepWave, 0.0, 1.0);
       const wy =
-        THREE.MathUtils.lerp(ISLAND_SKIRT_BASE_Y, rimY, Math.min(1.0, Math.max(0.0, stepT))) +
+        THREE.MathUtils.lerp(ISLAND_SKIRT_BASE_Y, rimY, stepT) +
         crownBevelLift;
 
       const steppedTaper =
-        1.26 -
+        1.28 -
         0.30 * Math.pow(tWall, 0.85) +
-        0.07 * Math.cos(tWall * 14.0 + spec.seed + sinT * 1.4);
+        0.09 * Math.cos(tWall * 14.0 + spec.seed + sinT * 1.4) +
+        0.06 * Math.sin(theta * 4.0 + tWall * 9.0 - spec.seed);
       // Prominent dark rocky wave-cut surf shelf right at SEA_LEVEL_Y (-11.5m)
       const surfApron =
         1.0 +
-        (0.46 + 0.22 * sinT) * Math.exp(-Math.pow((wy - (SEA_LEVEL_Y + 0.1)) / 2.1, 2.0));
+        (0.48 + 0.24 * sinT) * Math.exp(-Math.pow((wy - (SEA_LEVEL_Y + 0.1)) / 2.1, 2.0));
 
       const wallRelief = evalCliffWallStrataAndButtresses(
         spec.x + basePlan.lx,
@@ -1259,11 +1292,13 @@ function buildTabularSeaStackGeometry(spec: TabularSeaStackSpec): THREE.BufferGe
         spec.seed
       );
       const reliefFade =
-        smoothstep(0.14, 0.40, tWall) * (1.0 - smoothstep(0.86, 1.0, tWall)) * (inCrown ? 0.15 : 1.0);
+        smoothstep(0.12, 0.36, tWall) *
+        (1.0 - smoothstep(0.88, 1.0, tWall)) *
+        crownRadialScale;
 
       const scaleXZ = steppedTaper * surfApron * crownRadialScale;
-      const lx = basePlan.lx * scaleXZ + cosT * wallRelief.radialOffset * 0.72 * reliefFade;
-      const lz = basePlan.lz * scaleXZ + sinT * wallRelief.radialOffset * 0.72 * reliefFade;
+      const lx = basePlan.lx * scaleXZ + cosT * wallRelief.radialOffset * 0.92 * reliefFade;
+      const lz = basePlan.lz * scaleXZ + sinT * wallRelief.radialOffset * 0.92 * reliefFade;
 
       const wx = spec.x + lx * cosRot - lz * sinRot;
       const wz = spec.z + lx * sinRot + lz * cosRot;
@@ -1492,29 +1527,97 @@ function buildHeroCliffRockOutcrops(): THREE.BufferGeometry {
     );
   }
 
-  // 2. Waterfall Sea-Cove Flanking Rock Buttresses (breaks up the sheer amphitheater walls on either side of the chute!)
+  // 2. Waterfall Sea-Cove Outer Amphitheater Buttresses (kept >= 8.8m laterally outside streamCenterLZ so the waterfall flows 100% freely!)
   const cosW = Math.cos(0.18);
   const sinW = Math.sin(0.18);
   for (const side of [-1, 1]) {
-    for (let j = 0; j < 5; j++) {
-      const lx = 8.8 + j * 0.85;
-      const lz = side * (3.4 + j * 1.55);
+    for (let j = 0; j < 4; j++) {
+      const lx = 9.2 + j * 1.35;
+      const streamCenterLZ = Math.sin(lx * 0.11 + 0.35) * 1.85;
+      const lz = streamCenterLZ + side * (8.8 + j * 2.15);
       const wx = -66.0 + lx * cosW + lz * sinW;
       const wz = -32.0 - lx * sinW + lz * cosW;
       const h = evalWestWaterfallIsland(wx, wz);
-      const topY = Math.min(7.8 - j * 0.9, Math.max(SEA_LEVEL_Y + 4.5, h - 0.2));
+      if (h < SEA_LEVEL_Y + 1.5) continue;
+      const topY = Math.min(8.2 - j * 0.9, Math.max(SEA_LEVEL_Y + 3.8, h - 0.2));
       parts.push(
         makeWeatheredCliffButtress({
           x: wx,
           z: wz,
           topY,
           botY: SEA_LEVEL_Y - 4.2,
-          rx: 1.75 + hash2D(j + side * 7, 31.2) * 1.35,
-          rz: 1.45 + hash2D(j + side * 7, 57.9) * 1.15,
+          rx: 1.55 + hash2D(j + side * 7, 31.2) * 1.05,
+          rz: 1.35 + hash2D(j + side * 7, 57.9) * 0.95,
           rotY: 0.18 + j * 0.5,
-          leanX: cosW * 0.35,
-          leanZ: -sinW * 0.35,
+          leanX: cosW * 0.32,
+          leanZ: -sinW * 0.32,
           seed: 410.0 + side * 37.0 + j * 9.1,
+        })
+      );
+    }
+  }
+
+  // 3. Foreground Archipelago Cliff-Wall Buttresses & Overhanging Ledges (eliminates flat heightfield cliff faces!)
+  const fgCliffTargets: Array<{
+    cx: number;
+    cz: number;
+    maxR: number;
+    rays: number;
+    evalH: (x: number, z: number) => number;
+    skipWaterfallCorridor?: boolean;
+    seedBase: number;
+  }> = [
+    { cx: -68.0, cz: -33.0, maxR: 42.0, rays: 26, evalH: evalWestWaterfallIsland, skipWaterfallCorridor: true, seedBase: 520 },
+    { cx: 88.0, cz: 36.0, maxR: 48.0, rays: 28, evalH: evalStarboardCrescentAtoll, seedBase: 640 },
+    { cx: 84.0, cz: -46.0, maxR: 48.0, rays: 26, evalH: evalEastSerpentineTomboloIsland, seedBase: 760 },
+  ];
+
+  for (const tgt of fgCliffTargets) {
+    for (let k = 0; k < tgt.rays; k++) {
+      const ang = (k / tgt.rays) * Math.PI * 2.0 + (hash2D(k, tgt.seedBase * 0.13) - 0.5) * 0.08;
+      const dirX = Math.cos(ang);
+      const dirZ = Math.sin(ang);
+      let cliffX = 0;
+      let cliffZ = 0;
+      let cliffH = -999;
+      for (let r = 8.0; r <= tgt.maxR; r += 0.65) {
+        const sx = tgt.cx + dirX * r;
+        const sz = tgt.cz + dirZ * r;
+        const h0 = tgt.evalH(sx, sz);
+        const h1 = tgt.evalH(sx + dirX * 1.4, sz + dirZ * 1.4);
+        if (h0 > SEA_LEVEL_Y + 4.5 && h0 - h1 > 1.85) {
+          cliffX = sx;
+          cliffZ = sz;
+          cliffH = h0;
+          break;
+        }
+      }
+      if (cliffH < SEA_LEVEL_Y + 4.5) continue;
+      if (tgt.skipWaterfallCorridor) {
+        // Transform into WestWaterfallDoubleIsland local coordinates and keep wide clear of the waterfall channel!
+        const dxW = cliffX - -66.0;
+        const dzW = cliffZ - -32.0;
+        const locX = dxW * cosW - dzW * sinW;
+        const locZ = dxW * sinW + dzW * cosW;
+        const wfCenterZ = Math.sin(Math.max(0, locX) * 0.11 + 0.35) * 1.85;
+        if (locX > 2.5 && Math.abs(locZ - wfCenterZ) < 10.5) continue;
+      }
+
+      const bSeed = tgt.seedBase + k * 4.3;
+      const topY = cliffH - 0.35 - hash2D(k, bSeed) * 1.1;
+      const botY = Math.max(SEA_LEVEL_Y - 4.0, topY - (8.5 + hash2D(k, bSeed + 7.1) * 9.5));
+      parts.push(
+        makeWeatheredCliffButtress({
+          x: cliffX + dirX * 0.85,
+          z: cliffZ + dirZ * 0.85,
+          topY,
+          botY,
+          rx: 1.85 + hash2D(k, bSeed + 13.4) * 2.15,
+          rz: 1.45 + hash2D(k, bSeed + 21.8) * 1.75,
+          rotY: ang + (hash2D(k, bSeed + 29.2) - 0.5) * 0.7,
+          leanX: dirX * 0.42,
+          leanZ: dirZ * 0.42,
+          seed: bSeed,
         })
       );
     }
@@ -1634,33 +1737,37 @@ function generateBasaltRockPBRTextures(): {
       const u = x / size;
       const idx = y * size + x;
 
-      // Warp coordinates slightly with periodic FBM so fracture seams look naturally geological
-      const wu = u + (periodicFbm2D(u, v, 4, 4, 3, 5.1) - 0.5) * 0.045;
-      const wv = v + (periodicFbm2D(u, v, 4, 4, 3, 13.7) - 0.5) * 0.035;
+      // Warp coordinates organically so fracture seams follow stratified lava-bedding rather than uniform polygons!
+      const wu = u + (periodicFbm2D(u, v, 4, 6, 3, 5.1) - 0.5) * 0.068;
+      const wv = v + (periodicFbm2D(u, v, 6, 4, 3, 13.7) - 0.5) * 0.032;
 
-      // Macro & meso angular basalt rock blocks + tilted cleavage planes
-      const macroBlock = periodicRockCells2D(wu, wv, 7, 11, 21.4);
-      const mesoBlock = periodicRockCells2D(wu, wv, 16, 22, 57.9);
+      // Horizontally elongated bedded basalt blocks + broken fracture intensity (never uniform giraffe polygons!)
+      const macroBlock = periodicRockCells2D(wu, wv, 5, 15, 21.4);
+      const mesoBlock = periodicRockCells2D(wu, wv, 11, 28, 57.9);
+      const seamBreakup = periodicFbm2D(u, v, 6, 10, 3, 44.8);
 
-      const macroCrevice = 1.0 - smoothstep(0.015, 0.11, macroBlock.edgeDist);
-      const mesoCrevice = 1.0 - smoothstep(0.012, 0.09, mesoBlock.edgeDist);
+      const macroCrevice = (1.0 - smoothstep(0.010, 0.085, macroBlock.edgeDist)) * smoothstep(0.18, 0.78, seamBreakup);
+      const mesoCrevice = (1.0 - smoothstep(0.008, 0.070, mesoBlock.edgeDist)) * (0.45 + 0.55 * seamBreakup);
 
-      // Horizontal lava-bedding ledges & fine micro-grain
-      const strataSteps = periodicFbm2D(wu, wv, 4, 18, 4, 33.2);
-      const microGrain = periodicFbm2D(u, v, 24, 24, 3, 71.6);
+      // Strong horizontal lava-bedding ledges, shelf joints & fine mineral grain
+      const strataSteps = periodicFbm2D(wu, wv, 3, 22, 4, 33.2);
+      const beddingShelf = Math.abs(((wv * 14.0 + strataSteps * 0.55) % 1.0) - 0.5) * 2.0;
+      const shelfCrease = 1.0 - smoothstep(0.04, 0.24, beddingShelf);
+      const microGrain = periodicFbm2D(u, v, 28, 28, 3, 71.6);
 
       const facetHeight =
         0.52 +
-        macroBlock.cellTilt * 0.34 +
-        (macroBlock.cellId - 0.5) * 0.22 +
-        mesoBlock.cellTilt * 0.18 +
-        (strataSteps - 0.5) * 0.32 +
-        (microGrain - 0.5) * 0.14 -
-        macroCrevice * 0.42 -
-        mesoCrevice * 0.22;
+        macroBlock.cellTilt * 0.26 +
+        (macroBlock.cellId - 0.5) * 0.16 +
+        mesoBlock.cellTilt * 0.15 +
+        (strataSteps - 0.5) * 0.40 +
+        (microGrain - 0.5) * 0.16 -
+        shelfCrease * 0.28 -
+        macroCrevice * 0.32 -
+        mesoCrevice * 0.18;
 
       hField[idx] = Math.max(0, Math.min(1, facetHeight));
-      creviceField[idx] = Math.min(1, macroCrevice * 0.75 + mesoCrevice * 0.45);
+      creviceField[idx] = Math.min(1, shelfCrease * 0.52 + macroCrevice * 0.58 + mesoCrevice * 0.36);
       mineralField[idx] = macroBlock.cellId * 0.65 + mesoBlock.cellId * 0.35;
 
       const mossNoise = periodicFbm2D(u, v, 8, 8, 4, 93.4);
@@ -2174,6 +2281,7 @@ export function createNordicCliffWorld(
         '#include <common>',
         `#include <common>
         ${SHARED_SKY_GLSL}
+        uniform float uRainIntensity;
         varying vec3 vRockWorldPos;
         varying vec3 vRockWorldNormal;
 
@@ -2206,9 +2314,10 @@ export function createNordicCliffWorld(
 
           float cliffSteepMask = 1.0 - smoothstep(0.36, 0.74, abs(wN.y));
           float strataVal = evalNordicCliffStrata(vRockWorldPos);
-          // Subtle mineral & pale coastal lichen banding on sheer basalt rock walls (like Reynisfjara & Drangarnir!)
-          vec3 mineralTint = mix(vec3(0.68, 0.70, 0.75), vec3(1.22, 1.19, 1.15), strataVal);
-          diffuseColor.rgb *= mix(albMacro, albDetail, 0.52) * mix(vec3(1.0), mineralTint, cliffSteepMask * 0.84);
+          // Macro 3D rock-buttress shadow/highlight variation + horizontal mineral/lichen strata (never flat uniform cells!)
+          float rockMassShade = 0.80 + 0.38 * skyFbm(vRockWorldPos.xz * 0.052 + vec2(vRockWorldPos.y * 0.038, -vRockWorldPos.y * 0.029));
+          vec3 mineralTint = mix(vec3(0.64, 0.67, 0.73), vec3(1.25, 1.21, 1.16), strataVal) * rockMassShade;
+          diffuseColor.rgb *= mix(albMacro, albDetail, 0.48) * mix(vec3(1.0), mineralTint, cliffSteepMask * 0.88);
         #endif`
       )
       .replace(
@@ -2262,7 +2371,9 @@ export function createNordicCliffWorld(
         float meadowSmooth = smoothstep(0.64, 0.88, wNRgh.y) * smoothstep(-4.0, 0.5, vRockWorldPos.y);
         roughnessFactor = mix(roughnessFactor, 0.88, meadowSmooth * 0.78);
         float wetRough = 1.0 - smoothstep(-11.3, -7.2, vRockWorldPos.y);
-        roughnessFactor = mix(roughnessFactor, 0.18, wetRough * 0.85);`
+        roughnessFactor = mix(roughnessFactor, 0.18, wetRough * 0.85);
+        // Rain-slicked basalt rock sheen when precipitation is active!
+        roughnessFactor = mix(roughnessFactor, 0.24, clamp(uRainIntensity, 0.0, 1.0) * (1.0 - meadowSmooth * 0.65) * 0.45);`
       )
       .replace(
         '#include <normal_fragment_maps>',
@@ -2658,13 +2769,99 @@ export function createNordicCliffWorld(
   plungePoolMesh.renderOrder = 3;
   group.add(plungePoolMesh);
 
-  const sprayCount = 140;
+  // 3A. Bottom-of-Waterfall Ballistic Splash Droplets & Churning Foam Jets (1,650 Newtonian gravity particles!)
+  const wfDropCount = 1650;
+  const wfDropOrigin = new Float32Array(wfDropCount * 3);
+  const wfDropVel = new Float32Array(wfDropCount * 3);
+  const wfDropMeta = new Float32Array(wfDropCount * 3); // x: phaseSeed, y: cycleRate, z: sizeScale
+  for (let i = 0; i < wfDropCount; i++) {
+    const ringAng = hash2D(i, 5.7) * Math.PI * 2.0;
+    const ringR = 0.35 + Math.pow(hash2D(i, 13.1), 0.7) * 2.85;
+    wfDropOrigin[i * 3] = plungeX + Math.cos(ringAng) * ringR + (hash2D(i, 19.4) - 0.5) * 0.8;
+    wfDropOrigin[i * 3 + 1] = SEA_LEVEL_Y + 0.05 + hash2D(i, 23.8) * 0.65;
+    wfDropOrigin[i * 3 + 2] = plungeZ + Math.sin(ringAng) * ringR + (hash2D(i, 29.2) - 0.5) * 0.8;
+
+    // Erupt upward & outward from the waterfall impact zone (biased slightly seaward along streamFlowDir!)
+    const outAng = ringAng + (hash2D(i, 37.6) - 0.5) * 0.85;
+    const horizSpeed = 1.85 + hash2D(i, 41.9) * 5.35;
+    wfDropVel[i * 3] = Math.cos(outAng) * horizSpeed + streamFlowDir.x * (1.1 + hash2D(i, 47.3) * 1.8);
+    wfDropVel[i * 3 + 1] = 5.4 + Math.pow(hash2D(i, 53.1), 0.75) * 8.4; // 5.4 .. 13.8 m/s upward launch!
+    wfDropVel[i * 3 + 2] = Math.sin(outAng) * horizSpeed + streamFlowDir.y * (1.1 + hash2D(i, 59.7) * 1.8);
+
+    wfDropMeta[i * 3] = hash2D(i, 67.3);
+    wfDropMeta[i * 3 + 1] = 0.52 + hash2D(i, 73.9) * 0.46;
+    wfDropMeta[i * 3 + 2] = 0.55 + hash2D(i, 83.1) * 1.15;
+  }
+  const wfDropGeom = new THREE.BufferGeometry();
+  wfDropGeom.setAttribute('position', new THREE.BufferAttribute(wfDropOrigin, 3));
+  wfDropGeom.setAttribute('aVelocity', new THREE.BufferAttribute(wfDropVel, 3));
+  wfDropGeom.setAttribute('aMeta', new THREE.BufferAttribute(wfDropMeta, 3));
+  const wfDropMat = new THREE.ShaderMaterial({
+    name: 'WaterfallBallisticSplashDroplets',
+    transparent: true,
+    depthWrite: false,
+    uniforms: waterfallUniforms,
+    vertexShader: /* glsl */ `
+      attribute vec3 aVelocity;
+      attribute vec3 aMeta;
+      uniform float uTime;
+      varying float vAlpha;
+      varying vec3 vWorldPos;
+      void main() {
+        float phase = fract(aMeta.x + uTime * aMeta.y);
+        // Total flight duration where y returns below sea level: T ~ 2 * vy / g
+        float flightDur = clamp((2.08 * aVelocity.y) / 9.81, 0.85, 2.85);
+        float t = phase * flightDur;
+        // Aerodynamic drag on horizontal spray + exact -0.5 * g * t^2 vertical gravity!
+        float dragT = (1.0 - exp(-0.72 * t)) / 0.72;
+        vec3 wp = position;
+        wp.xz += aVelocity.xz * dragT + vec2(0.45, -0.32) * (t * t * 0.35);
+        wp.y += aVelocity.y * t - 4.905 * t * t;
+        vWorldPos = wp;
+
+        vec4 mv = modelViewMatrix * vec4(wp, 1.0);
+        float submergeFade = smoothstep(-11.75, -11.30, wp.y);
+        float arcFade = smoothstep(0.0, 0.08, phase) * (1.0 - smoothstep(0.84, 1.0, phase));
+        vAlpha = submergeFade * arcFade * (0.48 + 0.42 * aMeta.z);
+        gl_PointSize = clamp((58.0 * aMeta.z * (1.0 - 0.25 * phase)) / max(1.0, -mv.z), 1.6, 13.5);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      ${SHARED_SKY_GLSL}
+      uniform vec3 uSunColor;
+      varying float vAlpha;
+      varying vec3 vWorldPos;
+      void main() {
+        vec2 d = gl_PointCoord - 0.5;
+        float r2 = dot(d, d);
+        if (r2 > 0.25 || vAlpha <= 0.005) discard;
+        float crispCore = exp(-r2 * 13.5);
+        vec3 foamLit = mix(uHorizonAntiColor, uHorizonSunColor, 0.52) * 1.42 + uSunColor * 0.58 + vec3(0.14);
+        vec3 toFrag = vWorldPos - cameraPosition;
+        float dist = length(toFrag);
+        vec3 hazeCol = evalHorizonHazeColor(toFrag);
+        float aerial = 1.0 - exp(-pow(max(uMistDensity * 0.85 * dist, 1e-6), 1.26));
+        vec3 col = mix(clamp(foamLit, vec3(0.0), vec3(6.0)), hazeCol, clamp(aerial, 0.0, 0.95));
+        gl_FragColor = vec4(col, clamp(vAlpha * crispCore, 0.0, 0.92));
+      }
+    `,
+  });
+  const wfSplashDroplets = new THREE.Points(wfDropGeom, wfDropMat);
+  wfSplashDroplets.renderOrder = 4;
+  wfSplashDroplets.frustumCulled = false;
+  group.add(wfSplashDroplets);
+
+  // 3B. Billowing Buoyant Mist & Spray Plume Rising from Bottom of Waterfall (420 volumetric puffs!)
+  const sprayCount = 420;
   const sprayPos = new Float32Array(sprayCount * 3);
   const spraySeed = new Float32Array(sprayCount);
   for (let i = 0; i < sprayCount; i++) {
-    sprayPos[i * 3] = plungeX + (hash2D(i, 11.3) - 0.5) * 5.8;
-    sprayPos[i * 3 + 1] = SEA_LEVEL_Y + hash2D(i, 27.9) * 9.5;
-    sprayPos[i * 3 + 2] = plungeZ + (hash2D(i, 43.1) - 0.5) * 5.8;
+    const ang = hash2D(i, 11.3) * Math.PI * 2.0;
+    const rad = Math.pow(hash2D(i, 19.7), 0.65) * 6.4;
+    sprayPos[i * 3] = plungeX + Math.cos(ang) * rad;
+    sprayPos[i * 3 + 1] = SEA_LEVEL_Y + hash2D(i, 27.9) * 11.5;
+    sprayPos[i * 3 + 2] = plungeZ + Math.sin(ang) * rad;
     spraySeed[i] = hash2D(i, 61.7);
   }
   const sprayGeom = new THREE.BufferGeometry();
@@ -2678,15 +2875,19 @@ export function createNordicCliffWorld(
       attribute float aSeed;
       uniform float uTime;
       varying float vLife;
+      varying vec3 vWorldPos;
       void main() {
-        float life = fract(aSeed + uTime * (0.22 + aSeed * 0.16));
+        float life = fract(aSeed + uTime * (0.16 + aSeed * 0.14));
         vLife = life;
         vec3 p = position;
-        p.y = -11.3 + life * 10.2;
-        p.x += sin(life * 4.0 + aSeed * 10.0) * (0.8 + life * 2.4);
-        p.z += cos(life * 3.5 + aSeed * 8.0) * (0.8 + life * 2.4);
+        // Buoyant decelerating rise + swirling sea-cove vortex & downwind drift!
+        p.y = -11.35 + pow(life, 0.78) * (8.5 + 6.5 * aSeed);
+        float swirlAng = life * 3.8 + aSeed * 12.56;
+        p.x += sin(swirlAng) * (0.9 + life * 4.2) + life * 3.4;
+        p.z += cos(swirlAng * 0.85) * (0.9 + life * 4.2) - life * 1.8;
+        vWorldPos = p;
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = clamp((195.0 * (0.4 + life * 0.9)) / max(1.0, -mv.z), 4.0, 44.0);
+        gl_PointSize = clamp((235.0 * (0.38 + life * 1.05)) / max(1.0, -mv.z), 5.0, 56.0);
         gl_Position = projectionMatrix * mv;
       }
     `,
@@ -2694,13 +2895,18 @@ export function createNordicCliffWorld(
       ${SHARED_SKY_GLSL}
       uniform vec3 uSunColor;
       varying float vLife;
+      varying vec3 vWorldPos;
       void main() {
         vec2 d = gl_PointCoord - 0.5;
         float r2 = dot(d, d);
         if (r2 > 0.25) discard;
-        float puff = exp(-r2 * 10.0) * sin(vLife * 3.14159) * 0.22;
-        vec3 mistCol = mix(uHorizonAntiColor, uHorizonSunColor, 0.45) * 1.15 + uSunColor * 0.25;
-        gl_FragColor = vec4(mistCol, puff);
+        float puff = exp(-r2 * 9.5) * sin(vLife * 3.14159265) * 0.24;
+        vec3 mistCol = mix(uHorizonAntiColor, uHorizonSunColor, 0.46) * 1.22 + uSunColor * 0.28;
+        vec3 toFrag = vWorldPos - cameraPosition;
+        float dist = length(toFrag);
+        vec3 hazeCol = evalHorizonHazeColor(toFrag);
+        mistCol = mix(mistCol, hazeCol, clamp(1.0 - exp(-pow(max(uMistDensity * 0.85 * dist, 1e-6), 1.26)), 0.0, 0.95));
+        gl_FragColor = vec4(clamp(mistCol, vec3(0.0), vec3(12.0)), puff);
       }
     `,
   });
@@ -2708,6 +2914,17 @@ export function createNordicCliffWorld(
   sprayPoints.renderOrder = 4;
   sprayPoints.frustumCulled = false;
   group.add(sprayPoints);
+
+  // Strict Waterfall Corridor Guard: prevents ANY stone, boulder, slab, or rocky log from obstructing the waterfall's path!
+  const isInsideWaterfallChannel = (wx: number, wz: number): boolean => {
+    if (Math.hypot(wx - plungeX, wz - plungeZ) < 10.2) return true;
+    if (Math.hypot(wx - lipPt.x, wz - lipPt.z) < 8.5) return true;
+    const dx = wx - lipPt.x;
+    const dz = wz - lipPt.z;
+    const along = dx * streamFlowDir.x + dz * streamFlowDir.y;
+    const across = Math.abs(dx * streamRightDir.x + dz * streamRightDir.y);
+    return along > -8.0 && along < 26.0 && across < 9.5;
+  };
 
   // ============================================================================
   // 4. DARK OCEAN-SURFACE ROCK CLUSTERS, ROCKY SHORE LOGS / FALLEN BASALT COLUMNS & MEADOW SLABS!
@@ -2841,8 +3058,8 @@ export function createNordicCliffWorld(
       const ty = fz.evalH(tx, tz);
       // Sample right in the coastal surf & shallow reef zone (-16.2m .. -9.2m) around the cliff base!
       if (ty < -16.2 || ty > -9.2) continue;
-      // Keep the immediate waterfall impact boil clear while rimming the outer cove mouth with dark rocks!
-      if (Math.hypot(tx - plungeX, tz - plungeZ) < 6.8) continue;
+      // Keep the entire waterfall lip, chute, plunge boil & seaward outflow 100% clear of stones!
+      if (isInsideWaterfallChannel(tx, tz)) continue;
 
       clustersMade++;
 
@@ -2871,7 +3088,7 @@ export function createNordicCliffWorld(
         const offDist = 1.15 + hash2D(sSeed, 5.9) * 3.4;
         const sx = tx + Math.cos(offAng) * offDist;
         const sz = tz + Math.sin(offAng) * offDist;
-        if (Math.hypot(sx - plungeX, sz - plungeZ) < 6.5) continue;
+        if (isInsideWaterfallChannel(sx, sz)) continue;
         const smSc = 0.48 + hash2D(sSeed, 12.4) * 0.95;
         const smY = SEA_LEVEL_Y - 0.10 + hash2D(sSeed, 18.8) * 0.44;
         dummy.position.set(sx, smY, sz);
@@ -2894,22 +3111,24 @@ export function createNordicCliffWorld(
         const lAng = hash2D(seed, 71.2) * Math.PI * 2;
         const lx = tx + Math.cos(lAng) * (1.2 + hash2D(seed, 77.8) * 2.4);
         const lz = tz + Math.sin(lAng) * (1.2 + hash2D(seed, 81.4) * 2.4);
-        const logLen = 0.72 + hash2D(seed, 88.9) * 1.15;
-        const logThick = 0.68 + hash2D(seed, 93.1) * 0.65;
-        const logY = Math.max(fz.evalH(lx, lz) - 0.08, SEA_LEVEL_Y - 0.04 + hash2D(seed, 97.6) * 0.36);
-        // Align roughly tangent to the local shoreline with natural wave-tossed yaw & slight pitch!
-        const gHx = fz.evalH(lx + 1.0, lz) - fz.evalH(lx - 1.0, lz);
-        const gHz = fz.evalH(lx, lz + 1.0) - fz.evalH(lx, lz - 1.0);
-        const shoreTanYaw = Math.atan2(gHx, -gHz) + (hash2D(seed, 102.3) - 0.5) * 0.95;
-        dummy.position.set(lx, logY, lz);
-        dummy.rotation.set(
-          (hash2D(seed, 108.7) - 0.5) * 0.16,
-          shoreTanYaw,
-          (hash2D(seed, 114.2) - 0.5) * 0.18
-        );
-        dummy.scale.set(logLen, logThick, logThick * 1.08);
-        dummy.updateMatrix();
-        rockyLogInst.setMatrixAt(logsPlaced++, dummy.matrix);
+        if (!isInsideWaterfallChannel(lx, lz)) {
+          const logLen = 0.72 + hash2D(seed, 88.9) * 1.15;
+          const logThick = 0.68 + hash2D(seed, 93.1) * 0.65;
+          const logY = Math.max(fz.evalH(lx, lz) - 0.08, SEA_LEVEL_Y - 0.04 + hash2D(seed, 97.6) * 0.36);
+          // Align roughly tangent to the local shoreline with natural wave-tossed yaw & slight pitch!
+          const gHx = fz.evalH(lx + 1.0, lz) - fz.evalH(lx - 1.0, lz);
+          const gHz = fz.evalH(lx, lz + 1.0) - fz.evalH(lx, lz - 1.0);
+          const shoreTanYaw = Math.atan2(gHx, -gHz) + (hash2D(seed, 102.3) - 0.5) * 0.95;
+          dummy.position.set(lx, logY, lz);
+          dummy.rotation.set(
+            (hash2D(seed, 108.7) - 0.5) * 0.16,
+            shoreTanYaw,
+            (hash2D(seed, 114.2) - 0.5) * 0.18
+          );
+          dummy.scale.set(logLen, logThick, logThick * 1.08);
+          dummy.updateMatrix();
+          rockyLogInst.setMatrixAt(logsPlaced++, dummy.matrix);
+        }
       }
     }
   }
@@ -2923,6 +3142,7 @@ export function createNordicCliffWorld(
       const rOut = Math.max(st.rx, st.rz) * (1.12 + hash2D(seed, 8.7) * 0.52);
       const rx = st.x + Math.cos(ang) * rOut;
       const rz = st.z + Math.sin(ang) * rOut;
+      if (isInsideWaterfallChannel(rx, rz)) continue;
       const sc = 0.65 + hash2D(seed, 15.3) * 1.15;
       dummy.position.set(rx, SEA_LEVEL_Y - 0.08 + hash2D(seed, 19.9) * 0.48, rz);
       dummy.rotation.set(0.08, hash2D(seed, 24.4) * Math.PI * 2, -0.06);
@@ -2956,7 +3176,7 @@ export function createNordicCliffWorld(
       if (fz.isHero) {
         const clearZone = Math.sqrt(Math.pow(bx / 10.2, 2) + Math.pow((bz + 1.0) / 6.4, 2));
         if (clearZone < 1.0) continue;
-      } else if (Math.hypot(bx - lipPt.x, bz - lipPt.z) < 5.5) {
+      } else if (isInsideWaterfallChannel(bx, bz)) {
         continue;
       }
 
@@ -3235,14 +3455,398 @@ export function createNordicCliffWorld(
   const ocean = createNorthSeaOcean(surfObstacles, atmosphereUniforms);
   group.add(ocean.mesh);
 
-  // 7. Sunlit/Moonlit Coastal Sea-Spray & Sky Wind Motes
-  const moteCount = 460;
+  // ============================================================================
+  // 7. PHYSICAL ENVIRONMENTAL PARTICLE SYSTEMS:
+  //    7A. Breaking Ocean Waves Splashing Onto Land & Coastal Rocks (2,400 Newtonian gravity droplets!)
+  //    7B. Wind-Driven 3D Rain Streaks (3,200 motion-blurred drops) + Surface Splash Crowns (900 impacts!)
+  //    7C. Cliff-Updraft Coastal Sea-Spray & Sunlit Wind Motes (720 curl-turbulence particles!)
+  // ============================================================================
+
+  // --- 7A. Collect Exact Rocky Shoreline Waterline Impact Anchors Around Land, Stacks & Arches ---
+  const shoreImpactAnchors: Array<{ x: number; z: number; landX: number; landZ: number; boost: number }> = [];
+  const shoreSearchCenters = [
+    { cx: -2.0, cz: -8.0, rMax: 42.0, rays: 84, boost: 1.15 },   // Hero Cliff & NW Cape (foreground!)
+    { cx: -68.0, cz: -33.0, rMax: 44.0, rays: 52, boost: 1.05 }, // West Waterfall Double Island
+    { cx: 88.0, cz: 36.0, rMax: 48.0, rays: 44, boost: 0.95 },   // Starboard Crescent Atoll
+    { cx: 84.0, cz: -46.0, rMax: 48.0, rays: 40, boost: 0.95 },  // East Serpentine Island
+    { cx: -124.0, cz: -86.0, rMax: 46.0, rays: 28, boost: 0.90 },// West Traelanipa Table Island
+  ];
+  for (let cIdx = 0; cIdx < shoreSearchCenters.length; cIdx++) {
+    const sc = shoreSearchCenters[cIdx];
+    for (let rIdx = 0; rIdx < sc.rays; rIdx++) {
+      const ang = (rIdx / sc.rays) * Math.PI * 2.0 + (hash2D(cIdx * 97 + rIdx, 13.7) - 0.5) * 0.05;
+      const dx = Math.cos(ang);
+      const dz = Math.sin(ang);
+      // March inward from open sea toward land until rock rises through SEA_LEVEL_Y!
+      for (let dist = sc.rMax; dist >= 4.5; dist -= 0.75) {
+        const px = sc.cx + dx * dist;
+        const pz = sc.cz + dz * dist;
+        const h = sampleWorldTerrainHeight(px, pz);
+        if (h >= SEA_LEVEL_Y - 0.35) {
+          const seaPrevH = sampleWorldTerrainHeight(px + dx * 1.2, pz + dz * 1.2);
+          if (seaPrevH < SEA_LEVEL_Y - 0.45) {
+            shoreImpactAnchors.push({
+              x: px + dx * 0.25,
+              z: pz + dz * 0.25,
+              landX: -dx,
+              landZ: -dz,
+              boost: sc.boost,
+            });
+          }
+          break;
+        }
+      }
+    }
+  }
+  // Add Sea-Stack & Sea-Arch perimeter wave-impact anchors!
+  for (let sIdx = 0; sIdx < TABULAR_SEA_STACKS.length; sIdx++) {
+    const st = TABULAR_SEA_STACKS[sIdx];
+    for (let k = 0; k < 10; k++) {
+      const ang = (k / 10) * Math.PI * 2.0 + hash2D(sIdx * 31 + k, 7.3) * 0.3;
+      const rad = (st.rx * Math.abs(Math.cos(ang)) + st.rz * Math.abs(Math.sin(ang))) * 0.92 + 0.6;
+      shoreImpactAnchors.push({
+        x: st.x + Math.cos(ang) * rad,
+        z: st.z + Math.sin(ang) * rad,
+        landX: -Math.cos(ang),
+        landZ: -Math.sin(ang),
+        boost: 1.12,
+      });
+    }
+  }
+  for (let aIdx = 0; aIdx < FAROESE_SEA_ARCHES.length; aIdx++) {
+    const ar = FAROESE_SEA_ARCHES[aIdx];
+    const cR = Math.cos(ar.rotY);
+    const sR = Math.sin(ar.rotY);
+    for (let k = 0; k < 16; k++) {
+      const u = -0.82 + (k / 15) * 1.64;
+      if (Math.abs(u * ar.halfLength) < ar.openingHalfSpan * 0.72) continue;
+      for (const side of [-1, 1]) {
+        const lx = u * ar.halfLength;
+        const lz = side * (ar.halfThickness * 1.15);
+        const wx = ar.x + lx * cR + lz * sR;
+        const wz = ar.z - lx * sR + lz * cR;
+        shoreImpactAnchors.push({
+          x: wx,
+          z: wz,
+          landX: -side * sR,
+          landZ: -side * cR,
+          boost: 1.10,
+        });
+      }
+    }
+  }
+
+  const waveSplashCount = 2400;
+  const wsPos = new Float32Array(waveSplashCount * 3);
+  const wsVel = new Float32Array(waveSplashCount * 3);
+  const wsMeta = new Float32Array(waveSplashCount * 3); // x: phaseOffset, y: rate, z: waveGroupSeed
+  const anchorLen = Math.max(1, shoreImpactAnchors.length);
+  for (let i = 0; i < waveSplashCount; i++) {
+    const anc = shoreImpactAnchors[i % anchorLen] ?? { x: 0, z: 12, landX: 0, landZ: -1, boost: 1.0 };
+    const tangX = -anc.landZ;
+    const tangZ = anc.landX;
+    const alongJitter = (hash2D(i, 9.1) - 0.5) * 2.6;
+    const normJitter = (hash2D(i, 15.4) - 0.4) * 1.1;
+
+    wsPos[i * 3] = anc.x + tangX * alongJitter + anc.landX * normJitter;
+    wsPos[i * 3 + 1] = SEA_LEVEL_Y + 0.08 + hash2D(i, 21.8) * 0.45;
+    wsPos[i * 3 + 2] = anc.z + tangZ * alongJitter + anc.landZ * normJitter;
+
+    // 70% surge landward/upward onto coastal rocks & cliff ledges; 30% rebound in a frothy shore-break fan!
+    const surgeSign = hash2D(i, 28.3) < 0.72 ? 1.0 : -0.45;
+    const landThrow = (1.6 + hash2D(i, 34.7) * 3.8) * surgeSign * anc.boost;
+    const sideSpread = (hash2D(i, 41.2) - 0.5) * 2.8;
+    wsVel[i * 3] = anc.landX * landThrow + tangX * sideSpread;
+    wsVel[i * 3 + 1] = (4.4 + Math.pow(hash2D(i, 49.6), 0.72) * 5.8) * anc.boost; // 4.4 .. 10.2 m/s upward splash!
+    wsVel[i * 3 + 2] = anc.landZ * landThrow + tangZ * sideSpread;
+
+    wsMeta[i * 3] = hash2D(i, 57.3);
+    wsMeta[i * 3 + 1] = 0.48 + hash2D(i, 64.9) * 0.36;
+    wsMeta[i * 3 + 2] = 0.55 + hash2D(i, 73.1) * 0.95;
+  }
+
+  const waveSplashGeom = new THREE.BufferGeometry();
+  waveSplashGeom.setAttribute('position', new THREE.BufferAttribute(wsPos, 3));
+  waveSplashGeom.setAttribute('aVelocity', new THREE.BufferAttribute(wsVel, 3));
+  waveSplashGeom.setAttribute('aMeta', new THREE.BufferAttribute(wsMeta, 3));
+
+  const waveSplashUniforms: Record<string, THREE.IUniform> = {
+    ...atmosphereUniforms,
+    uWaveEnergy: { value: 1.0 },
+  };
+  const waveSplashMat = new THREE.ShaderMaterial({
+    name: 'CoastalWaveRockSplashParticles',
+    transparent: true,
+    depthWrite: false,
+    uniforms: waveSplashUniforms,
+    vertexShader: /* glsl */ `
+      attribute vec3 aVelocity;
+      attribute vec3 aMeta;
+      uniform float uTime;
+      uniform float uWaveEnergy;
+      varying float vAlpha;
+      varying vec3 vWorldPos;
+      void main() {
+        // Synchronize shore-splash bursts with incoming North Sea wave swells!
+        float swellWave = 0.5 + 0.5 * sin(uTime * 1.38 - dot(position.xz, vec2(0.075, 0.055)) + aMeta.z * 4.2);
+        float swellPulse = 0.38 + 0.62 * pow(swellWave, 1.5);
+        float energy = clamp(uWaveEnergy, 0.35, 2.35);
+
+        float phase = fract(aMeta.x + uTime * aMeta.y * (0.82 + 0.28 * energy));
+        vec3 v0 = aVelocity * (0.68 + 0.44 * energy) * (0.72 + 0.42 * swellWave);
+        float flightDur = clamp((2.05 * v0.y) / 9.81, 0.75, 2.45);
+        float t = phase * flightDur;
+
+        // Parabolic ballistic trajectory onto land & coastal rocks with aerodynamic spray drag!
+        float dragT = (1.0 - exp(-0.85 * t)) / 0.85;
+        vec3 wp = position;
+        wp.xz += v0.xz * dragT;
+        wp.y += v0.y * t - 4.905 * t * t;
+        vWorldPos = wp;
+
+        vec4 mv = modelViewMatrix * vec4(wp, 1.0);
+        float aboveSea = smoothstep(-11.75, -11.30, wp.y);
+        float distFade = 1.0 - smoothstep(135.0, 245.0, -mv.z);
+        float lifeEnv = smoothstep(0.0, 0.09, phase) * (1.0 - smoothstep(0.78, 1.0, phase));
+        vAlpha = aboveSea * distFade * lifeEnv * swellPulse * clamp(0.45 + 0.35 * energy, 0.0, 0.92);
+        gl_PointSize = clamp((48.0 * aMeta.z * (0.75 + 0.35 * energy)) / max(1.0, -mv.z), 1.5, 11.5);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      ${SHARED_SKY_GLSL}
+      uniform vec3 uSunColor;
+      varying float vAlpha;
+      varying vec3 vWorldPos;
+      void main() {
+        vec2 d = gl_PointCoord - 0.5;
+        float r2 = dot(d, d);
+        if (r2 > 0.25 || vAlpha <= 0.004) discard;
+        float dropMask = exp(-r2 * 12.5);
+        vec3 sprayCol = mix(uHorizonAntiColor, uHorizonSunColor, 0.48) * 1.38 + uSunColor * 0.55 + vec3(0.15);
+        vec3 toFrag = vWorldPos - cameraPosition;
+        float dist = length(toFrag);
+        vec3 hazeCol = evalHorizonHazeColor(toFrag);
+        float aerial = 1.0 - exp(-pow(max(uMistDensity * 0.85 * dist, 1e-6), 1.26));
+        vec3 col = mix(clamp(sprayCol, vec3(0.0), vec3(5.5)), hazeCol, clamp(aerial, 0.0, 0.95));
+        gl_FragColor = vec4(col, clamp(vAlpha * dropMask, 0.0, 0.88));
+      }
+    `,
+  });
+  const waveSplashPoints = new THREE.Points(waveSplashGeom, waveSplashMat);
+  waveSplashPoints.renderOrder = 4;
+  waveSplashPoints.frustumCulled = false;
+  group.add(waveSplashPoints);
+
+  // --- 7B. Camera-Centered 3D Wind-Slanted Rain Streaks + Surface Raindrop Impact Splash Rings ---
+  const rainCount = 3200;
+  const rainBaseQuad = new THREE.BufferGeometry();
+  rainBaseQuad.setAttribute(
+    'position',
+    new THREE.BufferAttribute(
+      new Float32Array([
+        -0.5, 0.0, 0.0,
+         0.5, 0.0, 0.0,
+         0.5, 1.0, 0.0,
+        -0.5, 1.0, 0.0,
+      ]),
+      3
+    )
+  );
+  rainBaseQuad.setAttribute(
+    'uv',
+    new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2)
+  );
+  rainBaseQuad.setIndex([0, 1, 2, 0, 2, 3]);
+
+  const rainInstGeom = new THREE.InstancedBufferGeometry();
+  rainInstGeom.index = rainBaseQuad.index;
+  rainInstGeom.attributes.position = rainBaseQuad.attributes.position;
+  rainInstGeom.attributes.uv = rainBaseQuad.attributes.uv;
+
+  const rainOffsets = new Float32Array(rainCount * 3);
+  const rainSeeds = new Float32Array(rainCount * 2);
+  for (let i = 0; i < rainCount; i++) {
+    rainOffsets[i * 3] = (hash2D(i, 3.7) - 0.5) * 92.0;
+    rainOffsets[i * 3 + 1] = (hash2D(i, 11.9) - 0.5) * 48.0;
+    rainOffsets[i * 3 + 2] = (hash2D(i, 19.3) - 0.5) * 92.0;
+    rainSeeds[i * 2] = hash2D(i, 29.1);
+    rainSeeds[i * 2 + 1] = hash2D(i, 43.7);
+  }
+  rainInstGeom.setAttribute('aRainOffset', new THREE.InstancedBufferAttribute(rainOffsets, 3));
+  rainInstGeom.setAttribute('aRainSeed', new THREE.InstancedBufferAttribute(rainSeeds, 2));
+  rainInstGeom.instanceCount = rainCount;
+
+  const rainCamCenter = new THREE.Vector3(0, 2.5, 8.0);
+  const rainUniforms: Record<string, THREE.IUniform> = {
+    ...atmosphereUniforms,
+    uCamCenter: { value: rainCamCenter },
+  };
+  const rainStreakMat = new THREE.ShaderMaterial({
+    name: 'NordicPhysicalRainStreaks',
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: rainUniforms,
+    vertexShader: /* glsl */ `
+      attribute vec3 aRainOffset;
+      attribute vec2 aRainSeed;
+      uniform float uTime;
+      uniform float uRainIntensity;
+      uniform vec3 uCamCenter;
+      varying vec2 vRainUv;
+      varying float vRainAlpha;
+      varying vec3 vWorldPos;
+
+      void main() {
+        vRainUv = uv;
+        float rainAmt = clamp(uRainIntensity, 0.0, 1.0);
+        // Terminal raindrop velocity (~21..28 m/s downward) slanted by turbulent North Sea wind gusts!
+        float fallSpeed = (20.5 + 8.0 * aRainSeed.x) * (0.82 + 0.30 * rainAmt);
+        float gust = sin(uTime * 1.35 + aRainSeed.y * 6.283) * 1.35;
+        vec3 rainVel = vec3(3.8 + 4.4 * rainAmt + gust, -fallSpeed, -2.4 - 2.8 * rainAmt + gust * 0.5);
+
+        vec3 boxSpan = vec3(92.0, 48.0, 92.0);
+        vec3 moved = aRainOffset + rainVel * uTime;
+        vec3 wrapped = mod(moved - uCamCenter + boxSpan * 0.5, boxSpan) - boxSpan * 0.5 + uCamCenter;
+
+        // Suppress raindrops below the ocean surface (-11.5m)
+        float aboveOcean = step(-11.35, wrapped.y);
+
+        vec3 velDir = normalize(rainVel);
+        vec3 toCam = cameraPosition - wrapped;
+        float camDist = length(toCam);
+        vec3 camDir = camDist > 1e-4 ? toCam / camDist : vec3(0.0, 0.0, 1.0);
+        vec3 sideVec = cross(camDir, velDir);
+        float sideLen = length(sideVec);
+        sideVec = sideLen > 1e-4 ? sideVec / sideLen : vec3(1.0, 0.0, 0.0);
+
+        // Motion-blurred raindrop streak length & crisp optical thickness
+        float streakLen = (0.48 + 0.62 * rainAmt + 0.32 * aRainSeed.x) * aboveOcean;
+        float streakWidth = clamp(0.011 + camDist * 0.00048, 0.011, 0.036) * aboveOcean;
+
+        vec3 worldPt = wrapped + sideVec * (position.x * streakWidth) - velDir * (position.y * streakLen);
+        vWorldPos = worldPt;
+
+        // Smooth density ramp: fewer drops in light coastal sun-shower, full curtain in storm squall!
+        float activeDrop = smoothstep(aRainSeed.y * 0.86, aRainSeed.y * 0.86 + 0.14, rainAmt);
+        float nearClearFade = smoothstep(1.1, 3.2, camDist) * (1.0 - smoothstep(34.0, 46.0, camDist));
+        vRainAlpha = activeDrop * nearClearFade * aboveOcean * (0.20 + 0.34 * rainAmt);
+
+        gl_Position = projectionMatrix * viewMatrix * vec4(worldPt, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      ${SHARED_SKY_GLSL}
+      uniform vec3 uSunColor;
+      varying vec2 vRainUv;
+      varying float vRainAlpha;
+      varying vec3 vWorldPos;
+      void main() {
+        if (vRainAlpha <= 0.003) discard;
+        float across = 1.0 - abs(vRainUv.x * 2.0 - 1.0);
+        // Brighter leading droplet head at vRainUv.y ~ 0, tapering into a silky motion-blurred tail!
+        float along = sin(vRainUv.y * 3.14159265) * (1.18 - 0.52 * vRainUv.y);
+        float alpha = clamp(vRainAlpha * across * along, 0.0, 0.68);
+        if (alpha <= 0.003) discard;
+
+        vec3 skyTint = mix(uHorizonAntiColor, uHorizonSunColor, 0.42) * 1.35 + uSunColor * 0.48 + vec3(0.18, 0.22, 0.26);
+        gl_FragColor = vec4(clamp(skyTint, vec3(0.0), vec3(4.5)), alpha);
+      }
+    `,
+  });
+  const rainStreaksMesh = new THREE.Mesh(rainInstGeom, rainStreakMat);
+  rainStreaksMesh.renderOrder = 6;
+  rainStreaksMesh.frustumCulled = false;
+  group.add(rainStreaksMesh);
+
+  // Surface Raindrop Impact Splash Rings & Micro-Crowns on Hero Cliff Rock & Surrounding Ocean (900 impacts!)
+  const rainSplashCount = 900;
+  const rsPos = new Float32Array(rainSplashCount * 3);
+  const rsSeed = new Float32Array(rainSplashCount * 2);
+  for (let i = 0; i < rainSplashCount; i++) {
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
+    if (i < 540) {
+      // Impacts across the Hero Cliff rock plateau, boulders & ledges!
+      sx = (hash2D(i, 7.1) - 0.5) * 44.0;
+      sz = -12.0 + (hash2D(i, 15.9) - 0.5) * 38.0;
+      sy = Math.max(SEA_LEVEL_Y + 0.14, sampleHeroCliffHeight(sx, sz) + 0.04);
+    } else {
+      // Impacts dimpling the ocean water surface around the cliff!
+      sx = (hash2D(i, 23.4) - 0.5) * 110.0;
+      sz = -16.0 + (hash2D(i, 31.8) - 0.5) * 110.0;
+      sy = SEA_LEVEL_Y + 0.14;
+    }
+    rsPos[i * 3] = sx;
+    rsPos[i * 3 + 1] = sy;
+    rsPos[i * 3 + 2] = sz;
+    rsSeed[i * 2] = hash2D(i, 47.2);
+    rsSeed[i * 2 + 1] = hash2D(i, 61.5);
+  }
+  const rainSplashGeom = new THREE.BufferGeometry();
+  rainSplashGeom.setAttribute('position', new THREE.BufferAttribute(rsPos, 3));
+  rainSplashGeom.setAttribute('aSplashSeed', new THREE.BufferAttribute(rsSeed, 2));
+  const rainSplashMat = new THREE.ShaderMaterial({
+    name: 'NordicRaindropSurfaceSplashes',
+    transparent: true,
+    depthWrite: false,
+    uniforms: rainUniforms,
+    vertexShader: /* glsl */ `
+      attribute vec2 aSplashSeed;
+      uniform float uTime;
+      uniform float uRainIntensity;
+      varying float vPhase;
+      varying float vActive;
+      void main() {
+        float rainAmt = clamp(uRainIntensity, 0.0, 1.0);
+        float cycle = fract(aSplashSeed.x + uTime * (1.8 + 1.4 * aSplashSeed.y));
+        vPhase = cycle;
+        float active = smoothstep(aSplashSeed.y * 0.88, aSplashSeed.y * 0.88 + 0.12, rainAmt);
+        vec3 wp = position;
+        // Tiny crown bounce right on impact (first 35% of cycle)
+        wp.y += sin(min(1.0, cycle * 2.8) * 3.14159265) * 0.09;
+        vec4 mv = modelViewMatrix * vec4(wp, 1.0);
+        float distFade = 1.0 - smoothstep(32.0, 62.0, -mv.z);
+        vActive = active * distFade * (1.0 - smoothstep(0.42, 0.95, cycle)) * (0.35 + 0.45 * rainAmt);
+        gl_PointSize = clamp((28.0 * (0.35 + cycle * 1.1)) / max(1.0, -mv.z), 1.5, 9.0);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      ${SHARED_SKY_GLSL}
+      uniform vec3 uSunColor;
+      varying float vPhase;
+      varying float vActive;
+      void main() {
+        if (vActive <= 0.004) discard;
+        vec2 d = gl_PointCoord - 0.5;
+        float r = length(d) * 2.0;
+        if (r > 1.0) discard;
+        // Expanding water-crown ring + central micro-droplet!
+        float ringR = clamp(0.25 + vPhase * 0.72, 0.25, 0.96);
+        float ring = exp(-pow((r - ringR) / 0.22, 2.0));
+        float centerDrop = exp(-r * r * 9.0) * (1.0 - vPhase);
+        float shape = clamp(ring * 0.85 + centerDrop * 0.65, 0.0, 1.0);
+        vec3 col = mix(uHorizonAntiColor, uHorizonSunColor, 0.46) * 1.35 + uSunColor * 0.52 + vec3(0.16);
+        gl_FragColor = vec4(clamp(col, vec3(0.0), vec3(4.5)), clamp(vActive * shape, 0.0, 0.78));
+      }
+    `,
+  });
+  const rainSplashPoints = new THREE.Points(rainSplashGeom, rainSplashMat);
+  rainSplashPoints.renderOrder = 5;
+  rainSplashPoints.frustumCulled = false;
+  group.add(rainSplashPoints);
+
+  // --- 7C. Cliff-Edge Updraft Sea-Foam & Sunlit/Moonlit Wind Motes (720 curl-turbulence particles!) ---
+  const moteCount = 720;
   const motePositions = new Float32Array(moteCount * 3);
   const moteSeeds = new Float32Array(moteCount);
   for (let i = 0; i < moteCount; i++) {
-    motePositions[i * 3] = (hash2D(i, 31.7) - 0.5) * 64.0;
-    motePositions[i * 3 + 1] = -7.0 + hash2D(i, 47.3) * 28.0;
-    motePositions[i * 3 + 2] = -16.0 + hash2D(i, 59.1) * 56.0;
+    motePositions[i * 3] = (hash2D(i, 31.7) - 0.5) * 76.0;
+    motePositions[i * 3 + 1] = -9.5 + hash2D(i, 47.3) * 32.0;
+    motePositions[i * 3 + 2] = -22.0 + hash2D(i, 59.1) * 64.0;
     moteSeeds[i] = hash2D(i, 73.9);
   }
   const moteGeom = new THREE.BufferGeometry();
@@ -3264,12 +3868,14 @@ export function createNordicCliffWorld(
       varying float vAlpha;
       void main() {
         vec3 p = position;
-        p.x = mod(p.x + 32.0 + uTime * (1.1 + aSeed * 0.9), 64.0) - 32.0;
-        p.y += sin(uTime * 0.9 + aSeed * 12.0) * 0.35;
-        p.z = mod(p.z + 18.0 - uTime * (0.7 + aSeed * 0.6), 56.0) - 18.0;
+        p.x = mod(p.x + 38.0 + uTime * (1.25 + aSeed * 1.1), 76.0) - 38.0;
+        // Coastal cliff updraft near the front jump-off rim (z ~ 2..10, |x| < 18)!
+        float cliffUpdraft = exp(-pow((p.z - 5.0) / 8.5, 2.0)) * smoothstep(22.0, 4.0, abs(p.x));
+        p.y += sin(uTime * 1.15 + aSeed * 12.0 + p.x * 0.12) * 0.55 + cliffUpdraft * (1.8 + 1.4 * sin(uTime * 0.8 + aSeed * 6.28));
+        p.z = mod(p.z + 22.0 - uTime * (0.85 + aSeed * 0.75), 64.0) - 22.0;
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = clamp((16.0 + 12.0 * aSeed) / max(1.0, -mv.z), 1.5, 4.8);
-        vAlpha = (0.11 + 0.18 * aSeed) * smoothstep(54.0, 6.0, -mv.z);
+        gl_PointSize = clamp((18.0 + 15.0 * aSeed) / max(1.0, -mv.z), 1.5, 5.4);
+        vAlpha = (0.12 + 0.20 * aSeed) * smoothstep(62.0, 6.0, -mv.z);
         gl_Position = projectionMatrix * mv;
       }
     `,
@@ -3293,10 +3899,22 @@ export function createNordicCliffWorld(
   return {
     group,
     ocean,
-    update(timeSec: number) {
+    update(timeSec: number, cameraPos?: THREE.Vector3) {
       floraTimeUniform.uTime.value = timeSec;
       moteUniforms.uTime.value = timeSec;
       ocean.update(timeSec);
+
+      // Couple shore wave-splash ballistic energy to live ocean swell amplitude & choppiness!
+      const ocParams = ocean.params;
+      waveSplashUniforms.uWaveEnergy.value =
+        0.45 + ocParams.waveAmplitude * (0.55 + 0.45 * ocParams.seaChoppiness);
+
+      if (cameraPos) {
+        rainCamCenter.copy(cameraPos);
+      }
+      const rainActive = atmosphereUniforms.uRainIntensity.value > 0.005;
+      rainStreaksMesh.visible = rainActive;
+      rainSplashPoints.visible = rainActive;
     },
   };
 }
