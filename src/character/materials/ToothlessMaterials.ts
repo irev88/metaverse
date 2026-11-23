@@ -187,8 +187,8 @@ function injectHybridDragonShader(
           roughnessFactor = mix(roughnessFactor, mix(0.78, 0.22, plateR.x), plateRArmor * 0.88);
         }
         roughnessFactor = mix(roughnessFactor, 0.44, scarRWeight * 0.75);
-        roughnessFactor = mix(roughnessFactor, 0.06, uLightningCloak * 0.88);
-        roughnessFactor = clamp(roughnessFactor, 0.05, 0.96);`
+        roughnessFactor = mix(roughnessFactor, 0.072, uLightningCloak * 0.88);
+        roughnessFactor = clamp(roughnessFactor, 0.068, 0.96);`
       )
       .replace(
         '#include <metalnessmap_fragment>',
@@ -213,17 +213,16 @@ function injectHybridDragonShader(
           float plateNW = clamp(vAnatomyData.x - 1.0, 0.0, 1.0);
           float scarW = clamp(vAnatomyData.y, 0.0, 1.0);
           vec3 blendedMapN = normalize(mix(
-            vec3(mapNFine.xy * 0.82, mapNFine.z),
-            vec3(mapNMacro.xy * 1.45, mapNMacro.z),
+            vec3(mapNFine.xy * 0.82, max(mapNFine.z, 0.15)),
+            vec3(mapNMacro.xy * 1.45, max(mapNMacro.z, 0.15)),
             mScaleW
           ));
           blendedMapN.xy *= (1.0 - scarW * 0.72);
           blendedMapN.xy *= normalScale * (1.0 - plateNW * 0.55);
-          normal = normalize( tbn * blendedMapN );
+          vec3 tbnN = tbn * blendedMapN;
+          normal = dot(tbnN, tbnN) > 1e-8 ? normalize(tbnN) : normal;
           if (plateNW > 0.01 && !${isWingMembrane ? 'true' : 'false'}) {
             vec4 plateN = evalMacroArmorPlate3D(vObjPos);
-            // Screen-space Mikkelsen surface-gradient bump perturbation: uses only guaranteed view-space
-            // vViewPosition + normal + dFdx/dFdy (zero undeclared uniforms, and 100% accurate under skeletal skinning!)
             float plateBumpH = plateN.x * plateNW * 0.020 * (1.0 - scarW * 0.8);
             vec3 dPdx = dFdx( -vViewPosition );
             vec3 dPdy = dFdy( -vViewPosition );
@@ -232,7 +231,8 @@ function injectHybridDragonShader(
             float det = dot( dPdx, r1 );
             float signDet = det < 0.0 ? -1.0 : 1.0;
             vec3 surfGrad = signDet * ( dFdx( plateBumpH ) * r1 + dFdy( plateBumpH ) * r2 );
-            normal = normalize( abs( det ) * normal - surfGrad + vec3( 0.0, 0.0, 1e-6 ) );
+            vec3 pertPlate = abs( det ) * normal - surfGrad;
+            normal = dot( pertPlate, pertPlate ) > 1e-12 ? normalize( pertPlate ) : normal;
           }
         #elif defined( USE_BUMPMAP )
           normal = perturbNormalArb( - vViewPosition, normal, dHdxy_fwd(), faceDirection );
@@ -281,6 +281,11 @@ function injectHybridDragonShader(
           float flicker = 0.65 + 0.35 * sin(uTime * 31.0 + vObjPos.z * 9.0);
           totalEmissiveRadiance += vec3(0.48, 0.84, 1.85) * bolt * uLightningCloak * 4.2 * flicker;
         }`
+      )
+      .replace(
+        '#include <dithering_fragment>',
+        `#include <dithering_fragment>
+        gl_FragColor.rgb = clamp(gl_FragColor.rgb, vec3(0.0), vec3(24.0));`
       );
   };
 }

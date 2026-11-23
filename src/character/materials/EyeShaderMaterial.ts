@@ -200,20 +200,28 @@ export function createToothlessEyeMaterials(): ToothlessEyeMaterials {
   };
 
   // Separate glossy refractive outer corneal bulge for crisp sky/sun specular highlights & wet tear sheen
+  // (roughness >= 0.072 prevents D_GGX > 65504 HalfFloatType +Inf overflow -> bloom black squares!)
   const corneaMaterial = new THREE.MeshPhysicalMaterial({
     name: 'Toothless_Cornea_WetCoat',
     color: new THREE.Color(0xffffff),
     transparent: true,
     opacity: 0.14,
-    roughness: 0.012,
+    roughness: 0.072,
     metalness: 0.0,
     ior: 1.376,
     reflectivity: 1.0,
     clearcoat: 1.0,
-    clearcoatRoughness: 0.01,
-    envMapIntensity: 2.8,
+    clearcoatRoughness: 0.068,
+    envMapIntensity: 2.4,
     depthWrite: false,
   });
+  corneaMaterial.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <dithering_fragment>',
+      `#include <dithering_fragment>
+      gl_FragColor.rgb = clamp(gl_FragColor.rgb, vec3(0.0), vec3(22.0));`
+    );
+  };
 
   return {
     irisMaterial,

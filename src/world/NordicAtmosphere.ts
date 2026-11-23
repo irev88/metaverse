@@ -317,26 +317,31 @@ export const SHARED_SKY_GLSL = /* glsl */ `
     return v;
   }
 
-  // Evaluates clean, continuous sky + perspective cloud radiance (100% seamless across rawDir.y = 0, ZERO horizon dark strip!)
+  // Evaluates clean, continuous sky + perspective cloud radiance (100% seamless across rawDir.y = 0, ZERO horizon dark strip, NaN-proof at nadir!)
   vec3 evalPhysicalSky(vec3 rawDir, float timeSec, bool includeStarsAndDisc) {
-    vec3 normRaw = normalize(rawDir);
-    vec3 dir = uIsEnvBake > 0.5 ? normRaw : normalize(vec3(normRaw.x, max(normRaw.y, 0.0), normRaw.z));
+    float rawLen = max(length(rawDir), 1e-5);
+    vec3 normRaw = rawDir / rawLen;
+    float xzLen = length(normRaw.xz);
+    vec3 safeUpper = xzLen > 1e-5
+      ? normalize(vec3(normRaw.x, max(normRaw.y, 0.0), normRaw.z))
+      : vec3(0.0, max(normRaw.y, 0.0) > 0.5 ? 1.0 : 0.0, max(normRaw.y, 0.0) > 0.5 ? 0.0 : -1.0);
+    vec3 dir = uIsEnvBake > 0.5 ? normRaw : safeUpper;
     vec3 sunN = normalize(uSunDir);
     float elev = clamp(dir.y, 0.0, 1.0);
     float sunDot = clamp(dot(dir, sunN), 0.0, 1.0);
 
     // Smooth azimuthal warm/cool gradient around the 360-deg horizon
-    vec2 horizDir = normalize(dir.xz + vec2(1e-5));
-    vec2 horizSun = normalize(sunN.xz + vec2(1e-5));
+    vec2 horizDir = length(dir.xz) > 1e-5 ? normalize(dir.xz) : vec2(0.0, -1.0);
+    vec2 horizSun = length(sunN.xz) > 1e-5 ? normalize(sunN.xz) : vec2(0.0, -1.0);
     float azim = dot(horizDir, horizSun) * 0.5 + 0.5;
     vec3 horizBase = mix(uHorizonAntiColor, uHorizonSunColor, smoothstep(0.08, 0.95, azim));
 
     // Rayleigh vertical gradient from zenith down to horizon
-    float horizonCurve = pow(1.0 - elev, 3.1);
+    float horizonCurve = pow(max(1.0 - elev, 1e-5), 3.1);
     vec3 sky = mix(uZenithColor, horizBase, horizonCurve);
 
     // Anisotropic Mie forward-scattering solar/lunar glow
-    sky += uMieColor * pow(sunDot, uMieExponent) * uMieStrength * (0.35 + 0.65 * pow(1.0 - elev, 1.6));
+    sky += uMieColor * pow(max(sunDot, 1e-5), max(uMieExponent, 1.0)) * uMieStrength * (0.35 + 0.65 * pow(max(1.0 - elev, 1e-5), 1.6));
 
     // Crisp Starfield + Subtle Authentic Aurora Borealis (when uNightFactor > 0)
     if (includeStarsAndDisc && uNightFactor > 0.01 && dir.y > 0.02) {
@@ -379,7 +384,7 @@ export const SHARED_SKY_GLSL = /* glsl */ `
       float cloudHorizonFade = smoothstep(0.008, 0.15, dir.y);
       float cMask = smoothstep(thresh, thresh + 0.34, cField) * cloudHorizonFade;
 
-      float sunLining = pow(sunDot, 3.2) * (1.0 - uCloudCoverage * 0.35);
+      float sunLining = pow(max(sunDot, 1e-5), 3.2) * (1.0 - uCloudCoverage * 0.35);
       float thickness = smoothstep(thresh, thresh + 0.42, cField);
       vec3 cCol = mix(uCloudLitColor, uCloudDarkColor, thickness * 0.68);
       cCol += uMieColor * sunLining * 0.35;
@@ -402,13 +407,14 @@ export const SHARED_SKY_GLSL = /* glsl */ `
       sky = mix(sky, seaBounce, smoothstep(0.08, 0.42, -normRaw.y));
     }
 
-    return sky;
+    return clamp(sky, vec3(0.0), vec3(24.0));
   }
 
-  // Evaluates exact matching sky/horizon radiance along any view ray for 100% seamless ocean & mountain horizon blending!
+  // Evaluates exact matching sky/horizon radiance along any view ray (100% NaN-safe even looking straight down at nadir!)
   vec3 evalHorizonHazeColor(vec3 viewRayDir) {
-    vec3 nRay = normalize(viewRayDir);
-    vec3 rayDir = normalize(vec3(nRay.x, max(nRay.y, 0.0), nRay.z));
+    vec2 hz = viewRayDir.xz;
+    float hzLen = length(hz);
+    vec3 rayDir = hzLen > 1e-5 ? vec3(hz.x / hzLen, 0.0, hz.y / hzLen) : vec3(0.0, 0.0, -1.0);
     return evalPhysicalSky(rayDir, uTime, false);
   }
 `;

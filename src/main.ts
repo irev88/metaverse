@@ -84,8 +84,51 @@ async function bootstrap(): Promise<void> {
     0.52,
     1.04
   );
+  // Sanitize HalfFloatType (RGBA16F) texels entering UnrealBloomPass so any subpixel FP16 overflow (>65504 -> Inf)
+  // or driver NaN can NEVER propagate through the 5-mip separable X/Y blur into a transient black square!
+  bloomPass.materialHighPassFilter.fragmentShader = /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform vec3 defaultColor;
+    uniform float defaultOpacity;
+    uniform float luminosityThreshold;
+    uniform float smoothWidth;
+    varying vec2 vUv;
+
+    float safeFiniteChannel(float c) {
+      // IEEE-754: NaN fails all comparisons; +Inf exceeds 65000.0
+      if (!(c >= 0.0)) return 0.0;
+      if (!(c <= 65000.0)) return 28.0;
+      return min(c, 28.0);
+    }
+
+    void main() {
+      vec4 rawTexel = texture2D(tDiffuse, vUv);
+      vec3 safeRgb = vec3(
+        safeFiniteChannel(rawTexel.r),
+        safeFiniteChannel(rawTexel.g),
+        safeFiniteChannel(rawTexel.b)
+      );
+      float safeA = (rawTexel.a >= 0.0 && rawTexel.a <= 1.0) ? rawTexel.a : 1.0;
+      float v = dot(safeRgb, vec3(0.2126, 0.7152, 0.0722));
+      float alpha = smoothstep(luminosityThreshold, luminosityThreshold + smoothWidth, v);
+      gl_FragColor = vec4(mix(defaultColor.rgb, safeRgb, alpha), mix(defaultOpacity, safeA, alpha));
+    }
+  `;
+  bloomPass.materialHighPassFilter.needsUpdate = true;
   composer.addPass(bloomPass);
-  composer.addPass(new OutputPass());
+
+  const outputPass = new OutputPass();
+  // Guard ACESFilmicToneMapping against Inf/Inf = NaN -> black pixel if any HDR pixel ever exceeds FP16 range
+  outputPass.material.fragmentShader = outputPass.material.fragmentShader.replace(
+    'gl_FragColor = texture2D( tDiffuse, vUv );',
+    `gl_FragColor = texture2D( tDiffuse, vUv );
+     gl_FragColor.r = !(gl_FragColor.r >= 0.0) ? 0.0 : (!(gl_FragColor.r <= 65000.0) ? 32.0 : min(gl_FragColor.r, 32.0));
+     gl_FragColor.g = !(gl_FragColor.g >= 0.0) ? 0.0 : (!(gl_FragColor.g <= 65000.0) ? 32.0 : min(gl_FragColor.g, 32.0));
+     gl_FragColor.b = !(gl_FragColor.b >= 0.0) ? 0.0 : (!(gl_FragColor.b <= 65000.0) ? 32.0 : min(gl_FragColor.b, 32.0));
+     gl_FragColor.a = 1.0;`
+  );
+  outputPass.material.needsUpdate = true;
+  composer.addPass(outputPass);
 
   // 1. Build Photorealistic Nordic Atmosphere, Bathymetric Seafloor & Multi-Belt Archipelago
   await loadingScreen.advanceTo(34, 'Sculpting Nordic archipelago ridges, sea-arches & North Sea swells…');

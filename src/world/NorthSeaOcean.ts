@@ -234,7 +234,7 @@ const OCEAN_FRAG = /* glsl */ `
     float localCos = clamp(dot(N, V), 0.0, 1.0);
     float macroCos = clamp(V.y, 0.0, 1.0);
     float effectiveCos = mix(localCos, macroCos, smoothstep(130.0, 520.0, dist));
-    float fresnel = 0.028 + 0.972 * pow(1.0 - effectiveCos, 4.8);
+    float fresnel = 0.028 + 0.972 * pow(max(1.0 - effectiveCos, 1e-5), 4.8);
 
     // Coastal shoaling tint & surf around all 24 archipelago islands, crescents, lagoons & sea-stacks!
     float foamLace = skyFbm(p * 0.88 + vec2(uTime * 0.20 * uWaveSpeed, -uTime * 0.14 * uWaveSpeed));
@@ -264,7 +264,7 @@ const OCEAN_FRAG = /* glsl */ `
     vec3 baseBody = mix(uWaterDeepColor, uWaterShallowColor, vCrestFactor * 0.48);
     vec3 waterBody = mix(baseBody, shoalTint, shoalGlow * 0.55);
 
-    float sunBacklit = pow(clamp(dot(V, -vec3(L.x, L.y * 0.35, L.z)), 0.0, 1.0), 2.6);
+    float sunBacklit = pow(max(clamp(dot(V, -vec3(L.x, L.y * 0.35, L.z)), 0.0, 1.0), 1e-5), 2.6);
     float thinCrest = smoothstep(0.46, 0.96, vCrestFactor) * clamp(uWaveAmp, 0.15, 1.9);
     vec3 crestSSS = uWaterShallowColor * 1.68 * thinCrest * (0.28 + 0.85 * sunBacklit) * (1.0 - uNightFactor * 0.55);
 
@@ -273,12 +273,13 @@ const OCEAN_FRAG = /* glsl */ `
     vec3 farWaterScatter = mix(waterBody + crestSSS, skyReflect * 0.72, smoothstep(320.0, 1450.0, dist));
     vec3 col = mix(farWaterScatter, skyReflect, fresnel);
 
-    // Dual-lobe solar / lunar glitter path modulated by wind catspaws
-    vec3 H = normalize(L + V);
-    float ndoth = clamp(dot(N, H), 0.0, 1.0);
+    // Dual-lobe solar / lunar glitter path modulated by wind catspaws (NaN-safe anti-sun half-vector!)
+    vec3 halfSum = L + V;
+    vec3 H = dot(halfSum, halfSum) > 1e-6 ? normalize(halfSum) : vec3(0.0, 1.0, 0.0);
+    float ndoth = max(clamp(dot(N, H), 0.0, 1.0), 1e-5);
     float specPowerTight = mix(440.0, 105.0, smoothstep(35.0, 520.0, dist));
     float specTight = pow(ndoth, specPowerTight) * (0.30 + 0.70 * localDetail) * (1.0 - smoothstep(420.0, 1200.0, dist));
-    float specBroad = pow(ndoth, 36.0) * (1.0 - smoothstep(420.0, 1550.0, dist));
+    float specBroad = pow(ndoth, 36.0) * (0.35 + 0.65 * localDetail) * (1.0 - smoothstep(420.0, 1550.0, dist));
     col += uSunColor * (specTight * uGlitterIntensity + specBroad * uGlitterIntensity * 0.09);
 
     // Irregular wave-group whitecaps & wind-driven Langmuir foam streaks!
@@ -296,9 +297,8 @@ const OCEAN_FRAG = /* glsl */ `
     col = mix(col, foamAmbient, totalFoam);
 
     // Gradual aerial perspective convergence to exact horizon sky (100% pixel-identical to skydome at every angle & altitude!)
-    vec3 viewRay = normalize(vWorldPos - cameraPosition);
-    vec3 exactHorizonSky = evalHorizonHazeColor(viewRay);
-    float aerialExtinction = 1.0 - exp(-pow(uMistDensity * dist, 1.24));
+    vec3 exactHorizonSky = evalHorizonHazeColor(-toCam);
+    float aerialExtinction = 1.0 - exp(-pow(max(uMistDensity * dist, 1e-6), 1.24));
     float distRimFeather = smoothstep(1650.0, 5100.0, dist);
     float outerRimFeather = smoothstep(2400.0, 5350.0, length(p));
     float horizonBlend = clamp(max(aerialExtinction, max(distRimFeather, outerRimFeather)), 0.0, 1.0);
@@ -310,7 +310,7 @@ const OCEAN_FRAG = /* glsl */ `
     float waterAlpha = mix(1.0, 0.80, clamp(nearShoalClarity, 0.0, 1.0));
     waterAlpha = mix(waterAlpha, 1.0, horizonBlend);
 
-    gl_FragColor = vec4(col, clamp(waterAlpha, 0.80, 1.0));
+    gl_FragColor = vec4(clamp(col, vec3(0.0), vec3(24.0)), clamp(waterAlpha, 0.80, 1.0));
   }
 `;
 

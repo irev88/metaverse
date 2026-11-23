@@ -330,15 +330,22 @@ function createLightFuryEyeMaterials(): LightFuryEyeMaterials {
     color: new THREE.Color(0xffffff),
     transparent: true,
     opacity: 0.15,
-    roughness: 0.012,
+    roughness: 0.072,
     metalness: 0.0,
     ior: 1.376,
     reflectivity: 1.0,
     clearcoat: 1.0,
-    clearcoatRoughness: 0.01,
-    envMapIntensity: 2.8,
+    clearcoatRoughness: 0.068,
+    envMapIntensity: 2.4,
     depthWrite: false,
   });
+  corneaMaterial.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <dithering_fragment>',
+      `#include <dithering_fragment>
+      gl_FragColor.rgb = clamp(gl_FragColor.rgb, vec3(0.0), vec3(22.0));`
+    );
+  };
 
   return { irisMaterial, corneaMaterial, uniforms };
 }
@@ -481,8 +488,9 @@ function injectLightFuryShader(
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
         // Porcelain-velvet smoothness (much smoother than Toothless!) -> mirror crystal when cloaking
-        roughnessFactor = mix(roughnessFactor * 0.86, 0.022, uThermalCloak * 0.95);
-        roughnessFactor = clamp(roughnessFactor, 0.02, 0.65);`
+        // Floor >= 0.068 prevents D_GGX > 65504 HalfFloatType +Inf overflow on subpixel scales!
+        roughnessFactor = mix(roughnessFactor * 0.86, 0.068, uThermalCloak * 0.95);
+        roughnessFactor = clamp(roughnessFactor, 0.068, 0.65);`
       )
       .replace(
         '#include <metalnessmap_fragment>',
@@ -495,21 +503,24 @@ function injectLightFuryShader(
         float pStripe = clamp(vAnatomyData.y, 0.0, 1.0);
         float pBlue = clamp(vAnatomyData.z, 0.0, 1.0);
         float pZone = clamp(vAnatomyData.w, 0.0, 1.0);
-        vec3 viewW = normalize(cameraPosition - vWorldPositionCustom);
+        vec3 toCamLF = cameraPosition - vWorldPositionCustom;
+        vec3 viewW = dot(toCamLF, toCamLF) > 1e-8 ? normalize(toCamLF) : vec3(0.0, 0.0, 1.0);
         vec3 sunN = normalize(uSunDir);
 
         // 1. Pinpoint Stardust Crystal Glimmer & Subtle Pearlescent Sheen (movie stills refs 13 & 16!)
         if (uIridescentShimmer > 0.001) {
           // Tier A: Tiny, crisp pinpoint diamond stardust specks (twinkling gently as view/breath shifts!)
           vec3 fineCell = floor(vObjPos * 285.0);
-          vec3 randDirA = normalize(vec3(
+          vec3 randDirRaw = vec3(
             lfHash31(fineCell) - 0.5,
-            lfHash31(fineCell + 19.7) - 0.5,
+            lfHash31(fineCell + 19.7) - 0.5 + 1e-3,
             lfHash31(fineCell + 47.3) - 0.5
-          ));
-          vec3 halfV = normalize(viewW + sunN);
+          );
+          vec3 randDirA = normalize(randDirRaw);
+          vec3 halfSumLF = viewW + sunN;
+          vec3 halfV = dot(halfSumLF, halfSumLF) > 1e-6 ? normalize(halfSumLF) : vec3(0.0, 1.0, 0.0);
           float twinkle = 0.78 + 0.22 * sin(uTime * 2.4 + lfHash31(fineCell + 7.7) * 6.283);
-          float pinpoint = pow(clamp(dot(normalize(normal + randDirA * 0.48), halfV), 0.0, 1.0), 88.0);
+          float pinpoint = pow(max(clamp(dot(normalize(normal + randDirA * 0.48), halfV), 0.0, 1.0), 1e-5), 88.0);
           float sparseStars = smoothstep(0.76, 0.985, lfHash31(fineCell + 91.7));
           float zoneDensity = 0.28 + 0.92 * pStripe; // Concentrated on forehead hearts, neck/shoulders & wing bands!
           vec3 starColor = mix(vec3(1.0, 0.88, 0.96), vec3(0.84, 0.94, 1.0), lfHash31(fineCell + 5.1));
@@ -593,6 +604,11 @@ function injectLightFuryShader(
           vec3 cloakPlasma = mix(vec3(0.95, 0.54, 0.92), vec3(0.48, 0.92, 1.0), lfNoise3D(vObjPos * 6.0));
           totalEmissiveRadiance += cloakPlasma * heatBand * sin(uThermalCloak * 3.14159) * 2.4;
         }`
+      )
+      .replace(
+        '#include <dithering_fragment>',
+        `#include <dithering_fragment>
+        gl_FragColor.rgb = clamp(gl_FragColor.rgb, vec3(0.0), vec3(24.0));`
       );
   };
 }
