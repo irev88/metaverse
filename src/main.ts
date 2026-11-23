@@ -220,6 +220,15 @@ async function bootstrap(): Promise<void> {
       onRainIntensityChange(rain) {
         atmosphere.setRainIntensity(rain);
       },
+      onWindStrengthChange(wind) {
+        atmosphere.setWindStrength(wind);
+      },
+      onLightningFrequencyChange(freq) {
+        atmosphere.setLightningFrequency(freq);
+      },
+      onTriggerLightningStrike() {
+        atmosphere.triggerLightningStrike();
+      },
       onOceanParamsChange(patch) {
         cliffWorld.ocean.setOceanParams(patch);
       },

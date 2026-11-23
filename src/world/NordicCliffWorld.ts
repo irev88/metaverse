@@ -1817,17 +1817,17 @@ function generateBasaltRockPBRTextures(): {
       // Authentic North Atlantic basalt palette: charcoal-slate base + warm iron-oxide weathered blocks + deep crevice AO
       const ironWarmth = smoothstep(0.62, 0.92, minVar);
       const ao = 1.0 - crev * 0.56;
-      const baseR = (36 + h * 58 + ironWarmth * 22) * ao;
-      const baseG = (40 + h * 58 + ironWarmth * 11) * ao;
-      const baseB = (46 + h * 60 - ironWarmth * 6) * ao;
+      const baseR = (30 + h * 62 + ironWarmth * 34) * ao;
+      const baseG = (34 + h * 58 + ironWarmth * 15) * ao;
+      const baseB = (44 + h * 64 - ironWarmth * 8) * ao;
 
-      const mossR = 52 + h * 26;
-      const mossG = 74 + h * 34;
-      const mossB = 38 + h * 18;
+      const mossR = 44 + h * 28;
+      const mossG = 78 + h * 38;
+      const mossB = 34 + h * 18;
 
-      aImg.data[p4] = Math.round(THREE.MathUtils.lerp(baseR, mossR, moss * 0.52));
-      aImg.data[p4 + 1] = Math.round(THREE.MathUtils.lerp(baseG, mossG, moss * 0.52));
-      aImg.data[p4 + 2] = Math.round(THREE.MathUtils.lerp(baseB, mossB, moss * 0.52));
+      aImg.data[p4] = Math.round(THREE.MathUtils.lerp(baseR, mossR, moss * 0.56));
+      aImg.data[p4 + 1] = Math.round(THREE.MathUtils.lerp(baseG, mossG, moss * 0.56));
+      aImg.data[p4 + 2] = Math.round(THREE.MathUtils.lerp(baseB, mossB, moss * 0.56));
       aImg.data[p4 + 3] = 255;
 
       const cleavedRough = 0.54 + (1.0 - h) * 0.28 + crev * 0.16;
@@ -2087,14 +2087,22 @@ function buildDistantFjordArchipelago(atmosphereUniforms: AtmosphereSharedUnifor
         vec3 toFrag = vWorldPos - cameraPosition;
         float dist = length(toFrag);
 
-        float strataBands = 0.90 + 0.14 * sin(vWorldPos.y * 0.55 + skyNoise2(vWorldPos.xz * 0.025) * 2.4);
-        float slopeTurf = smoothstep(0.56, 0.84, N.y) * smoothstep(-4.0, 14.0, vWorldPos.y);
-        vec3 rockBase = mix(vec3(0.058, 0.068, 0.084) * strataBands, vec3(0.074, 0.122, 0.058), slopeTurf * 0.82);
+        float strataBands = 0.86 + 0.22 * sin(vWorldPos.y * 0.55 + skyNoise2(vWorldPos.xz * 0.025) * 2.6);
+        float ironBand = smoothstep(0.60, 0.92, sin(vWorldPos.y * 0.28 - vWorldPos.x * 0.008));
+        float slopeTurf = smoothstep(0.54, 0.84, N.y) * smoothstep(-4.0, 14.0, vWorldPos.y);
+        float moorMacro = skyFbm(vWorldPos.xz * 0.012);
+        vec3 cliffBasalt = mix(vec3(0.044, 0.052, 0.072), vec3(0.092, 0.068, 0.056), ironBand * 0.45) * strataBands;
+        vec3 distantTurf = mix(vec3(0.062, 0.132, 0.048), vec3(0.148, 0.128, 0.052), smoothstep(0.35, 0.80, moorMacro));
+        distantTurf = mix(distantTurf, vec3(0.112, 0.064, 0.098), smoothstep(26.0, 68.0, vWorldPos.y) * 0.38);
+        vec3 rockBase = mix(cliffBasalt, distantTurf, slopeTurf * 0.86);
 
         float ndotl = clamp(dot(N, L), 0.0, 1.0);
-        vec3 ambientSky = mix(uHorizonAntiColor, uZenithColor, 0.45) * 0.44;
-        vec3 directSun = uSunColor * ndotl * 0.56;
-        vec3 surfaceCol = rockBase * (ambientSky * 2.8 + directSun * 2.2);
+        vec3 boltL = normalize(uLightningDir + vec3(0.0, 1e-5, 0.0));
+        float ndotBolt = clamp(dot(N, boltL), 0.0, 1.0);
+        vec3 ambientSky = mix(uHorizonAntiColor, uZenithColor, 0.45) * 0.46;
+        vec3 directSun = uSunColor * ndotl * 0.62;
+        vec3 boltIllum = vec3(0.75, 0.88, 1.0) * uLightningFlash * (0.35 + 1.15 * ndotBolt);
+        vec3 surfaceCol = rockBase * (ambientSky * 2.9 + directSun * 2.35 + boltIllum);
 
         vec3 hazeCol = evalHorizonHazeColor(toFrag);
         float distHaze = 1.0 - exp(-pow(max(uMistDensity * 0.88 * dist, 1e-6), 1.22));
@@ -2114,36 +2122,58 @@ function buildDistantFjordArchipelago(atmosphereUniforms: AtmosphereSharedUnifor
   return mesh;
 }
 
+/**
+ * Multi-tier Coastal Grass & Tall Marram Sedge Tuft (9 sculpted arched blades of varied lengths + seed-plume tips).
+ * Includes root-to-tip vertex color shading for natural ambient occlusion at the crown and luminous backlit tips!
+ */
 function buildVariedGrassTuftGeometry(): THREE.BufferGeometry {
   const blades: THREE.BufferGeometry[] = [];
   const bladeConfigs = [
-    { dx: 0.0, dz: 0.0, h: 0.36, w: 0.020, bend: 0.11, rotY: 0.1 },
-    { dx: 0.032, dz: 0.018, h: 0.28, w: 0.017, bend: 0.14, rotY: 1.8 },
-    { dx: -0.028, dz: 0.022, h: 0.31, w: 0.018, bend: 0.12, rotY: 3.7 },
-    { dx: 0.012, dz: -0.030, h: 0.23, w: 0.015, bend: 0.15, rotY: 5.0 },
+    // Tall central &arching marram/sedge blades + seed panicles
+    { dx: 0.0, dz: 0.0, h: 0.52, w: 0.021, bend: 0.16, rotY: 0.15, plume: true },
+    { dx: 0.022, dz: -0.018, h: 0.44, w: 0.019, bend: 0.19, rotY: 2.35, plume: true },
+    // Mid-length arched meadow fescue blades
+    { dx: 0.036, dz: 0.022, h: 0.34, w: 0.018, bend: 0.14, rotY: 1.15, plume: false },
+    { dx: -0.034, dz: 0.026, h: 0.37, w: 0.018, bend: 0.15, rotY: 3.65, plume: false },
+    { dx: -0.026, dz: -0.032, h: 0.31, w: 0.016, bend: 0.13, rotY: 4.55, plume: false },
+    { dx: 0.044, dz: -0.012, h: 0.28, w: 0.016, bend: 0.16, rotY: 5.50, plume: false },
+    // Short dense basal turf blades filling ground-level volume
+    { dx: 0.018, dz: 0.042, h: 0.20, w: 0.015, bend: 0.11, rotY: 0.78, plume: false },
+    { dx: -0.046, dz: -0.006, h: 0.17, w: 0.014, bend: 0.10, rotY: 2.95, plume: false },
+    { dx: 0.006, dz: -0.046, h: 0.22, w: 0.015, bend: 0.12, rotY: 5.05, plume: false },
   ];
 
   for (const cfg of bladeConfigs) {
-    const segsY = 4;
+    const segsY = 5;
     const positions: number[] = [];
     const normals: number[] = [];
+    const colors: number[] = [];
     const indices: number[] = [];
     const cosY = Math.cos(cfg.rotY);
     const sinY = Math.sin(cfg.rotY);
 
     for (let i = 0; i <= segsY; i++) {
       const t = i / segsY;
-      const halfW = cfg.w * (1.0 - 0.88 * Math.pow(t, 1.3));
+      // Subtle golden seed-head swell near t ~ 0.84 on tall plume blades!
+      const plumeSwell = cfg.plume ? Math.exp(-Math.pow((t - 0.82) / 0.11, 2.0)) * 0.65 : 0.0;
+      const halfW = cfg.w * (1.0 - 0.90 * Math.pow(t, 1.28) + plumeSwell);
       const y = cfg.h * t;
       const droop = cfg.bend * t * t;
 
+      // Root AO -> vibrant mid-blade -> sunlit golden-warm tip!
+      const rootAO = 0.42 + 0.72 * Math.pow(t, 0.65);
+      const tipWarmR = rootAO * (1.0 + (cfg.plume ? 0.32 : 0.14) * t * t);
+      const tipWarmG = rootAO * (1.0 + 0.12 * t);
+      const tipWarmB = rootAO * (0.88 + 0.08 * t);
+
       for (const side of [-1, 1]) {
         const lx = side * halfW;
-        const lz = droop;
+        const lz = droop + (side * 0.0025 * (1.0 - t)); // subtle V-ribbed blade crease!
         const wx = cfg.dx + lx * cosY - lz * sinY;
         const wz = cfg.dz + lx * sinY + lz * cosY;
         positions.push(wx, y, wz);
-        normals.push(-sinY * 0.3, 0.92, cosY * 0.3);
+        normals.push(-sinY * 0.28 + side * cosY * 0.22, 0.91, cosY * 0.28 + side * sinY * 0.22);
+        colors.push(tipWarmR, tipWarmG, tipWarmB);
       }
     }
 
@@ -2158,6 +2188,7 @@ function buildVariedGrassTuftGeometry(): THREE.BufferGeometry {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     g.setIndex(indices);
     blades.push(g);
   }
@@ -2165,38 +2196,325 @@ function buildVariedGrassTuftGeometry(): THREE.BufferGeometry {
   return mergeGeometries(blades, false)!;
 }
 
+/**
+ * Helper to sculpt a realistic arching pinnate fern frond with central rachis V-fold and scalloped pinnae leaflet lobes!
+ */
+function buildSingleFernFrondGeometry(
+  length: number,
+  maxHalfWidth: number,
+  archHeight: number,
+  outwardReach: number,
+  rotY: number,
+  tiltJitter: number,
+  isFertileCenter: boolean
+): THREE.BufferGeometry {
+  const segs = 9;
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+
+  const cosY = Math.cos(rotY);
+  const sinY = Math.sin(rotY);
+
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    // Pinnae leaflet silhouette: slender stipe base -> broad pinnate mid-frond -> scalloped pointed apex!
+    const stipeMask = smoothstep(0.06, 0.24, t);
+    const taperTip = Math.pow(Math.max(0.0, 1.0 - Math.pow(t, 1.35)), 0.68);
+    const pinnaScallop = 0.74 + 0.26 * Math.abs(Math.sin(t * Math.PI * 7.5));
+    const halfW = maxHalfWidth * stipeMask * taperTip * pinnaScallop;
+
+    // Graceful botanical parabolic frond arch
+    const rOut = outwardReach * Math.pow(t, 0.88) * (length / 0.45);
+    const yArch =
+      archHeight * (1.28 * t - 0.52 * t * t * t) +
+      (isFertileCenter ? length * 0.22 * t : -0.06 * length * t * t);
+
+    // Rich botanical coloring: warm russet-bronze stipe -> deep forest emerald mid-pinnae -> bright chartreuse-jade tip!
+    const rCol = isFertileCenter
+      ? THREE.MathUtils.lerp(0.36, 0.68, t)
+      : THREE.MathUtils.lerp(0.24, 0.48, Math.pow(t, 0.85));
+    const gCol = isFertileCenter
+      ? THREE.MathUtils.lerp(0.32, 0.62, t)
+      : THREE.MathUtils.lerp(0.28, 0.88, Math.pow(t, 0.70));
+    const bCol = isFertileCenter
+      ? THREE.MathUtils.lerp(0.14, 0.24, t)
+      : THREE.MathUtils.lerp(0.10, 0.26, t);
+
+    // Center rachis vertex + left/right pinna tips (3 vertices per row for true 3D V-dihedral frond volume!)
+    const rowOffsets = [-1.0, 0.0, 1.0];
+    for (const side of rowOffsets) {
+      const lx = side * halfW + tiltJitter * t * 0.025;
+      const dihedralLift = Math.abs(side) * halfW * 0.26;
+      const ly = Math.max(0.005, yArch + dihedralLift);
+      const lz = rOut;
+
+      const wx = lx * cosY - lz * sinY;
+      const wz = lx * sinY + lz * cosY;
+      positions.push(wx, ly, wz);
+
+      const nxLocal = -side * 0.28;
+      const nyLocal = 0.92;
+      const nzLocal = 0.24;
+      normals.push(
+        nxLocal * cosY - nzLocal * sinY,
+        nyLocal,
+        nxLocal * sinY + nzLocal * cosY
+      );
+
+      const centerShade = side === 0 ? 0.82 : 1.04;
+      colors.push(rCol * centerShade, gCol * centerShade, bCol * centerShade);
+    }
+  }
+
+  for (let i = 0; i < segs; i++) {
+    const r0 = i * 3;
+    const r1 = (i + 1) * 3;
+    // Left pinna strip (cols 0..1)
+    indices.push(r0 + 0, r0 + 1, r1 + 1, r0 + 0, r1 + 1, r1 + 0);
+    // Right pinna strip (cols 1..2)
+    indices.push(r0 + 1, r0 + 2, r1 + 2, r0 + 1, r1 + 2, r1 + 1);
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  g.setIndex(indices);
+  return g;
+}
+
+/**
+ * Low-to-Mid Coastal Bracken & Wood Fern Rosette (7 spreading pinnate fronds, ~0.26 - 0.44m).
+ */
+function buildPinnateFernClusterGeometry(): THREE.BufferGeometry {
+  const fronds: THREE.BufferGeometry[] = [];
+  const count = 7;
+  for (let i = 0; i < count; i++) {
+    const rotY = (i / count) * Math.PI * 2.0 + (i % 2 === 0 ? 0.14 : -0.11);
+    const isInner = i % 3 === 0;
+    const len = isInner ? 0.34 : 0.42;
+    const halfW = isInner ? 0.068 : 0.088;
+    const archH = isInner ? 0.32 : 0.24;
+    const reach = isInner ? 0.24 : 0.38;
+    fronds.push(buildSingleFernFrondGeometry(len, halfW, archH, reach, rotY, (i - 3) * 0.3, false));
+  }
+  return mergeGeometries(fronds, false)!;
+}
+
+/**
+ * Tall Sculptural Royal / Lady Fern Stand (9 grand fountain-arching fronds + fertile cinnamon-gold center plumes, ~0.68 - 1.25m!).
+ */
+function buildTallRoyalFernStandGeometry(): THREE.BufferGeometry {
+  const fronds: THREE.BufferGeometry[] = [];
+  // 7 broad outer fountain fronds
+  const outerCount = 7;
+  for (let i = 0; i < outerCount; i++) {
+    const rotY = (i / outerCount) * Math.PI * 2.0 + 0.22 * Math.sin(i * 2.1);
+    const tierScale = i % 2 === 0 ? 1.0 : 0.86;
+    fronds.push(
+      buildSingleFernFrondGeometry(
+        0.72 * tierScale,
+        0.135 * tierScale,
+        0.64 * tierScale,
+        0.54 * tierScale,
+        rotY,
+        Math.cos(i * 1.7) * 0.4,
+        false
+      )
+    );
+  }
+  // 2 tall upright central fertile / young uncurling fronds!
+  fronds.push(buildSingleFernFrondGeometry(0.76, 0.068, 0.74, 0.22, 0.65, 0.15, true));
+  fronds.push(buildSingleFernFrondGeometry(0.70, 0.064, 0.69, 0.20, 3.85, -0.15, true));
+  return mergeGeometries(fronds, false)!;
+}
+
+function normalizeBotanicalPart(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  g.deleteAttribute('uv');
+  if (!g.getAttribute('normal')) {
+    g.computeVertexNormals();
+  }
+  if (!g.index) {
+    const vCount = g.getAttribute('position').count;
+    const seq = new Uint16Array(vCount);
+    for (let i = 0; i < vCount; i++) seq[i] = i;
+    g.setIndex(new THREE.BufferAttribute(seq, 1));
+  }
+  return g;
+}
+
+/**
+ * Cushioning Nordic Bell-Heather & Crowberry Shrublet (woody twigs, evergreen micro-foliage & bell-blossom racemes).
+ */
+function buildNordicHeatherShrubGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const branches = [
+    { ox: 0.0, oz: 0.0, lx: 0.02, lz: 0.01, h: 0.24, r: 0.048 },
+    { ox: 0.055, oz: 0.032, lx: 0.08, lz: 0.05, h: 0.19, r: 0.044 },
+    { ox: -0.052, oz: 0.038, lx: -0.08, lz: 0.06, h: 0.20, r: 0.042 },
+    { ox: 0.032, oz: -0.055, lx: 0.05, lz: -0.08, h: 0.18, r: 0.040 },
+    { ox: -0.048, oz: -0.042, lx: -0.07, lz: -0.06, h: 0.17, r: 0.042 },
+  ];
+
+  for (const br of branches) {
+    // Woody russet twig + evergreen needle cushion
+    const cushion = normalizeBotanicalPart(new THREE.DodecahedronGeometry(br.r, 0));
+    cushion.scale(1.25, 0.95, 1.25);
+    cushion.translate(br.ox + br.lx * 0.45, br.h * 0.45, br.oz + br.lz * 0.45);
+    const cc = cushion.getAttribute('position').count;
+    const cCols = new Float32Array(cc * 3);
+    for (let i = 0; i < cc; i++) {
+      cCols[i * 3] = 0.16;
+      cCols[i * 3 + 1] = 0.28;
+      cCols[i * 3 + 2] = 0.12;
+    }
+    cushion.setAttribute('color', new THREE.BufferAttribute(cCols, 3));
+    parts.push(cushion);
+
+    // Dense raceme of heather bell blossoms (tinted by instanceColor!)
+    for (let k = 0; k < 3; k++) {
+      const frac = 0.62 + k * 0.18;
+      const bell = normalizeBotanicalPart(new THREE.CylinderGeometry(0.012, 0.020, 0.028, 5, 1));
+      bell.translate(
+        br.ox + br.lx * frac + (k - 1) * 0.012,
+        br.h * frac,
+        br.oz + br.lz * frac + ((k % 2) - 0.5) * 0.014
+      );
+      const bc = bell.getAttribute('position').count;
+      const bCols = new Float32Array(bc * 3);
+      for (let i = 0; i < bc; i++) {
+        const shade = 0.88 + 0.12 * k;
+        bCols[i * 3] = shade;
+        bCols[i * 3 + 1] = shade;
+        bCols[i * 3 + 2] = shade;
+      }
+      bell.setAttribute('color', new THREE.BufferAttribute(bCols, 3));
+      parts.push(bell);
+    }
+  }
+
+  return mergeGeometries(parts, false)!;
+}
+
+/**
+ * Detailed Multi-Petal Coastal Wildflower Bouquet + Lupine Spike + Basal Rosette Leaves!
+ * Features sculpted 6-petal open corollas, warm golden pollen centers, upright bell-spike florets, and basal foliage.
+ */
 function buildWildflowerClusterGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
+
+  // 1. Basal rosette leaves anchoring the wildflower cluster
+  for (let lf = 0; lf < 5; lf++) {
+    const ang = (lf / 5) * Math.PI * 2.0 + 0.3;
+    const leaf = normalizeBotanicalPart(buildSingleFernFrondGeometry(0.14, 0.028, 0.055, 0.12, ang, 0.0, false));
+    parts.push(leaf);
+  }
+
+  // 2. Three sculpted multi-petal open blossoms at varied heights & tilts
   const flowerStems = [
-    { ox: 0.0, oz: 0.0, h: 0.24, leanX: 0.03, leanZ: 0.02, r: 0.032 },
-    { ox: 0.045, oz: 0.025, h: 0.19, leanX: 0.05, leanZ: -0.02, r: 0.027 },
-    { ox: -0.038, oz: 0.030, h: 0.21, leanX: -0.04, leanZ: 0.04, r: 0.029 },
+    { ox: 0.0, oz: 0.0, h: 0.27, leanX: 0.025, leanZ: 0.018, r: 0.038, tiltX: 0.18, tiltZ: -0.12 },
+    { ox: 0.052, oz: 0.028, h: 0.21, leanX: 0.055, leanZ: -0.022, r: 0.032, tiltX: -0.22, tiltZ: 0.24 },
+    { ox: -0.044, oz: 0.034, h: 0.24, leanX: -0.045, leanZ: 0.042, r: 0.034, tiltX: 0.25, tiltZ: 0.18 },
   ];
 
   for (const fs of flowerStems) {
-    const stem = new THREE.CylinderGeometry(0.004, 0.006, fs.h, 4, 1);
+    const topX = fs.ox + fs.leanX;
+    const topY = fs.h;
+    const topZ = fs.oz + fs.leanZ;
+
+    // Slender botanical stem
+    const stem = normalizeBotanicalPart(new THREE.CylinderGeometry(0.0038, 0.0058, fs.h, 4, 1));
     stem.translate(fs.ox + fs.leanX * 0.5, fs.h * 0.5, fs.oz + fs.leanZ * 0.5);
     const sc = stem.getAttribute('position').count;
     const stemCols = new Float32Array(sc * 3);
     for (let i = 0; i < sc; i++) {
-      stemCols[i * 3] = 0.24;
-      stemCols[i * 3 + 1] = 0.44;
-      stemCols[i * 3 + 2] = 0.20;
+      stemCols[i * 3] = 0.20;
+      stemCols[i * 3 + 1] = 0.42;
+      stemCols[i * 3 + 2] = 0.16;
     }
     stem.setAttribute('color', new THREE.BufferAttribute(stemCols, 3));
     parts.push(stem);
 
-    const blossom = new THREE.CylinderGeometry(fs.r, fs.r * 0.28, fs.r * 0.55, 6, 1);
-    blossom.translate(fs.ox + fs.leanX, fs.h + fs.r * 0.15, fs.oz + fs.leanZ);
-    const bc = blossom.getAttribute('position').count;
-    const bCols = new Float32Array(bc * 3);
-    for (let i = 0; i < bc; i++) {
-      bCols[i * 3] = 1.0;
-      bCols[i * 3 + 1] = 1.0;
-      bCols[i * 3 + 2] = 1.0;
+    // 6 sculpted radial cupped petals per flower head (colored cleanly by instanceColor!)
+    const petalCount = 6;
+    for (let p = 0; p < petalCount; p++) {
+      const pAng = (p / petalCount) * Math.PI * 2.0;
+      const pPos: number[] = [
+        0, 0, 0,
+        Math.cos(pAng - 0.34) * fs.r * 0.62, fs.r * 0.16, Math.sin(pAng - 0.34) * fs.r * 0.62,
+        Math.cos(pAng + 0.34) * fs.r * 0.62, fs.r * 0.16, Math.sin(pAng + 0.34) * fs.r * 0.62,
+        Math.cos(pAng) * fs.r * 1.12, fs.r * 0.26, Math.sin(pAng) * fs.r * 1.12,
+      ];
+      const pNorm: number[] = [
+        0, 1, 0,
+        0, 0.94, 0,
+        0, 0.94, 0,
+        0, 0.88, 0,
+      ];
+      const pCols: number[] = [
+        0.78, 0.75, 0.78,
+        1.02, 1.02, 1.02,
+        1.02, 1.02, 1.02,
+        1.14, 1.14, 1.14,
+      ];
+      const pg = new THREE.BufferGeometry();
+      pg.setAttribute('position', new THREE.Float32BufferAttribute(pPos, 3));
+      pg.setAttribute('normal', new THREE.Float32BufferAttribute(pNorm, 3));
+      pg.setAttribute('color', new THREE.Float32BufferAttribute(pCols, 3));
+      pg.setIndex([0, 2, 1, 1, 2, 3]);
+      pg.rotateX(fs.tiltX);
+      pg.rotateZ(fs.tiltZ);
+      pg.translate(topX, topY, topZ);
+      parts.push(normalizeBotanicalPart(pg));
     }
-    blossom.setAttribute('color', new THREE.BufferAttribute(bCols, 3));
-    parts.push(blossom);
+
+    // Golden-amber stamen/pollen button center
+    const stamen = normalizeBotanicalPart(new THREE.CylinderGeometry(fs.r * 0.24, fs.r * 0.18, fs.r * 0.20, 6, 1));
+    stamen.rotateX(fs.tiltX);
+    stamen.rotateZ(fs.tiltZ);
+    stamen.translate(topX, topY + fs.r * 0.08, topZ);
+    const stc = stamen.getAttribute('position').count;
+    const stCols = new Float32Array(stc * 3);
+    for (let i = 0; i < stc; i++) {
+      stCols[i * 3] = 1.25;
+      stCols[i * 3 + 1] = 0.92;
+      stCols[i * 3 + 2] = 0.22;
+    }
+    stamen.setAttribute('color', new THREE.BufferAttribute(stCols, 3));
+    parts.push(stamen);
+  }
+
+  // 3. Tall accented floral floret spike (Arctic Lupine / Orchid / Sea-Lavender raceme!)
+  const spikeStem = normalizeBotanicalPart(new THREE.CylinderGeometry(0.003, 0.005, 0.34, 4, 1));
+  spikeStem.translate(-0.015, 0.17, -0.025);
+  const ssc = spikeStem.getAttribute('position').count;
+  const ssCols = new Float32Array(ssc * 3);
+  for (let i = 0; i < ssc; i++) {
+    ssCols[i * 3] = 0.18;
+    ssCols[i * 3 + 1] = 0.38;
+    ssCols[i * 3 + 2] = 0.15;
+  }
+  spikeStem.setAttribute('color', new THREE.BufferAttribute(ssCols, 3));
+  parts.push(spikeStem);
+
+  for (let tier = 0; tier < 4; tier++) {
+    const ty = 0.20 + tier * 0.042;
+    const tr = 0.021 * (1.0 - tier * 0.14);
+    const whorl = normalizeBotanicalPart(new THREE.DodecahedronGeometry(tr, 0));
+    whorl.scale(1.15, 0.82, 1.15);
+    whorl.translate(-0.015 + Math.sin(tier * 2.1) * 0.006, ty, -0.025 + Math.cos(tier * 2.1) * 0.006);
+    const wc = whorl.getAttribute('position').count;
+    const wCols = new Float32Array(wc * 3);
+    for (let i = 0; i < wc; i++) {
+      const sh = 0.90 + tier * 0.07;
+      wCols[i * 3] = sh;
+      wCols[i * 3 + 1] = sh;
+      wCols[i * 3 + 2] = sh;
+    }
+    whorl.setAttribute('color', new THREE.BufferAttribute(wCols, 3));
+    parts.push(whorl);
   }
 
   return mergeGeometries(parts, false)!;
@@ -2314,10 +2632,16 @@ export function createNordicCliffWorld(
 
           float cliffSteepMask = 1.0 - smoothstep(0.36, 0.74, abs(wN.y));
           float strataVal = evalNordicCliffStrata(vRockWorldPos);
-          // Macro 3D rock-buttress shadow/highlight variation + horizontal mineral/lichen strata (never flat uniform cells!)
-          float rockMassShade = 0.80 + 0.38 * skyFbm(vRockWorldPos.xz * 0.052 + vec2(vRockWorldPos.y * 0.038, -vRockWorldPos.y * 0.029));
-          vec3 mineralTint = mix(vec3(0.64, 0.67, 0.73), vec3(1.25, 1.21, 1.16), strataVal) * rockMassShade;
-          diffuseColor.rgb *= mix(albMacro, albDetail, 0.48) * mix(vec3(1.0), mineralTint, cliffSteepMask * 0.88);
+          // Macro 3D rock-buttress shadow/highlight variation + rust-ochre mineral veins & coastal Xanthoria/celadon lichen!
+          float rockMassShade = 0.76 + 0.42 * skyFbm(vRockWorldPos.xz * 0.052 + vec2(vRockWorldPos.y * 0.038, -vRockWorldPos.y * 0.029));
+          float ironSeam = smoothstep(0.56, 0.88, sin(vRockWorldPos.y * 0.42 + strataVal * 3.1 + vRockWorldPos.x * 0.02));
+          float lichenRim = smoothstep(-5.5, 4.5, vRockWorldPos.y) * smoothstep(0.62, 0.90, skyFbm(vRockWorldPos.xz * 0.24 + vRockWorldPos.y * 0.14));
+          vec3 slateStrata = mix(vec3(0.54, 0.59, 0.72), vec3(1.26, 1.18, 1.10), strataVal);
+          vec3 rustOchre = vec3(1.42, 0.96, 0.72);
+          vec3 goldenLichen = mix(vec3(1.08, 1.18, 0.96), vec3(1.52, 1.14, 0.54), smoothstep(0.35, 0.85, skyNoise2(vRockWorldPos.xz * 0.55)));
+          vec3 mineralTint = mix(slateStrata, rustOchre, ironSeam * 0.36) * rockMassShade;
+          mineralTint = mix(mineralTint, goldenLichen, lichenRim * 0.34);
+          diffuseColor.rgb *= mix(albMacro, albDetail, 0.50) * mix(vec3(1.0), mineralTint, cliffSteepMask * 0.90);
         #endif`
       )
       .replace(
@@ -2331,27 +2655,39 @@ export function createNordicCliffWorld(
 
         // Expose bare fractured basalt rock on cliffs, "hamrar" terrace risers, shore reefs & cliff rims!
         // Keep coastal turf well above the ocean wave-splash zone (> -8.8m) so all shoreline rocks stay dark bare basalt!
-        float crownSlope = smoothstep(0.60, 0.84, wNCol.y);
+        float crownSlope = smoothstep(0.58, 0.84, wNCol.y);
         float aboveSpray = smoothstep(-8.8, -3.2, vRockWorldPos.y);
         float rimRockBreakup = smoothstep(0.24, 0.62, skyFbm(vRockWorldPos.xz * 0.16 + 2.9) * 0.78 + skyNoise2(vRockWorldPos.xz * 0.45) * 0.22);
         float turfMask = dragonPadClear * crownSlope * aboveSpray * mix(rimRockBreakup, 1.0, smoothstep(0.76, 0.93, wNCol.y));
 
-        // Natural Faroese / North Atlantic coastal turf: lush emerald-olive hollows + warm golden-olive upland fescue
-        float meadowMacro = skyFbm(vRockWorldPos.xz * 0.065);
-        float uplandElev = smoothstep(2.0, 20.0, vRockWorldPos.y);
-        vec3 lushEmerald = mix(vec3(0.074, 0.148, 0.044), vec3(0.148, 0.186, 0.058), meadowMacro);
-        vec3 uplandOlive = vec3(0.168, 0.178, 0.064);
-        vec3 turfLush = mix(lushEmerald, uplandOlive, uplandElev * 0.36 * (1.0 - meadowMacro * 0.5));
-        diffuseColor.rgb = mix(diffuseColor.rgb, turfLush, clamp(turfMask * 0.92, 0.0, 0.92));
+        // Multi-Biome Faroese / Scottish Coastal Tapestry:
+        // Deep velvet-emerald mossy hollows + spring meadow turf + burnished autumn-gold windswept ridges + amethyst heather moorland!
+        float meadowMacro = skyFbm(vRockWorldPos.xz * 0.068);
+        float ridgeDetail = skyFbm(vRockWorldPos.xz * 0.19 - vec2(4.1, 7.3));
+        float heatherBelt = smoothstep(0.56, 0.86, skyFbm(vRockWorldPos.xz * 0.11 + vec2(11.3, -5.8))) * (1.0 - smoothstep(0.84, 0.96, wNCol.y));
+        float uplandElev = smoothstep(1.2, 18.0, vRockWorldPos.y);
 
-        // Rich, dark, glistened wet-basalt intertidal rock zone right near the ocean surface (-12.0m .. -6.4m)!
+        vec3 velvetMossHollow = vec3(0.044, 0.136, 0.038);
+        vec3 springFaroeseTurf = vec3(0.114, 0.186, 0.050);
+        vec3 autumnGoldFescue = vec3(0.218, 0.166, 0.052);
+        vec3 amethystHeather = vec3(0.142, 0.068, 0.118);
+
+        vec3 baseMeadow = mix(velvetMossHollow, springFaroeseTurf, smoothstep(0.22, 0.76, meadowMacro));
+        float goldPatch = smoothstep(0.46, 0.84, ridgeDetail) * (0.28 + 0.52 * uplandElev);
+        vec3 turfLush = mix(baseMeadow, autumnGoldFescue, goldPatch * 0.62);
+        turfLush = mix(turfLush, amethystHeather, heatherBelt * 0.56);
+        diffuseColor.rgb = mix(diffuseColor.rgb, turfLush, clamp(turfMask * 0.93, 0.0, 0.93));
+
+        // Rich, glistened wet-obsidian intertidal rock + subtle olive-bronze marine algae film right near the ocean surface!
         float wetNoise = (skyFbm(vRockWorldPos.xz * 0.22) - 0.5) * 1.1;
         float wetZone = 1.0 - smoothstep(-11.4, -6.5, vRockWorldPos.y + wetNoise);
-        float nearWaterline = 1.0 - smoothstep(-11.6, -9.2, vRockWorldPos.y + wetNoise * 0.5);
+        float nearWaterline = 1.0 - smoothstep(-11.6, -9.0, vRockWorldPos.y + wetNoise * 0.5);
+        float kelpBand = smoothstep(-12.2, -10.8, vRockWorldPos.y) * (1.0 - smoothstep(-10.6, -9.4, vRockWorldPos.y)) * skyNoise2(vRockWorldPos.xz * 0.35);
         float submergedDepth = 1.0 - smoothstep(-24.0, -11.7, vRockWorldPos.y);
-        diffuseColor.rgb *= mix(1.0, 0.25, wetZone);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.018, 0.022, 0.028), nearWaterline * 0.52);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.022, 0.038, 0.050), submergedDepth * 0.76);`
+        diffuseColor.rgb *= mix(1.0, 0.24, wetZone);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.034, 0.042, 0.018), kelpBand * 0.42);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.016, 0.020, 0.028), nearWaterline * 0.54);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.020, 0.038, 0.052), submergedDepth * 0.78);`
       )
       .replace(
         '#include <roughnessmap_fragment>',
@@ -3214,12 +3550,27 @@ export function createNordicCliffWorld(
   group.add(rockyLogInst);
 
   // ============================================================================
-  // 5. NATURAL MULTI-SPECIES SWAYING GRASS & COASTAL WILDFLOWERS
+  // 5. HIGH-DENSITY 5-LAYER MULTI-SPECIES BOTANICAL ECOSYSTEM & PHYSICAL TRAVELING WIND!
+  //    5A. Varied-Length Coastal Grass & Tall Marram Sedge Plumes (18,500 multi-tier clumps!)
+  //    5B. Pinnate Coastal Bracken & Wood Fern Rosettes (3,800 7-frond clumps!)
+  //    5C. Tall Sculptural Royal / Lady Fern Stands (1,850 9-frond stands up to 1.28m tall!)
+  //    5D. Cushioning Nordic Bell-Heather & Crowberry Shrublets (2,600 woody flowering cushions!)
+  //    5E. Sculpted 6-Petal Coastal Wildflowers & Lupine Spikes (5,600 multi-species bouquets!)
   // ============================================================================
   const grassTuftGeom = buildVariedGrassTuftGeometry();
+  const lowFernGeom = buildPinnateFernClusterGeometry();
+  const tallFernGeom = buildTallRoyalFernStandGeometry();
+  const heatherGeom = buildNordicHeatherShrubGeometry();
+  const flowerGeom = buildWildflowerClusterGeometry();
   const floraTimeUniform = { uTime: { value: 0 } };
 
-  const applyWindAndAerialToFlora = (mat: THREE.MeshStandardMaterial, swayHeight: number) => {
+  const applyWindAndAerialToFlora = (
+    mat: THREE.MeshStandardMaterial,
+    swayHeight: number,
+    flexAmp: number,
+    flutterAmp: number,
+    translucencyBoost: number
+  ) => {
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, atmosphereUniforms);
       shader.uniforms.uFloraTime = floraTimeUniform.uTime;
@@ -3229,20 +3580,65 @@ export function createNordicCliffWorld(
           '#include <common>',
           `#include <common>
           uniform float uFloraTime;
-          varying vec3 vFloraWorldPos;`
+          uniform float uWindStrength;
+          uniform vec2 uWindDir;
+          varying vec3 vFloraWorldPos;
+          varying float vWindSheen;
+          varying float vTipFrac;`
         )
         .replace(
           '#include <begin_vertex>',
           `#include <begin_vertex>
-          float hFrac = clamp(position.y / ${swayHeight.toFixed(2)}, 0.0, 1.0);
+          float hFrac = clamp(position.y / ${swayHeight.toFixed(3)}, 0.0, 1.0);
+          float bendProfile = pow(hFrac, 1.65);
+          vTipFrac = hFrac;
+
           vec3 instW = vec3(0.0);
+          vec3 col0 = vec3(1.0, 0.0, 0.0);
+          vec3 col1 = vec3(0.0, 1.0, 0.0);
+          vec3 col2 = vec3(0.0, 0.0, 1.0);
           #ifdef USE_INSTANCING
             instW = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+            col0 = instanceMatrix[0].xyz;
+            col1 = instanceMatrix[1].xyz;
+            col2 = instanceMatrix[2].xyz;
           #endif
-          float gust = sin(uFloraTime * 2.1 + instW.x * 0.75 + instW.z * 0.65) * 0.085
-                     + sin(uFloraTime * 4.3 + instW.x * 1.9) * 0.032;
-          transformed.x += gust * hFrac * hFrac;
-          transformed.z += gust * 0.55 * hFrac * hFrac;`
+
+          float windStr = clamp(uWindStrength, 0.04, 1.35);
+          vec2 wDir = normalize(uWindDir + vec2(1e-5, 0.0));
+          vec2 wPerp = vec2(-wDir.y, wDir.x);
+
+          // Traveling spatial wind-gust waves visibly rippling across the cliffside meadow, ferns & islands!
+          float windAlong = dot(instW.xz, wDir);
+          float windAcross = dot(instW.xz, wPerp);
+          float gustSpeed = 3.0 + 7.6 * windStr;
+          float wave1 = 0.5 + 0.5 * sin(windAlong * 0.15 - uFloraTime * gustSpeed * 0.46 + sin(windAcross * 0.09) * 1.7);
+          float wave2 = 0.5 + 0.5 * sin(windAlong * 0.33 - uFloraTime * gustSpeed * 0.82 + windAcross * 0.15 + 2.3);
+          float gustPacket = pow(wave1 * 0.64 + wave2 * 0.36, 1.50);
+          vWindSheen = gustPacket * windStr * hFrac;
+
+          float plantScaleH = max(length(col1), 0.25);
+          float steadyLean = pow(windStr, 1.12) * ${flexAmp.toFixed(3)} * 0.44 * plantScaleH;
+          float gustSurge = (0.04 + 0.68 * windStr) * ${flexAmp.toFixed(3)} * gustPacket * plantScaleH;
+          float crossEddy = sin(uFloraTime * (2.1 + 2.5 * windStr) + instW.x * 0.85 + instW.z * 1.05) * ${flexAmp.toFixed(3)} * (0.03 + 0.15 * windStr) * plantScaleH;
+
+          // Out-of-phase individual frond/blade/petal shiver so each frond in a fern stand dances independently!
+          float frondPhase = position.x * 19.5 + position.z * 17.5 + instW.x * 3.7 + instW.z * 2.9;
+          float flutter = sin(uFloraTime * (6.6 + 6.8 * windStr) + frondPhase) * ${flutterAmp.toFixed(4)} * (0.16 + 0.88 * windStr) * (0.45 + 0.55 * gustPacket) * hFrac;
+
+          vec2 worldDispXZ =
+            wDir * ((steadyLean + gustSurge) * bendProfile + flutter) +
+            wPerp * (crossEddy * bendProfile + flutter * 0.55);
+
+          // Length-preserving parabolic droop so bowed ferns & tall grasses arc naturally without stretching!
+          float worldPlantH = max(${swayHeight.toFixed(3)} * plantScaleH, 0.14);
+          float arcDroopY = -0.38 * dot(worldDispXZ, worldDispXZ) / worldPlantH;
+          vec3 worldWindOffset = vec3(worldDispXZ.x, arcDroopY, worldDispXZ.y);
+
+          // Project world wind vector cleanly into the instance's local unscaled frame!
+          transformed.x += dot(worldWindOffset, col0) / max(dot(col0, col0), 1e-4);
+          transformed.y += dot(worldWindOffset, col1) / max(dot(col1, col1), 1e-4);
+          transformed.z += dot(worldWindOffset, col2) / max(dot(col2, col2), 1e-4);`
         )
         .replace(
           '#include <worldpos_vertex>',
@@ -3260,12 +3656,23 @@ export function createNordicCliffWorld(
           '#include <common>',
           `#include <common>
           ${SHARED_SKY_GLSL}
-          varying vec3 vFloraWorldPos;`
+          uniform vec3 uSunColor;
+          varying vec3 vFloraWorldPos;
+          varying float vWindSheen;
+          varying float vTipFrac;`
         )
         .replace(
           '#include <fog_fragment>',
           `vec3 fToFrag = vFloraWorldPos - cameraPosition;
           float fDist = length(fToFrag);
+          vec3 fViewDir = fToFrag / max(fDist, 1e-4);
+          // Backlit botanical subsurface translucency + traveling wind-ripple sheen + storm lightning rim!
+          float sunTrans = pow(clamp(dot(fViewDir, normalize(uSunDir + vec3(0.0, 0.25, 0.0))), 0.0, 1.0), 2.2);
+          vec3 sssGlow = diffuseColor.rgb * uSunColor * sunTrans * ${translucencyBoost.toFixed(3)} * (0.35 + 0.65 * vTipFrac);
+          vec3 gustSheen = mix(uHorizonAntiColor, uSunColor, 0.38) * vWindSheen * 0.22;
+          vec3 boltRim = diffuseColor.rgb * vec3(0.75, 0.88, 1.0) * uLightningFlash * (0.45 + 0.55 * vTipFrac);
+          gl_FragColor.rgb += sssGlow + gustSheen + boltRim;
+
           vec3 fHaze = evalHorizonHazeColor(fToFrag);
           float fAerial = 1.0 - exp(-pow(max(uMistDensity * 0.85 * fDist, 1e-6), 1.26));
           gl_FragColor.rgb = clamp(mix(gl_FragColor.rgb, fHaze, clamp(fAerial, 0.0, 1.0)), vec3(0.0), vec3(24.0));`
@@ -3273,38 +3680,41 @@ export function createNordicCliffWorld(
     };
   };
 
+  // --- 5A. High-Density Varied-Length Coastal Grass & Tall Marram Sedge Plumes (18,500 clumps!) ---
   const grassMat = new THREE.MeshStandardMaterial({
     name: 'NordicVariedCoastalGrass',
     color: new THREE.Color(0xffffff),
-    roughness: 0.78,
+    vertexColors: true,
+    roughness: 0.74,
     metalness: 0.0,
     side: THREE.DoubleSide,
   });
-  applyWindAndAerialToFlora(grassMat, 0.36);
+  applyWindAndAerialToFlora(grassMat, 0.48, 0.38, 0.022, 0.65);
 
-  const maxGrassTufts = 8400;
+  const maxGrassTufts = 18500;
   const grassInstanced = new THREE.InstancedMesh(grassTuftGeom, grassMat, maxGrassTufts);
   grassInstanced.castShadow = false;
   grassInstanced.receiveShadow = true;
+  grassInstanced.name = 'NordicVariedCoastalGrassInstanced';
 
   const tuftColor = new THREE.Color();
   let grassPlaced = 0;
 
   for (let zIdx = 0; zIdx < floraZones.length; zIdx++) {
     const fz = floraZones[zIdx];
-    const targetCount = fz.isHero ? 4200 : 840;
+    const targetCount = fz.isHero ? 9800 : 1450;
     let placedHere = 0;
     let attempts = 0;
 
-    while (placedHere < targetCount && attempts < targetCount * 7 && grassPlaced < maxGrassTufts) {
+    while (placedHere < targetCount && attempts < targetCount * 6 && grassPlaced < maxGrassTufts) {
       attempts++;
-      const seed = zIdx * 25000 + attempts;
+      const seed = zIdx * 35000 + attempts;
       const rx = fz.cx + (hash2D(seed, 1.3) - 0.5) * fz.spanX;
       const rz = fz.cz + (hash2D(seed, 7.9) - 0.5) * fz.spanZ;
 
       if (fz.isHero) {
-        const clearToothless = Math.sqrt(Math.pow((rx - 4.45) / 2.35, 2) + Math.pow((rz + 0.85) / 3.85, 2));
-        const clearLightFury = Math.sqrt(Math.pow((rx + 4.45) / 2.35, 2) + Math.pow((rz + 1.15) / 3.85, 2));
+        const clearToothless = Math.sqrt(Math.pow((rx - 4.45) / 2.25, 2) + Math.pow((rz + 0.85) / 3.70, 2));
+        const clearLightFury = Math.sqrt(Math.pow((rx + 4.45) / 2.25, 2) + Math.pow((rz + 1.15) / 3.70, 2));
         if (clearToothless < 1.0 || clearLightFury < 1.0) continue;
       }
 
@@ -3312,32 +3722,43 @@ export function createNordicCliffWorld(
       const gyX = fz.evalH(rx + 0.4, rz);
       const gyZ = fz.evalH(rx, rz + 0.4);
       const slope = Math.hypot(gyX - gy, gyZ - gy) / 0.4;
-      if (gy < -0.5 || slope > 0.78) continue;
+      if (gy < -0.6 || slope > 0.82) continue;
 
-      const patchDensity = fbm2D(rx * 0.45 + 2.3, rz * 0.45 - 4.1, 3);
-      if (patchDensity < 0.32) continue;
+      const patchDensity = fbm2D(rx * 0.42 + 2.3, rz * 0.42 - 4.1, 3);
+      if (patchDensity < 0.24) continue;
 
-      const tallSedgeFactor = smoothstep(0.58, 0.85, patchDensity);
-      const scaleH = 0.55 + hash2D(seed, 3.7) * 0.72 + tallSedgeFactor * 0.50;
-      const scaleW = 0.75 + hash2D(seed, 5.1) * 0.62;
+      // Dramatic natural height contrast: short wind-sheared rim turf (0.40x) -> lush mid meadow -> tall marram drifts (1.92x)!
+      const sedgeDrift = smoothstep(0.52, 0.86, fbm2D(rx * 0.18 - 6.4, rz * 0.18 + 9.2, 3));
+      const shortTurf = 1.0 - smoothstep(0.24, 0.50, patchDensity);
+      const scaleH =
+        THREE.MathUtils.lerp(0.58, 0.36, shortTurf) +
+        hash2D(seed, 3.7) * 0.58 +
+        sedgeDrift * (0.65 + hash2D(seed, 6.4) * 0.42);
+      const scaleW = 0.72 + hash2D(seed, 5.1) * 0.68 + sedgeDrift * 0.22;
 
       dummy.position.set(rx, gy - 0.02, rz);
       dummy.scale.set(scaleW, scaleH, scaleW);
       dummy.rotation.set(
-        (hash2D(seed, 9.2) - 0.5) * 0.18,
+        (hash2D(seed, 9.2) - 0.5) * 0.16,
         hash2D(seed, 11.4) * Math.PI * 2,
-        (hash2D(seed, 13.8) - 0.5) * 0.18
+        (hash2D(seed, 13.8) - 0.5) * 0.16
       );
       dummy.updateMatrix();
       grassInstanced.setMatrixAt(grassPlaced, dummy.matrix);
 
       const speciesRoll = hash2D(seed, 17.1);
-      if (speciesRoll < 0.54) {
-        tuftColor.setHSL(0.24 + (hash2D(seed, 21.1) - 0.5) * 0.04, 0.44, 0.21 + hash2D(seed, 23.7) * 0.11);
+      if (sedgeDrift > 0.58 && speciesRoll > 0.35) {
+        // Tall burnished golden-amber coastal marram / lyme sedge drifts
+        tuftColor.setHSL(0.12 + (hash2D(seed, 19.4) - 0.5) * 0.03, 0.54, 0.31 + hash2D(seed, 22.8) * 0.12);
+      } else if (speciesRoll < 0.52) {
+        // Rich Faroese emerald-viridian meadow grass
+        tuftColor.setHSL(0.25 + (hash2D(seed, 21.1) - 0.5) * 0.04, 0.52, 0.20 + hash2D(seed, 23.7) * 0.11);
       } else if (speciesRoll < 0.80) {
-        tuftColor.setHSL(0.14 + (hash2D(seed, 25.3) - 0.5) * 0.03, 0.42, 0.30 + hash2D(seed, 29.1) * 0.11);
+        // Warm olive-ochre windswept fescue
+        tuftColor.setHSL(0.15 + (hash2D(seed, 25.3) - 0.5) * 0.03, 0.48, 0.28 + hash2D(seed, 29.1) * 0.11);
       } else {
-        tuftColor.setHSL(0.28 + (hash2D(seed, 31.9) - 0.5) * 0.03, 0.30, 0.22 + hash2D(seed, 37.4) * 0.10);
+        // Cool sea-glaucous blue-green coastal festuca
+        tuftColor.setHSL(0.31 + (hash2D(seed, 31.9) - 0.5) * 0.03, 0.34, 0.21 + hash2D(seed, 37.4) * 0.10);
       }
       grassInstanced.setColorAt(grassPlaced, tuftColor);
       grassPlaced++;
@@ -3349,68 +3770,313 @@ export function createNordicCliffWorld(
   if (grassInstanced.instanceColor) grassInstanced.instanceColor.needsUpdate = true;
   group.add(grassInstanced);
 
-  const flowerGeom = buildWildflowerClusterGeometry();
+  // --- 5B. Detailed Pinnate Coastal Bracken & Wood Fern Rosettes (3,800 clumps of varied size!) ---
+  const lowFernMat = new THREE.MeshStandardMaterial({
+    name: 'NordicCoastalBrackenFerns',
+    color: new THREE.Color(0xffffff),
+    vertexColors: true,
+    roughness: 0.64,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+  });
+  applyWindAndAerialToFlora(lowFernMat, 0.36, 0.34, 0.028, 0.78);
+
+  const maxLowFerns = 3800;
+  const lowFernInstanced = new THREE.InstancedMesh(lowFernGeom, lowFernMat, maxLowFerns);
+  lowFernInstanced.castShadow = false;
+  lowFernInstanced.receiveShadow = true;
+  lowFernInstanced.name = 'NordicCoastalBrackenFernsInstanced';
+
+  const fernColor = new THREE.Color();
+  let lowFernsPlaced = 0;
+
+  for (let zIdx = 0; zIdx < floraZones.length; zIdx++) {
+    const fz = floraZones[zIdx];
+    const targetFerns = fz.isHero ? 2050 : 290;
+    let placedHere = 0;
+    let attempts = 0;
+
+    while (placedHere < targetFerns && attempts < targetFerns * 7 && lowFernsPlaced < maxLowFerns) {
+      attempts++;
+      const seed = 410000 + zIdx * 22000 + attempts;
+      const rx = fz.cx + (hash2D(seed, 3.1) - 0.5) * fz.spanX;
+      const rz = fz.cz + (hash2D(seed, 8.7) - 0.5) * fz.spanZ;
+
+      if (fz.isHero) {
+        const clearToothless = Math.sqrt(Math.pow((rx - 4.45) / 2.50, 2) + Math.pow((rz + 0.85) / 3.95, 2));
+        const clearLightFury = Math.sqrt(Math.pow((rx + 4.45) / 2.50, 2) + Math.pow((rz + 1.15) / 3.95, 2));
+        if (clearToothless < 1.0 || clearLightFury < 1.0) continue;
+      }
+
+      const gy = fz.evalH(rx, rz);
+      const slope = Math.hypot(fz.evalH(rx + 0.45, rz) - gy, fz.evalH(rx, rz + 0.45) - gy) / 0.45;
+      if (gy < -0.3 || slope > 0.76) continue;
+
+      const fernColony = fbm2D(rx * 0.34 - 11.7, rz * 0.34 + 6.9, 3);
+      if (fernColony < 0.36) continue;
+
+      const scW = 0.62 + hash2D(seed, 12.3) * 0.78;
+      const scH = 0.55 + hash2D(seed, 15.9) * 0.92 + smoothstep(0.55, 0.85, fernColony) * 0.35;
+      dummy.position.set(rx, gy - 0.025, rz);
+      dummy.scale.set(scW, scH, scW);
+      dummy.rotation.set(
+        (hash2D(seed, 19.1) - 0.5) * 0.18,
+        hash2D(seed, 23.4) * Math.PI * 2,
+        (hash2D(seed, 27.8) - 0.5) * 0.18
+      );
+      dummy.updateMatrix();
+      lowFernInstanced.setMatrixAt(lowFernsPlaced, dummy.matrix);
+
+      const autumnBronze = hash2D(seed, 31.6);
+      if (autumnBronze < 0.64) {
+        // Lush forest-jade & chartreuse fern fronds
+        fernColor.setHSL(0.26 + (hash2D(seed, 35.2) - 0.5) * 0.05, 0.58, 0.38 + hash2D(seed, 39.7) * 0.14);
+      } else if (autumnBronze < 0.86) {
+        // Sun-kissed golden-olive bracken
+        fernColor.setHSL(0.17 + (hash2D(seed, 43.1) - 0.5) * 0.04, 0.62, 0.40 + hash2D(seed, 47.5) * 0.12);
+      } else {
+        // Copper-russet autumn coastal bracken accent
+        fernColor.setHSL(0.08 + (hash2D(seed, 51.3) - 0.5) * 0.03, 0.66, 0.36 + hash2D(seed, 55.9) * 0.11);
+      }
+      lowFernInstanced.setColorAt(lowFernsPlaced, fernColor);
+      lowFernsPlaced++;
+      placedHere++;
+    }
+  }
+  lowFernInstanced.count = lowFernsPlaced;
+  lowFernInstanced.instanceMatrix.needsUpdate = true;
+  if (lowFernInstanced.instanceColor) lowFernInstanced.instanceColor.needsUpdate = true;
+  group.add(lowFernInstanced);
+
+  // --- 5C. Tall Sculptural Royal / Lady Fern Stands (1,850 majestic 9-frond stands, 0.65m - 1.28m tall!) ---
+  const tallFernMat = new THREE.MeshStandardMaterial({
+    name: 'NordicTallRoyalFernStands',
+    color: new THREE.Color(0xffffff),
+    vertexColors: true,
+    roughness: 0.58,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+  });
+  applyWindAndAerialToFlora(tallFernMat, 0.72, 0.52, 0.038, 0.88);
+
+  const maxTallFerns = 1850;
+  const tallFernInstanced = new THREE.InstancedMesh(tallFernGeom, tallFernMat, maxTallFerns);
+  tallFernInstanced.castShadow = true;
+  tallFernInstanced.receiveShadow = true;
+  tallFernInstanced.name = 'NordicTallRoyalFernStandsInstanced';
+
+  let tallFernsPlaced = 0;
+
+  for (let zIdx = 0; zIdx < floraZones.length; zIdx++) {
+    const fz = floraZones[zIdx];
+    const targetTall = fz.isHero ? 960 : 148;
+    let placedHere = 0;
+    let attempts = 0;
+
+    while (placedHere < targetTall && attempts < targetTall * 9 && tallFernsPlaced < maxTallFerns) {
+      attempts++;
+      const seed = 620000 + zIdx * 24000 + attempts;
+      const rx = fz.cx + (hash2D(seed, 4.3) - 0.5) * fz.spanX;
+      const rz = fz.cz + (hash2D(seed, 9.6) - 0.5) * fz.spanZ;
+
+      if (fz.isHero) {
+        // Frame the dragons cinematically without blocking their claws, faces, or central foreground sightline!
+        const clearToothless = Math.sqrt(Math.pow((rx - 4.45) / 3.45, 2) + Math.pow((rz + 0.45) / 4.65, 2));
+        const clearLightFury = Math.sqrt(Math.pow((rx + 4.45) / 3.45, 2) + Math.pow((rz + 0.75) / 4.65, 2));
+        const clearFrontCorridor = Math.sqrt(Math.pow(rx / 4.2, 2) + Math.pow((rz - 2.8) / 4.8, 2));
+        if (clearToothless < 1.0 || clearLightFury < 1.0 || clearFrontCorridor < 1.0) continue;
+      }
+
+      const gy = fz.evalH(rx, rz);
+      const slope = Math.hypot(fz.evalH(rx + 0.5, rz) - gy, fz.evalH(rx, rz + 0.5) - gy) / 0.5;
+      if (gy < 0.05 || slope > 0.64) continue;
+
+      // Cluster tall royal ferns in lush moist hollows, lee pockets & rocky terrace bases!
+      const groveNoise = fbm2D(rx * 0.26 + 17.4, rz * 0.26 - 13.8, 3);
+      if (groveNoise < 0.44) continue;
+
+      const standHeightScale = 0.85 + hash2D(seed, 14.7) * 0.62 + smoothstep(0.58, 0.86, groveNoise) * 0.34;
+      const standWidthScale = 0.82 + hash2D(seed, 18.2) * 0.56;
+      dummy.position.set(rx, gy - 0.035, rz);
+      dummy.scale.set(standWidthScale, standHeightScale, standWidthScale);
+      dummy.rotation.set(
+        (hash2D(seed, 21.9) - 0.5) * 0.14,
+        hash2D(seed, 26.3) * Math.PI * 2,
+        (hash2D(seed, 30.5) - 0.5) * 0.14
+      );
+      dummy.updateMatrix();
+      tallFernInstanced.setMatrixAt(tallFernsPlaced, dummy.matrix);
+
+      const hueRoll = hash2D(seed, 34.8);
+      if (hueRoll < 0.68) {
+        fernColor.setHSL(0.27 + (hash2D(seed, 38.1) - 0.5) * 0.04, 0.62, 0.40 + hash2D(seed, 42.6) * 0.14);
+      } else if (hueRoll < 0.90) {
+        fernColor.setHSL(0.20 + (hash2D(seed, 46.9) - 0.5) * 0.03, 0.60, 0.42 + hash2D(seed, 50.4) * 0.12);
+      } else {
+        fernColor.setHSL(0.10 + (hash2D(seed, 54.2) - 0.5) * 0.03, 0.68, 0.38 + hash2D(seed, 58.7) * 0.10);
+      }
+      tallFernInstanced.setColorAt(tallFernsPlaced, fernColor);
+      tallFernsPlaced++;
+      placedHere++;
+    }
+  }
+  tallFernInstanced.count = tallFernsPlaced;
+  tallFernInstanced.instanceMatrix.needsUpdate = true;
+  if (tallFernInstanced.instanceColor) tallFernInstanced.instanceColor.needsUpdate = true;
+  group.add(tallFernInstanced);
+
+  // --- 5D. Cushioning Nordic Bell-Heather & Crowberry Shrublets (2,600 moorland cushions!) ---
+  const heatherMat = new THREE.MeshStandardMaterial({
+    name: 'NordicHeatherShrubs',
+    color: new THREE.Color(0xffffff),
+    vertexColors: true,
+    roughness: 0.72,
+    metalness: 0.0,
+  });
+  applyWindAndAerialToFlora(heatherMat, 0.24, 0.18, 0.014, 0.48);
+
+  const maxHeather = 2600;
+  const heatherInstanced = new THREE.InstancedMesh(heatherGeom, heatherMat, maxHeather);
+  heatherInstanced.castShadow = false;
+  heatherInstanced.receiveShadow = true;
+  heatherInstanced.name = 'NordicHeatherShrubsInstanced';
+
+  const heatherColor = new THREE.Color();
+  let heatherPlaced = 0;
+
+  for (let zIdx = 0; zIdx < floraZones.length; zIdx++) {
+    const fz = floraZones[zIdx];
+    const targetH = fz.isHero ? 1360 : 205;
+    let placedHere = 0;
+    let attempts = 0;
+
+    while (placedHere < targetH && attempts < targetH * 8 && heatherPlaced < maxHeather) {
+      attempts++;
+      const seed = 790000 + zIdx * 19000 + attempts;
+      const rx = fz.cx + (hash2D(seed, 5.4) - 0.5) * fz.spanX;
+      const rz = fz.cz + (hash2D(seed, 10.8) - 0.5) * fz.spanZ;
+
+      if (fz.isHero) {
+        const clearToothless = Math.sqrt(Math.pow((rx - 4.45) / 2.55, 2) + Math.pow((rz + 0.85) / 4.00, 2));
+        const clearLightFury = Math.sqrt(Math.pow((rx + 4.45) / 2.55, 2) + Math.pow((rz + 1.15) / 4.00, 2));
+        if (clearToothless < 1.0 || clearLightFury < 1.0) continue;
+      }
+
+      const gy = fz.evalH(rx, rz);
+      const slope = Math.hypot(fz.evalH(rx + 0.4, rz) - gy, fz.evalH(rx, rz + 0.4) - gy) / 0.4;
+      if (gy < -0.2 || slope > 0.74) continue;
+
+      const moorPatch = fbm2D(rx * 0.30 + 23.1, rz * 0.30 - 9.7, 3);
+      if (moorPatch < 0.42) continue;
+
+      const sc = 0.78 + hash2D(seed, 13.6) * 0.86;
+      dummy.position.set(rx, gy - 0.02, rz);
+      dummy.scale.set(sc * 1.15, sc * (0.75 + hash2D(seed, 17.2) * 0.45), sc * 1.15);
+      dummy.rotation.set(
+        (hash2D(seed, 20.4) - 0.5) * 0.16,
+        hash2D(seed, 24.9) * Math.PI * 2,
+        (hash2D(seed, 28.3) - 0.5) * 0.16
+      );
+      dummy.updateMatrix();
+      heatherInstanced.setMatrixAt(heatherPlaced, dummy.matrix);
+
+      const hVar = hash2D(seed, 33.5);
+      if (hVar < 0.52) {
+        // Regal amethyst-violet Calluna heather
+        heatherColor.setHSL(0.84 + (hash2D(seed, 37.1) - 0.5) * 0.05, 0.58, 0.52 + hash2D(seed, 41.2) * 0.14);
+      } else if (hVar < 0.84) {
+        // Deep rose-crimson Erica bell-heather
+        heatherColor.setHSL(0.92 + (hash2D(seed, 45.8) - 0.5) * 0.04, 0.64, 0.54 + hash2D(seed, 49.6) * 0.12);
+      } else {
+        // Pearl-blush white mountain heather
+        heatherColor.setHSL(0.90, 0.24, 0.80 + hash2D(seed, 53.4) * 0.12);
+      }
+      heatherInstanced.setColorAt(heatherPlaced, heatherColor);
+      heatherPlaced++;
+      placedHere++;
+    }
+  }
+  heatherInstanced.count = heatherPlaced;
+  heatherInstanced.instanceMatrix.needsUpdate = true;
+  if (heatherInstanced.instanceColor) heatherInstanced.instanceColor.needsUpdate = true;
+  group.add(heatherInstanced);
+
+  // --- 5E. Sculpted 6-Petal Coastal Wildflowers & Lupine Spikes (5,600 multi-species bouquets!) ---
   const flowerMat = new THREE.MeshStandardMaterial({
     name: 'NordicCliffWildflowers',
     vertexColors: true,
-    roughness: 0.68,
+    roughness: 0.56,
     metalness: 0.0,
+    side: THREE.DoubleSide,
   });
-  applyWindAndAerialToFlora(flowerMat, 0.26);
+  applyWindAndAerialToFlora(flowerMat, 0.32, 0.30, 0.024, 0.62);
 
-  const maxFlowers = 2400;
+  const maxFlowers = 5600;
   const flowerInstanced = new THREE.InstancedMesh(flowerGeom, flowerMat, maxFlowers);
   flowerInstanced.castShadow = false;
   flowerInstanced.receiveShadow = true;
+  flowerInstanced.name = 'NordicCliffWildflowersInstanced';
 
   const petalColor = new THREE.Color();
   let flowersPlaced = 0;
 
   for (let zIdx = 0; zIdx < floraZones.length; zIdx++) {
     const fz = floraZones[zIdx];
-    const targetF = fz.isHero ? 1280 : 220;
+    const targetF = fz.isHero ? 3100 : 415;
     let placedHere = 0;
     let attempts = 0;
 
-    while (placedHere < targetF && attempts < targetF * 8 && flowersPlaced < maxFlowers) {
+    while (placedHere < targetF && attempts < targetF * 7 && flowersPlaced < maxFlowers) {
       attempts++;
-      const seed = 90000 + zIdx * 18000 + attempts;
+      const seed = 90000 + zIdx * 26000 + attempts;
       const rx = fz.cx + (hash2D(seed, 2.7) - 0.5) * fz.spanX;
       const rz = fz.cz + (hash2D(seed, 6.3) - 0.5) * fz.spanZ;
 
       if (fz.isHero) {
-        const clearToothless = Math.sqrt(Math.pow((rx - 4.45) / 2.55, 2) + Math.pow((rz + 0.85) / 4.05, 2));
-        const clearLightFury = Math.sqrt(Math.pow((rx + 4.45) / 2.55, 2) + Math.pow((rz + 1.15) / 4.05, 2));
+        const clearToothless = Math.sqrt(Math.pow((rx - 4.45) / 2.45, 2) + Math.pow((rz + 0.85) / 3.95, 2));
+        const clearLightFury = Math.sqrt(Math.pow((rx + 4.45) / 2.45, 2) + Math.pow((rz + 1.15) / 3.95, 2));
         if (clearToothless < 1.0 || clearLightFury < 1.0) continue;
       }
 
       const gy = fz.evalH(rx, rz);
       const slope = Math.hypot(fz.evalH(rx + 0.4, rz) - gy, fz.evalH(rx, rz + 0.4) - gy) / 0.4;
-      if (gy < -0.2 || slope > 0.66) continue;
+      if (gy < -0.25 || slope > 0.70) continue;
 
-      const colonyNoise = fbm2D(rx * 0.48 - 8.2, rz * 0.48 + 5.7, 3);
-      if (colonyNoise < 0.48) continue;
+      const colonyNoise = fbm2D(rx * 0.44 - 8.2, rz * 0.44 + 5.7, 3);
+      if (colonyNoise < 0.39) continue;
 
-      const sc = 0.68 + hash2D(seed, 11.9) * 0.65;
+      const sc = 0.72 + hash2D(seed, 11.9) * 0.85;
       dummy.position.set(rx, gy - 0.015, rz);
-      dummy.scale.set(sc, sc * (0.85 + hash2D(seed, 14.2) * 0.35), sc);
+      dummy.scale.set(sc, sc * (0.82 + hash2D(seed, 14.2) * 0.55), sc);
       dummy.rotation.set(
-        (hash2D(seed, 18.5) - 0.5) * 0.18,
+        (hash2D(seed, 18.5) - 0.5) * 0.16,
         hash2D(seed, 22.1) * Math.PI * 2,
-        (hash2D(seed, 26.8) - 0.5) * 0.18
+        (hash2D(seed, 26.8) - 0.5) * 0.16
       );
       dummy.updateMatrix();
       flowerInstanced.setMatrixAt(flowersPlaced, dummy.matrix);
 
-      const speciesPatch = fbm2D(rx * 0.25 + 13.1, rz * 0.25 - 9.4, 2);
-      if (speciesPatch < 0.42) {
-        petalColor.setHSL(0.93 + (hash2D(seed, 31.1) - 0.5) * 0.04, 0.68, 0.66 + hash2D(seed, 33.7) * 0.10);
-      } else if (speciesPatch < 0.62) {
-        petalColor.setHSL(0.12, 0.14, 0.88 + hash2D(seed, 35.9) * 0.08);
-      } else if (speciesPatch < 0.78) {
-        petalColor.setHSL(0.13 + (hash2D(seed, 39.2) - 0.5) * 0.02, 0.86, 0.56 + hash2D(seed, 41.8) * 0.08);
+      // 6 distinct coastal wildflower species colonies!
+      const speciesPatch = fbm2D(rx * 0.24 + 13.1, rz * 0.24 - 9.4, 2);
+      const microMix = hash2D(seed, 29.4);
+      if (speciesPatch < 0.30) {
+        // 1. Rose-Magenta Sea-Thrift (Armeria maritima)
+        petalColor.setHSL(0.93 + (hash2D(seed, 31.1) - 0.5) * 0.04, 0.76, 0.64 + hash2D(seed, 33.7) * 0.12);
+      } else if (speciesPatch < 0.48) {
+        // 2. Radiant Sunburst Faroese Marsh Marigold / Buttercup
+        petalColor.setHSL(0.13 + (hash2D(seed, 39.2) - 0.5) * 0.02, 0.92, 0.56 + hash2D(seed, 41.8) * 0.10);
+      } else if (speciesPatch < 0.64) {
+        // 3. Snow-White Sea Campion
+        petalColor.setHSL(0.12, 0.12, 0.90 + hash2D(seed, 35.9) * 0.08);
+      } else if (speciesPatch < 0.80) {
+        // 4. Indigo-Violet Arctic Lupine & Wild Thyme
+        petalColor.setHSL(0.75 + (hash2D(seed, 45.1) - 0.5) * 0.05, 0.68, 0.56 + hash2D(seed, 49.3) * 0.12);
+      } else if (microMix < 0.62) {
+        // 5. Sky-Cerulean Scottish Harebell / Forget-Me-Not
+        petalColor.setHSL(0.58 + (hash2D(seed, 52.7) - 0.5) * 0.04, 0.78, 0.62 + hash2D(seed, 56.1) * 0.10);
       } else {
-        petalColor.setHSL(0.79 + (hash2D(seed, 45.1) - 0.5) * 0.04, 0.52, 0.54 + hash2D(seed, 49.3) * 0.10);
+        // 6. Fiery Coral-Crimson Red Campion Accent
+        petalColor.setHSL(0.98 + (hash2D(seed, 60.3) - 0.5) * 0.03, 0.82, 0.56 + hash2D(seed, 64.8) * 0.10);
       }
 
       flowerInstanced.setColorAt(flowersPlaced, petalColor);
@@ -3693,6 +4359,8 @@ export function createNordicCliffWorld(
       attribute vec2 aRainSeed;
       uniform float uTime;
       uniform float uRainIntensity;
+      uniform float uWindStrength;
+      uniform vec2 uWindDir;
       uniform vec3 uCamCenter;
       varying vec2 vRainUv;
       varying float vRainAlpha;
@@ -3701,10 +4369,13 @@ export function createNordicCliffWorld(
       void main() {
         vRainUv = uv;
         float rainAmt = clamp(uRainIntensity, 0.0, 1.0);
-        // Terminal raindrop velocity (~21..28 m/s downward) slanted by turbulent North Sea wind gusts!
+        float windStr = clamp(uWindStrength, 0.05, 1.35);
+        vec2 wDir = normalize(uWindDir + vec2(1e-5, 0.0));
+        // Terminal raindrop velocity (~21..28 m/s downward) visibly slanted by live North Sea wind gales!
         float fallSpeed = (20.5 + 8.0 * aRainSeed.x) * (0.82 + 0.30 * rainAmt);
-        float gust = sin(uTime * 1.35 + aRainSeed.y * 6.283) * 1.35;
-        vec3 rainVel = vec3(3.8 + 4.4 * rainAmt + gust, -fallSpeed, -2.4 - 2.8 * rainAmt + gust * 0.5);
+        float gust = sin(uTime * (1.45 + 1.8 * windStr) + aRainSeed.y * 6.283) * (0.8 + 2.2 * windStr);
+        float horizWindSpeed = 2.2 + 12.5 * windStr + 3.2 * rainAmt + gust;
+        vec3 rainVel = vec3(wDir.x * horizWindSpeed, -fallSpeed, wDir.y * horizWindSpeed);
 
         vec3 boxSpan = vec3(92.0, 48.0, 92.0);
         vec3 moved = aRainOffset + rainVel * uTime;
@@ -3750,8 +4421,12 @@ export function createNordicCliffWorld(
         float alpha = clamp(vRainAlpha * across * along, 0.0, 0.68);
         if (alpha <= 0.003) discard;
 
-        vec3 skyTint = mix(uHorizonAntiColor, uHorizonSunColor, 0.42) * 1.35 + uSunColor * 0.48 + vec3(0.18, 0.22, 0.26);
-        gl_FragColor = vec4(clamp(skyTint, vec3(0.0), vec3(4.5)), alpha);
+        vec3 skyTint =
+          mix(uHorizonAntiColor, uHorizonSunColor, 0.42) * 1.35 +
+          uSunColor * 0.48 +
+          vec3(0.75, 0.88, 1.0) * uLightningFlash * 0.85 +
+          vec3(0.18, 0.22, 0.26);
+        gl_FragColor = vec4(clamp(skyTint, vec3(0.0), vec3(6.5)), alpha);
       }
     `,
   });
@@ -3839,8 +4514,8 @@ export function createNordicCliffWorld(
   rainSplashPoints.frustumCulled = false;
   group.add(rainSplashPoints);
 
-  // --- 7C. Cliff-Edge Updraft Sea-Foam & Sunlit/Moonlit Wind Motes (720 curl-turbulence particles!) ---
-  const moteCount = 720;
+  // --- 7C. Cliff-Edge Updraft Sea-Foam, Wind-Swept Pollen & Sunlit/Moonlit Wind Motes (1,100 particles!) ---
+  const moteCount = 1100;
   const motePositions = new Float32Array(moteCount * 3);
   const moteSeeds = new Float32Array(moteCount);
   for (let i = 0; i < moteCount; i++) {
@@ -3856,6 +4531,9 @@ export function createNordicCliffWorld(
   const moteUniforms = {
     uTime: { value: 0 },
     uColor: atmosphereUniforms.uSunColor,
+    uWindStrength: atmosphereUniforms.uWindStrength,
+    uWindDir: atmosphereUniforms.uWindDir,
+    uLightningFlash: atmosphereUniforms.uLightningFlash,
   };
   const moteMat = new THREE.ShaderMaterial({
     transparent: true,
@@ -3865,29 +4543,36 @@ export function createNordicCliffWorld(
     vertexShader: /* glsl */ `
       attribute float aSeed;
       uniform float uTime;
+      uniform float uWindStrength;
+      uniform vec2 uWindDir;
       varying float vAlpha;
       void main() {
         vec3 p = position;
-        p.x = mod(p.x + 38.0 + uTime * (1.25 + aSeed * 1.1), 76.0) - 38.0;
+        float windStr = clamp(uWindStrength, 0.05, 1.35);
+        vec2 wDir = normalize(uWindDir + vec2(1e-5, 0.0));
+        float driftSpeed = (0.95 + 6.4 * windStr) * (0.72 + 0.65 * aSeed);
+        p.x = mod(p.x + 38.0 + uTime * wDir.x * driftSpeed, 76.0) - 38.0;
         // Coastal cliff updraft near the front jump-off rim (z ~ 2..10, |x| < 18)!
         float cliffUpdraft = exp(-pow((p.z - 5.0) / 8.5, 2.0)) * smoothstep(22.0, 4.0, abs(p.x));
-        p.y += sin(uTime * 1.15 + aSeed * 12.0 + p.x * 0.12) * 0.55 + cliffUpdraft * (1.8 + 1.4 * sin(uTime * 0.8 + aSeed * 6.28));
-        p.z = mod(p.z + 22.0 - uTime * (0.85 + aSeed * 0.75), 64.0) - 22.0;
+        p.y += sin(uTime * (1.15 + 1.2 * windStr) + aSeed * 12.0 + p.x * 0.12) * 0.55 + cliffUpdraft * (1.8 + 1.6 * windStr + 1.4 * sin(uTime * 0.8 + aSeed * 6.28));
+        p.z = mod(p.z + 22.0 + uTime * wDir.y * driftSpeed, 64.0) - 22.0;
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = clamp((18.0 + 15.0 * aSeed) / max(1.0, -mv.z), 1.5, 5.4);
-        vAlpha = (0.12 + 0.20 * aSeed) * smoothstep(62.0, 6.0, -mv.z);
+        gl_PointSize = clamp((18.0 + 16.0 * aSeed) / max(1.0, -mv.z), 1.5, 5.8);
+        vAlpha = (0.12 + 0.22 * aSeed) * (0.65 + 0.55 * windStr) * smoothstep(62.0, 6.0, -mv.z);
         gl_Position = projectionMatrix * mv;
       }
     `,
     fragmentShader: /* glsl */ `
       uniform vec3 uColor;
+      uniform float uLightningFlash;
       varying float vAlpha;
       void main() {
         vec2 d = gl_PointCoord - 0.5;
         float r2 = dot(d, d);
         if (r2 > 0.25) discard;
         float soft = exp(-r2 * 14.0);
-        gl_FragColor = vec4(uColor * 0.85 + vec3(0.25), vAlpha * soft);
+        vec3 col = uColor * 0.88 + vec3(0.25) + vec3(0.70, 0.85, 1.0) * uLightningFlash * 0.65;
+        gl_FragColor = vec4(clamp(col, vec3(0.0), vec3(8.0)), vAlpha * soft);
       }
     `,
   });

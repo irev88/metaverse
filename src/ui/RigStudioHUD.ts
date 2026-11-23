@@ -95,6 +95,9 @@ export interface RigStudioHUDCallbacks {
   onSunElevationChange: (elevDeg: number) => void;
   onMistDensityChange: (mist: number) => void;
   onRainIntensityChange: (rain: number) => void;
+  onWindStrengthChange: (wind: number) => void;
+  onLightningFrequencyChange: (freq: number) => void;
+  onTriggerLightningStrike: () => void;
   onOceanParamsChange: (patch: Partial<OceanWaveParams>) => void;
   onFlightResetCamera: () => void;
   onFlightSpeedChange: (speedMultiplier: number) => void;
@@ -186,6 +189,9 @@ export function createRigStudioHUD(
       <button class="telemetry-pill hud-collapsible is-active" id="btn-cursor-gaze" title="Dragons Curiously Track Pointer When Perched [C]">
         Cursor Gaze <span class="kbd-hint">C</span>
       </button>
+      <button class="telemetry-pill hud-collapsible" id="btn-lightning-top" title="Summon Forked Sky-to-Sea Lightning &amp; Rolling Thunder [L]">
+        &#9889; Thunder <span class="kbd-hint">L</span>
+      </button>
       <button class="telemetry-pill hud-collapsible" id="btn-photo" title="Capture UI-Free High-Resolution PNG Snapshot [P]">
         Snapshot <span class="kbd-hint">P</span>
       </button>
@@ -205,10 +211,17 @@ export function createRigStudioHUD(
   const fpsEl = header.querySelector('#tel-fps') as HTMLElement;
   const lodEl = header.querySelector('#tel-lod') as HTMLElement;
   const gazeBtn = header.querySelector('#btn-cursor-gaze') as HTMLButtonElement;
+  const lightningTopBtn = header.querySelector('#btn-lightning-top') as HTMLButtonElement;
   const photoBtn = header.querySelector('#btn-photo') as HTMLButtonElement;
   const fullscreenBtn = header.querySelector('#btn-fullscreen') as HTMLButtonElement;
   const helpBtn = header.querySelector('#btn-help') as HTMLButtonElement;
   const toggleBtn = header.querySelector('#btn-toggle-hud') as HTMLButtonElement;
+
+  const fireManualLightning = () => {
+    callbacks.onTriggerLightningStrike();
+    showToast('⚡ Forked Lightning Strike & Rolling Thunder');
+  };
+  lightningTopBtn.addEventListener('click', fireManualLightning);
 
   // Floating Reopen Pill when Right Atelier Drawer is Collapsed
   const reopenDrawerBtn = document.createElement('button');
@@ -279,6 +292,7 @@ export function createRigStudioHUD(
         <div class="help-item"><span>Camera Views 1&ndash;9</span><span class="help-keys"><span class="help-key">1</span>&ndash;<span class="help-key">9</span></span></div>
         <div class="help-item"><span>Toggle Atelier Panel</span><span class="help-keys"><span class="help-key">Tab</span></span></div>
         <div class="help-item"><span>Cursor Gaze Follow</span><span class="help-keys"><span class="help-key">C</span></span></div>
+        <div class="help-item"><span>Strike Lightning &amp; Thunder</span><span class="help-keys"><span class="help-key">L</span></span></div>
         <div class="help-item"><span>HD Photo Snapshot</span><span class="help-keys"><span class="help-key">P</span></span></div>
         <div class="help-item"><span>Fullscreen / Cinema</span><span class="help-keys"><span class="help-key">F</span><span class="help-key">H</span></span></div>
         <div class="help-item"><span>Reset Any Slider</span><span class="help-keys"><span class="help-key">Double-Click</span></span></div>
@@ -504,6 +518,8 @@ export function createRigStudioHUD(
       toggleHUD();
     } else if (ev.key === 'c' || ev.key === 'C') {
       toggleCursorGaze();
+    } else if (ev.key === 'l' || ev.key === 'L') {
+      fireManualLightning();
     } else if (ev.key === 'p' || ev.key === 'P') {
       callbacks.onCaptureSnapshot();
     } else if (ev.key === 'f' || ev.key === 'F') {
@@ -1055,6 +1071,53 @@ export function createRigStudioHUD(
     callbacks.onRainIntensityChange(r);
   });
 
+  const initWindVal = initPresetObj.windStrength;
+  const windRow = document.createElement('div');
+  windRow.className = 'control-row';
+  windRow.innerHTML = `
+    <div class="control-label-line">
+      <span>Coastal Wind (Ferns, Grass &amp; Sea)</span>
+      <span class="control-val" id="wind-val">${initWindVal.toFixed(2)}</span>
+    </div>
+    <input type="range" id="wind-slider" min="0.05" max="1.25" step="0.01" value="${initWindVal.toFixed(2)}" />
+  `;
+  const windSlider = windRow.querySelector('#wind-slider') as HTMLInputElement;
+  const windVal = windRow.querySelector('#wind-val') as HTMLElement;
+  syncSliderFill(windSlider);
+  windSlider.addEventListener('input', () => {
+    const w = parseFloat(windSlider.value);
+    windVal.textContent = w.toFixed(2);
+    syncSliderFill(windSlider);
+    callbacks.onWindStrengthChange(w);
+  });
+
+  const initBoltFreq = initPresetObj.lightningFrequency;
+  const lightningRow = document.createElement('div');
+  lightningRow.className = 'control-row';
+  lightningRow.innerHTML = `
+    <div class="control-label-line">
+      <span>Thunder &amp; Lightning Storm Rate</span>
+      <span class="control-val" id="bolt-val">${initBoltFreq.toFixed(2)}</span>
+    </div>
+    <input type="range" id="bolt-slider" min="0" max="1" step="0.01" value="${initBoltFreq.toFixed(2)}" />
+  `;
+  const boltSlider = lightningRow.querySelector('#bolt-slider') as HTMLInputElement;
+  const boltVal = lightningRow.querySelector('#bolt-val') as HTMLElement;
+  syncSliderFill(boltSlider);
+  boltSlider.addEventListener('input', () => {
+    const f = parseFloat(boltSlider.value);
+    boltVal.textContent = f.toFixed(2);
+    syncSliderFill(boltSlider);
+    callbacks.onLightningFrequencyChange(f);
+  });
+
+  const strikeActionBtn = document.createElement('button');
+  strikeActionBtn.className = 'action-btn';
+  strikeActionBtn.style.width = '100%';
+  strikeActionBtn.style.marginTop = '6px';
+  strikeActionBtn.innerHTML = `&#9889; Strike Forked Lightning &amp; Thunder [L]`;
+  strikeActionBtn.addEventListener('click', fireManualLightning);
+
   let seaPresetDescEl: HTMLElement | null = null;
 
   const applyWeatherPresetUI = (presetId: WeatherPresetId) => {
@@ -1072,13 +1135,20 @@ export function createRigStudioHUD(
     rainSlider.value = wp.rainIntensity.toFixed(2);
     rainVal.textContent = wp.rainIntensity.toFixed(2);
     syncSliderFill(rainSlider);
+    windSlider.value = wp.windStrength.toFixed(2);
+    windVal.textContent = wp.windStrength.toFixed(2);
+    syncSliderFill(windSlider);
+    boltSlider.value = wp.lightningFrequency.toFixed(2);
+    boltVal.textContent = wp.lightningFrequency.toFixed(2);
+    syncSliderFill(boltSlider);
     callbacks.onSelectWeatherPreset(wp.id);
 
     let pairedSea: { idx: number; desc: string; params: OceanWaveParams } | null = null;
     if (wp.id === 'stormy-squall') {
-      pairedSea = { idx: 3, desc: 'Storm Gale', params: { waveAmplitude: 2.15, waveSpeed: 1.85, seaChoppiness: 0.96 } };
+      pairedSea = { idx: 3, desc: 'Rogue Storm', params: { waveAmplitude: 2.65, waveSpeed: 1.88, seaChoppiness: 0.96 } };
+      callbacks.onTriggerLightningStrike();
     } else if (wp.id === 'starlit-night' || wp.id === 'dawn-dusk') {
-      pairedSea = { idx: 0, desc: 'Calm Fjord', params: { waveAmplitude: 0.34, waveSpeed: 0.72, seaChoppiness: 0.24 } };
+      pairedSea = { idx: 0, desc: 'Calm Fjord', params: { waveAmplitude: 0.42, waveSpeed: 0.78, seaChoppiness: 0.28 } };
     } else {
       pairedSea = { idx: 1, desc: 'Nordic Swell', params: { ...DEFAULT_OCEAN_PARAMS } };
     }
@@ -1109,6 +1179,9 @@ export function createRigStudioHUD(
   secWorld.appendChild(elevRow);
   secWorld.appendChild(mistRow);
   secWorld.appendChild(rainRow);
+  secWorld.appendChild(windRow);
+  secWorld.appendChild(lightningRow);
+  secWorld.appendChild(strikeActionBtn);
 
   // Curated One-Click Scene Moments (Syncs Sky + Ocean + Both Dragons!)
   const momentChips: HTMLButtonElement[] = [];
@@ -1176,10 +1249,10 @@ export function createRigStudioHUD(
   const seaSegRow = document.createElement('div');
   seaSegRow.className = 'segmented-row';
   const seaPresets: Array<{ label: string; desc: string; params: OceanWaveParams }> = [
-    { label: 'Quiet', desc: 'Glassy Fjord', params: { waveAmplitude: 0.14, waveSpeed: 0.50, seaChoppiness: 0.06 } },
+    { label: 'Quiet', desc: 'Glassy Fjord', params: { waveAmplitude: 0.16, waveSpeed: 0.52, seaChoppiness: 0.08 } },
     { label: 'Swell', desc: 'Nordic Swell', params: { ...DEFAULT_OCEAN_PARAMS } },
-    { label: 'Rough', desc: 'Crossed Sea', params: { waveAmplitude: 1.65, waveSpeed: 1.45, seaChoppiness: 0.82 } },
-    { label: 'Storm', desc: 'Storm Gale', params: { waveAmplitude: 2.30, waveSpeed: 1.95, seaChoppiness: 1.00 } },
+    { label: 'Rough', desc: 'Crossed Sea', params: { waveAmplitude: 1.88, waveSpeed: 1.48, seaChoppiness: 0.84 } },
+    { label: 'Storm', desc: 'Rogue Storm', params: { waveAmplitude: 2.75, waveSpeed: 1.96, seaChoppiness: 1.00 } },
   ];
 
   function addOceanSlider(
@@ -1245,7 +1318,7 @@ export function createRigStudioHUD(
   });
   secWorld.appendChild(seaSegRow);
 
-  addOceanSlider('Swell Group Height', 'waveAmplitude', 0.05, 2.50, 0.01);
+  addOceanSlider('Swell & Rogue Wave Height', 'waveAmplitude', 0.05, 3.20, 0.01);
   addOceanSlider('Current & Swell Velocity', 'waveSpeed', 0.15, 2.50, 0.01);
   addOceanSlider('Cross-Chop & Whitecap Foam', 'seaChoppiness', 0.0, 1.0, 0.01);
 

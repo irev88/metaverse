@@ -29,12 +29,14 @@ export interface WeatherPresetConfig {
   hemiIntensity: number;
   cloudDarkColor: number;
   cloudLitColor: number;
-  cloudCoverage: number;      // [0, 1]
-  mistDensity: number;        // aerial perspective density
-  rainIntensity: number;      // [0, 1] physical precipitation & splash intensity
+  cloudCoverage: number;       // [0, 1]
+  mistDensity: number;         // aerial perspective density
+  rainIntensity: number;       // [0, 1] physical precipitation & splash intensity
+  windStrength: number;        // [0, 1] traveling wind-gust force blowing ferns, grasses & spray
+  lightningFrequency: number;  // [0, 1] forked sky-to-sea lightning & rolling thunder frequency
   exposure: number;
-  nightFactor: number;        // [0, 1] stars & moon disc
-  auroraIntensity: number;    // [0, 1] subtle boreal ribbon
+  nightFactor: number;         // [0, 1] stars & moon disc
+  auroraIntensity: number;     // [0, 1] boreal emerald/violet ribbons
   waterDeepColor: number;
   waterShallowColor: number;
   glitterIntensity: number;
@@ -44,188 +46,200 @@ export const WEATHER_PRESETS: Record<WeatherPresetId, WeatherPresetConfig> = {
   'golden-hour': {
     id: 'golden-hour',
     label: 'Golden Hour',
-    subtitle: 'Warm Berk Sunset',
-    sunElevationDeg: 11.5,
+    subtitle: 'Amber & Violet Dusk',
+    sunElevationDeg: 10.8,
     sunAzimuthDeg: -140,
-    zenithColor: 0x172846,
-    horizonSunColor: 0xd9844f,
-    horizonAntiSunColor: 0x4b5c78,
-    mieHaloColor: 0xffa858,
-    mieStrength: 0.62,
-    mieExponent: 6.5,
-    sunLightColor: 0xffbf7a,
-    sunLightIntensity: 3.75,
-    rimLightColor: 0x74aae8,
-    rimLightIntensity: 1.55,
-    hemiSkyColor: 0x95b4dc,
-    hemiGroundColor: 0x362d29,
-    hemiIntensity: 1.12,
-    cloudDarkColor: 0x2a2b3d,
-    cloudLitColor: 0xf29a5e,
-    cloudCoverage: 0.46,
+    zenithColor: 0x101d3c,
+    horizonSunColor: 0xe87b3e,
+    horizonAntiSunColor: 0x4b466e,
+    mieHaloColor: 0xffa452,
+    mieStrength: 0.72,
+    mieExponent: 6.2,
+    sunLightColor: 0xffba70,
+    sunLightIntensity: 4.05,
+    rimLightColor: 0x6ba6f0,
+    rimLightIntensity: 1.78,
+    hemiSkyColor: 0x9ab2e0,
+    hemiGroundColor: 0x3b2d26,
+    hemiIntensity: 1.16,
+    cloudDarkColor: 0x242038,
+    cloudLitColor: 0xff9b56,
+    cloudCoverage: 0.50,
     mistDensity: 0.0021,
-    rainIntensity: 0.36,
-    exposure: 1.14,
+    rainIntensity: 0.34,
+    windStrength: 0.54,
+    lightningFrequency: 0.18,
+    exposure: 1.16,
     nightFactor: 0.0,
     auroraIntensity: 0.0,
-    waterDeepColor: 0x05111d,
-    waterShallowColor: 0x0b383e,
-    glitterIntensity: 4.8,
+    waterDeepColor: 0x040f1e,
+    waterShallowColor: 0x0b4c54,
+    glitterIntensity: 5.2,
   },
   'clear-day': {
     id: 'clear-day',
     label: 'Clear Day',
-    subtitle: 'Crisp Nordic Sun',
-    sunElevationDeg: 44.0,
+    subtitle: 'Emerald & Sapphire Sun',
+    sunElevationDeg: 43.0,
     sunAzimuthDeg: -124,
-    zenithColor: 0x1c4b86,
-    horizonSunColor: 0x9bc4e6,
-    horizonAntiSunColor: 0x82afd8,
-    mieHaloColor: 0xfff3de,
-    mieStrength: 0.26,
-    mieExponent: 8.0,
-    sunLightColor: 0xfff5e6,
-    sunLightIntensity: 3.55,
-    rimLightColor: 0x9ac8f5,
-    rimLightIntensity: 1.65,
-    hemiSkyColor: 0xb4d8fa,
-    hemiGroundColor: 0x354238,
-    hemiIntensity: 1.38,
-    cloudDarkColor: 0x6a829e,
+    zenithColor: 0x164482,
+    horizonSunColor: 0x98c6ea,
+    horizonAntiSunColor: 0x7aaad8,
+    mieHaloColor: 0xfff1d8,
+    mieStrength: 0.30,
+    mieExponent: 7.8,
+    sunLightColor: 0xfff4e2,
+    sunLightIntensity: 3.75,
+    rimLightColor: 0x92c6f8,
+    rimLightIntensity: 1.72,
+    hemiSkyColor: 0xb2d8fc,
+    hemiGroundColor: 0x344436,
+    hemiIntensity: 1.40,
+    cloudDarkColor: 0x5c7696,
     cloudLitColor: 0xffffff,
-    cloudCoverage: 0.26,
+    cloudCoverage: 0.28,
     mistDensity: 0.0013,
     rainIntensity: 0.0,
-    exposure: 1.10,
+    windStrength: 0.42,
+    lightningFrequency: 0.0,
+    exposure: 1.12,
     nightFactor: 0.0,
     auroraIntensity: 0.0,
-    waterDeepColor: 0x041a30,
-    waterShallowColor: 0x0c5460,
-    glitterIntensity: 3.6,
+    waterDeepColor: 0x03182e,
+    waterShallowColor: 0x0c6470,
+    glitterIntensity: 3.9,
   },
   'dawn-dusk': {
     id: 'dawn-dusk',
     label: 'Dawn / Dusk',
-    subtitle: 'Alpenglow Twilight',
-    sunElevationDeg: 4.8,
+    subtitle: 'Crimson & Amethyst Tide',
+    sunElevationDeg: 4.6,
     sunAzimuthDeg: -148,
-    zenithColor: 0x161938,
-    horizonSunColor: 0xd86e68,
-    horizonAntiSunColor: 0x3e4668,
-    mieHaloColor: 0xff9478,
-    mieStrength: 0.58,
-    mieExponent: 5.8,
-    sunLightColor: 0xff9e84,
-    sunLightIntensity: 2.85,
-    rimLightColor: 0x7e94e2,
-    rimLightIntensity: 1.65,
-    hemiSkyColor: 0x8c92cc,
-    hemiGroundColor: 0x2a2430,
-    hemiIntensity: 1.15,
-    cloudDarkColor: 0x232038,
-    cloudLitColor: 0xea7e78,
-    cloudCoverage: 0.42,
+    zenithColor: 0x121436,
+    horizonSunColor: 0xe46468,
+    horizonAntiSunColor: 0x3a3e68,
+    mieHaloColor: 0xff8c72,
+    mieStrength: 0.68,
+    mieExponent: 5.6,
+    sunLightColor: 0xff967c,
+    sunLightIntensity: 3.15,
+    rimLightColor: 0x7a92ec,
+    rimLightIntensity: 1.85,
+    hemiSkyColor: 0x8c90d0,
+    hemiGroundColor: 0x2c2232,
+    hemiIntensity: 1.18,
+    cloudDarkColor: 0x201c38,
+    cloudLitColor: 0xf47878,
+    cloudCoverage: 0.46,
     mistDensity: 0.0024,
     rainIntensity: 0.24,
-    exposure: 1.18,
-    nightFactor: 0.22,
-    auroraIntensity: 0.0,
-    waterDeepColor: 0x060e1c,
-    waterShallowColor: 0x122c3c,
-    glitterIntensity: 4.2,
+    windStrength: 0.48,
+    lightningFrequency: 0.22,
+    exposure: 1.20,
+    nightFactor: 0.24,
+    auroraIntensity: 0.14,
+    waterDeepColor: 0x050c1c,
+    waterShallowColor: 0x103c4e,
+    glitterIntensity: 4.5,
   },
   'misty-overcast': {
     id: 'misty-overcast',
     label: 'Misty Cloud',
-    subtitle: 'Nordic Sea Fog',
-    sunElevationDeg: 31.0,
+    subtitle: 'Brooding Fjord Gale',
+    sunElevationDeg: 29.0,
     sunAzimuthDeg: -130,
-    zenithColor: 0x435160,
-    horizonSunColor: 0x8d9aa6,
-    horizonAntiSunColor: 0x768594,
-    mieHaloColor: 0xc8d4de,
-    mieStrength: 0.18,
+    zenithColor: 0x384858,
+    horizonSunColor: 0x889aa8,
+    horizonAntiSunColor: 0x687a8c,
+    mieHaloColor: 0xc8d8e4,
+    mieStrength: 0.22,
     mieExponent: 3.5,
-    sunLightColor: 0xdce6ef,
-    sunLightIntensity: 2.05,
-    rimLightColor: 0xa4bed8,
-    rimLightIntensity: 1.85,
-    hemiSkyColor: 0xb6c6d4,
-    hemiGroundColor: 0x2e3738,
+    sunLightColor: 0xd8e6f0,
+    sunLightIntensity: 2.25,
+    rimLightColor: 0x9ac0de,
+    rimLightIntensity: 1.92,
+    hemiSkyColor: 0xb0c4d4,
+    hemiGroundColor: 0x2a3636,
     hemiIntensity: 1.55,
-    cloudDarkColor: 0x455260,
-    cloudLitColor: 0x9aa8b5,
-    cloudCoverage: 0.86,
+    cloudDarkColor: 0x3a4858,
+    cloudLitColor: 0x9cb0be,
+    cloudCoverage: 0.88,
     mistDensity: 0.0042,
     rainIntensity: 0.58,
-    exposure: 1.16,
+    windStrength: 0.68,
+    lightningFrequency: 0.30,
+    exposure: 1.18,
     nightFactor: 0.0,
     auroraIntensity: 0.0,
-    waterDeepColor: 0x08161e,
-    waterShallowColor: 0x16383c,
-    glitterIntensity: 1.25,
+    waterDeepColor: 0x06151e,
+    waterShallowColor: 0x14464c,
+    glitterIntensity: 1.45,
   },
   'starlit-night': {
     id: 'starlit-night',
     label: 'Starlit Night',
-    subtitle: 'Moon & Boreal Glow',
+    subtitle: 'Boreal Emerald & Moon',
     sunElevationDeg: 29.0, // Full Moon elevation!
     sunAzimuthDeg: -136,
-    zenithColor: 0x050b18,
-    horizonSunColor: 0x162a46,
-    horizonAntiSunColor: 0x0d1a2e,
-    mieHaloColor: 0x6ea2dc,
-    mieStrength: 0.30,
+    zenithColor: 0x040916,
+    horizonSunColor: 0x142a48,
+    horizonAntiSunColor: 0x0c182e,
+    mieHaloColor: 0x6ca6e4,
+    mieStrength: 0.34,
     mieExponent: 9.0,
-    sunLightColor: 0xa8ccff, // Crisp silvery-blue moonlight
-    sunLightIntensity: 2.35,
-    rimLightColor: 0x5ca4f2,
-    rimLightIntensity: 1.95,
-    hemiSkyColor: 0x406494,
-    hemiGroundColor: 0x141c26,
-    hemiIntensity: 1.08,
-    cloudDarkColor: 0x09111f,
-    cloudLitColor: 0x2c4668,
-    cloudCoverage: 0.24,
+    sunLightColor: 0xaaccff,
+    sunLightIntensity: 2.55,
+    rimLightColor: 0x56a4f8,
+    rimLightIntensity: 2.10,
+    hemiSkyColor: 0x3e669a,
+    hemiGroundColor: 0x141d28,
+    hemiIntensity: 1.14,
+    cloudDarkColor: 0x08101e,
+    cloudLitColor: 0x2c4a70,
+    cloudCoverage: 0.26,
     mistDensity: 0.0018,
-    rainIntensity: 0.16,
-    exposure: 1.26,
+    rainIntensity: 0.14,
+    windStrength: 0.38,
+    lightningFrequency: 0.12,
+    exposure: 1.28,
     nightFactor: 1.0,
-    auroraIntensity: 0.65,
-    waterDeepColor: 0x020710,
-    waterShallowColor: 0x071e2c,
-    glitterIntensity: 3.4,
+    auroraIntensity: 0.88,
+    waterDeepColor: 0x020711,
+    waterShallowColor: 0x082a3c,
+    glitterIntensity: 3.8,
   },
   'stormy-squall': {
     id: 'stormy-squall',
     label: 'Storm Squall',
-    subtitle: 'Dark North Gale',
-    sunElevationDeg: 18.0,
+    subtitle: 'Thunder & Rogue Gale',
+    sunElevationDeg: 16.5,
     sunAzimuthDeg: -138,
-    zenithColor: 0x141c26,
-    horizonSunColor: 0x4b5968,
-    horizonAntiSunColor: 0x283442,
-    mieHaloColor: 0x8ea4b8,
-    mieStrength: 0.28,
+    zenithColor: 0x0d1522,
+    horizonSunColor: 0x46586c,
+    horizonAntiSunColor: 0x202c3c,
+    mieHaloColor: 0x8aa8c4,
+    mieStrength: 0.32,
     mieExponent: 4.5,
-    sunLightColor: 0xb6cadc,
-    sunLightIntensity: 2.45,
-    rimLightColor: 0x6f98c4,
-    rimLightIntensity: 1.80,
-    hemiSkyColor: 0x6a8098,
-    hemiGroundColor: 0x1c2428,
-    hemiIntensity: 1.25,
-    cloudDarkColor: 0x151d27,
-    cloudLitColor: 0x5e7082,
-    cloudCoverage: 0.92,
-    mistDensity: 0.0036,
+    sunLightColor: 0xb4cce2,
+    sunLightIntensity: 2.55,
+    rimLightColor: 0x6ca0d8,
+    rimLightIntensity: 1.98,
+    hemiSkyColor: 0x627c98,
+    hemiGroundColor: 0x182228,
+    hemiIntensity: 1.28,
+    cloudDarkColor: 0x101722,
+    cloudLitColor: 0x5c7288,
+    cloudCoverage: 0.94,
+    mistDensity: 0.0037,
     rainIntensity: 1.0,
-    exposure: 1.18,
+    windStrength: 1.0,
+    lightningFrequency: 0.92,
+    exposure: 1.20,
     nightFactor: 0.0,
     auroraIntensity: 0.0,
-    waterDeepColor: 0x040d14,
-    waterShallowColor: 0x0c2c32,
-    glitterIntensity: 2.1,
+    waterDeepColor: 0x030c14,
+    waterShallowColor: 0x0c3c44,
+    glitterIntensity: 2.4,
   },
 };
 
@@ -243,6 +257,10 @@ export interface AtmosphereSharedUniforms {
   uCloudCoverage: { value: number };
   uMistDensity: { value: number };
   uRainIntensity: { value: number };
+  uWindStrength: { value: number };
+  uWindDir: { value: THREE.Vector2 };
+  uLightningFlash: { value: number };
+  uLightningDir: { value: THREE.Vector3 };
   uNightFactor: { value: number };
   uAuroraIntensity: { value: number };
   uWaterDeepColor: { value: THREE.Color };
@@ -268,6 +286,9 @@ export interface NordicAtmosphereController {
   ) => void;
   setMistDensity: (density: number, scene: THREE.Scene) => void;
   setRainIntensity: (intensity: number) => void;
+  setWindStrength: (strength: number) => void;
+  setLightningFrequency: (freq: number) => void;
+  triggerLightningStrike: (cameraPos?: THREE.Vector3) => void;
   setSunElevation: (
     elevDeg: number,
     renderer: THREE.WebGLRenderer,
@@ -277,8 +298,8 @@ export interface NordicAtmosphereController {
 }
 
 /**
- * Shared GLSL sky & horizon radiance function injected into Sky, Ocean & Distant Archipelago shaders
- * so the sky, sea, and distant fjord mountains share 100% seamless color composition with ZERO horizon seams!
+ * Shared GLSL sky, cloud, aurora & lightning-flash radiance function injected into Sky, Ocean & Archipelago shaders
+ * so the sky, storm-lit clouds, sea reflections, and distant fjord mountains share 100% seamless color composition!
  */
 export const SHARED_SKY_GLSL = /* glsl */ `
   uniform vec3 uSunDir;
@@ -292,6 +313,10 @@ export const SHARED_SKY_GLSL = /* glsl */ `
   uniform vec3 uCloudLitColor;
   uniform float uCloudCoverage;
   uniform float uMistDensity;
+  uniform float uWindStrength;
+  uniform vec2 uWindDir;
+  uniform float uLightningFlash;
+  uniform vec3 uLightningDir;
   uniform float uNightFactor;
   uniform float uAuroraIntensity;
   uniform float uIsEnvBake;
@@ -326,7 +351,7 @@ export const SHARED_SKY_GLSL = /* glsl */ `
     return v;
   }
 
-  // Evaluates clean, continuous sky + perspective cloud radiance (100% seamless across rawDir.y = 0, ZERO horizon dark strip, NaN-proof at nadir!)
+  // Evaluates clean, continuous sky + dramatic storm cloud + aurora + lightning radiance (100% seamless across rawDir.y = 0!)
   vec3 evalPhysicalSky(vec3 rawDir, float timeSec, bool includeStarsAndDisc) {
     float rawLen = max(length(rawDir), 1e-5);
     vec3 normRaw = rawDir / rawLen;
@@ -339,78 +364,102 @@ export const SHARED_SKY_GLSL = /* glsl */ `
     float elev = clamp(dir.y, 0.0, 1.0);
     float sunDot = clamp(dot(dir, sunN), 0.0, 1.0);
 
-    // Smooth azimuthal warm/cool gradient around the 360-deg horizon
+    // Rich cinematic azimuthal warm/cool twilight gradient around the 360-deg horizon
     vec2 horizDir = length(dir.xz) > 1e-5 ? normalize(dir.xz) : vec2(0.0, -1.0);
     vec2 horizSun = length(sunN.xz) > 1e-5 ? normalize(sunN.xz) : vec2(0.0, -1.0);
     float azim = dot(horizDir, horizSun) * 0.5 + 0.5;
-    vec3 horizBase = mix(uHorizonAntiColor, uHorizonSunColor, smoothstep(0.08, 0.95, azim));
+    vec3 twilightMid = mix(uHorizonAntiColor, uHorizonSunColor, 0.36) * vec3(1.06, 0.92, 1.14);
+    vec3 horizLower = mix(uHorizonAntiColor, twilightMid, smoothstep(0.04, 0.55, azim));
+    vec3 horizBase = mix(horizLower, uHorizonSunColor, smoothstep(0.32, 0.96, azim));
 
     // Rayleigh vertical gradient from zenith down to horizon
-    float horizonCurve = pow(max(1.0 - elev, 1e-5), 3.1);
+    float horizonCurve = pow(max(1.0 - elev, 1e-5), 2.95);
     vec3 sky = mix(uZenithColor, horizBase, horizonCurve);
 
-    // Anisotropic Mie forward-scattering solar/lunar glow
-    sky += uMieColor * pow(max(sunDot, 1e-5), max(uMieExponent, 1.0)) * uMieStrength * (0.35 + 0.65 * pow(max(1.0 - elev, 1e-5), 1.6));
+    // Anisotropic Mie forward-scattering solar/lunar glow + subtle crepuscular sunbeam shafts!
+    float mieCore = pow(max(sunDot, 1e-5), max(uMieExponent, 1.0));
+    float crepuscularRay = 0.82 + 0.28 * sin(atan(dir.z - sunN.z, dir.x - sunN.x) * 11.0 + timeSec * 0.14);
+    sky += uMieColor * mieCore * uMieStrength * crepuscularRay * (0.38 + 0.68 * pow(max(1.0 - elev, 1e-5), 1.55));
 
-    // Crisp Starfield + Subtle Authentic Aurora Borealis (when uNightFactor > 0)
+    // Crisp Starfield + Multi-Curtain Emerald & Violet Aurora Borealis
     if (includeStarsAndDisc && uNightFactor > 0.01 && dir.y > 0.02) {
       float horizonFade = smoothstep(0.02, 0.24, dir.y);
-      // 3D-projected seamless star grid
-      vec2 starUv = dir.xz / (dir.y + 0.35) * 140.0;
+      vec2 starUv = dir.xz / (dir.y + 0.35) * 145.0;
       vec2 starCell = floor(starUv);
       vec2 starFrac = fract(starUv) - 0.5;
       float sSeed = skyHash21(starCell);
-      if (sSeed > 0.965) {
+      if (sSeed > 0.962) {
         vec2 jitter = vec2(skyHash21(starCell + 7.1), skyHash21(starCell + 13.7)) - 0.5;
         float dStar = length(starFrac - jitter * 0.65);
-        float twinkle = 0.72 + 0.28 * sin(timeSec * (1.8 + sSeed * 3.0) + sSeed * 40.0);
-        float starBright = smoothstep(0.09, 0.008, dStar) * twinkle * smoothstep(0.965, 0.999, sSeed);
-        vec3 starTint = mix(vec3(0.78, 0.88, 1.0), vec3(1.0, 0.92, 0.82), skyHash21(starCell + 3.3));
-        sky += starTint * starBright * 1.45 * uNightFactor * horizonFade * (1.0 - uCloudCoverage * 0.85);
+        float twinkle = 0.70 + 0.30 * sin(timeSec * (1.8 + sSeed * 3.2) + sSeed * 40.0);
+        float starBright = smoothstep(0.09, 0.008, dStar) * twinkle * smoothstep(0.962, 0.999, sSeed);
+        vec3 starTint = mix(vec3(0.76, 0.88, 1.0), vec3(1.0, 0.90, 0.80), skyHash21(starCell + 3.3));
+        sky += starTint * starBright * 1.55 * uNightFactor * horizonFade * (1.0 - uCloudCoverage * 0.85);
       }
 
-      // Delicate, authentic Nordic Aurora Borealis curtain high in the sky
       if (uAuroraIntensity > 0.01) {
-        vec2 aurUv = dir.xz / (dir.y + 0.28);
-        float curtainWave = aurUv.x * 1.4 + sin(aurUv.y * 1.8 + timeSec * 0.05) * 0.55;
-        float band = exp(-pow((curtainWave - 0.35) / 0.42, 2.0));
-        float rays = skyFbm(vec2(curtainWave * 4.5 + timeSec * 0.03, aurUv.y * 1.6 - timeSec * 0.02));
-        float aurMask = band * smoothstep(0.38, 0.82, rays) * smoothstep(0.10, 0.42, dir.y) * smoothstep(0.92, 0.48, dir.y);
-        vec3 aurCol = mix(vec3(0.08, 0.58, 0.42), vec3(0.22, 0.36, 0.68), clamp((dir.y - 0.18) * 2.2, 0.0, 1.0));
-        sky += aurCol * aurMask * uAuroraIntensity * 0.52 * (1.0 - uCloudCoverage * 0.7);
+        vec2 aurUv = dir.xz / (dir.y + 0.26);
+        float curtainA = aurUv.x * 1.35 + sin(aurUv.y * 1.7 + timeSec * 0.06) * 0.58;
+        float curtainB = aurUv.y * 1.15 - cos(aurUv.x * 1.4 - timeSec * 0.045) * 0.52;
+        float bandA = exp(-pow((curtainA - 0.32) / 0.44, 2.0));
+        float bandB = exp(-pow((curtainB + 0.45) / 0.52, 2.0)) * 0.72;
+        float rays = skyFbm(vec2(curtainA * 4.6 + timeSec * 0.035, aurUv.y * 1.8 - timeSec * 0.025));
+        float aurMask = (bandA + bandB) * smoothstep(0.34, 0.82, rays) * smoothstep(0.08, 0.38, dir.y) * smoothstep(0.94, 0.46, dir.y);
+        vec3 aurEmerald = vec3(0.06, 0.74, 0.48);
+        vec3 aurViolet = vec3(0.46, 0.24, 0.78);
+        vec3 aurCol = mix(aurEmerald, aurViolet, clamp((dir.y - 0.16) * 2.4 + 0.25 * sin(curtainA * 2.0), 0.0, 1.0));
+        sky += aurCol * aurMask * uAuroraIntensity * 0.68 * (1.0 - uCloudCoverage * 0.68);
       }
     }
 
-    // Continuous Perspective Cloud Deck: naturally foreshortens into delicate horizon strata as dir.y -> 0,
-    // fading cleanly into the exact local sky+Mie radiance with ZERO dark/white horizon bands!
+    // Dramatic Multi-Layered Storm & Sunset Cloud Deck + Internal Lightning Cloud Illumination!
+    float cloudWindSpd = 0.0045 + 0.011 * clamp(uWindStrength, 0.0, 1.0);
+    vec2 windAdvect = (length(uWindDir) > 1e-4 ? normalize(uWindDir) : vec2(0.82, -0.57)) * (timeSec * cloudWindSpd);
     if (dir.y > 0.004 && uCloudCoverage > 0.01) {
-      vec2 cUv = dir.xz / (dir.y + 0.14) * 0.92 + vec2(timeSec * 0.0055, timeSec * 0.0028);
+      vec2 cUv = dir.xz / (dir.y + 0.14) * 0.90 + windAdvect;
       float n1 = skyFbm(cUv);
-      float n2 = skyFbm(cUv * 2.35 - vec2(timeSec * 0.003, 0.0));
-      float cField = n1 * 0.72 + n2 * 0.28;
+      float n2 = skyFbm(cUv * 2.45 - windAdvect * 0.65);
+      float billow = skyNoise2(cUv * 5.2 + windAdvect * 1.2);
+      float cField = n1 * 0.64 + n2 * 0.26 + billow * 0.10;
 
-      float thresh = mix(0.68, 0.24, uCloudCoverage);
+      float thresh = mix(0.68, 0.20, uCloudCoverage);
       float cloudHorizonFade = smoothstep(0.008, 0.15, dir.y);
-      float cMask = smoothstep(thresh, thresh + 0.34, cField) * cloudHorizonFade;
+      float cMask = smoothstep(thresh, thresh + 0.32, cField) * cloudHorizonFade;
 
-      float sunLining = pow(max(sunDot, 1e-5), 3.2) * (1.0 - uCloudCoverage * 0.35);
-      float thickness = smoothstep(thresh, thresh + 0.42, cField);
-      vec3 cCol = mix(uCloudLitColor, uCloudDarkColor, thickness * 0.68);
-      cCol += uMieColor * sunLining * 0.35;
-      // Blend distant low-angle clouds toward local sky (including Mie glow!) so they never create dark bands above the horizon!
+      float sunLining = pow(max(sunDot, 1e-5), 2.8) * (1.12 - uCloudCoverage * 0.32);
+      float edgeSilver = (1.0 - smoothstep(thresh, thresh + 0.18, cField)) * pow(max(sunDot, 1e-5), 1.6);
+      float thickness = smoothstep(thresh, thresh + 0.40, cField);
+      vec3 cCol = mix(uCloudLitColor, uCloudDarkColor, thickness * 0.76);
+      cCol += uMieColor * (sunLining * 0.42 + edgeSilver * 0.48);
+
+      // Theatrical internal storm-cloud lightning flash illumination (skipped during static PMREM bake!)
+      if (uIsEnvBake < 0.5 && uLightningFlash > 0.001) {
+        vec3 boltN = normalize(uLightningDir + vec3(0.0, 1e-5, 0.0));
+        float boltAlign = clamp(dot(dir, boltN), 0.0, 1.0);
+        float cloudEpicenter = pow(boltAlign, 5.5) * 2.4 + pow(boltAlign, 1.8) * 0.55 + 0.12;
+        vec3 plasmaCloudGlow = vec3(0.70, 0.85, 1.0) * uLightningFlash * cloudEpicenter * (0.45 + 0.75 * thickness);
+        cCol += plasmaCloudGlow * 3.4;
+      }
+
       cCol = mix(sky, cCol, smoothstep(0.015, 0.20, dir.y));
-      sky = mix(sky, cCol, cMask * min(0.92, 0.45 + uCloudCoverage * 0.52));
+      sky = mix(sky, cCol, cMask * min(0.94, 0.48 + uCloudCoverage * 0.52));
     }
 
-    // Crisp Solar or Lunar Disc (bounded below harsh bloom blowout)
+    // Distant atmospheric sheet-lightning glow near the storm epicenter (smoothly tapered above y=0!)
+    if (uIsEnvBake < 0.5 && uLightningFlash > 0.001) {
+      vec3 boltN2 = normalize(uLightningDir + vec3(0.0, 1e-5, 0.0));
+      float sheetGlow = pow(clamp(dot(dir, boltN2), 0.0, 1.0), 3.6) * smoothstep(0.01, 0.16, dir.y);
+      sky += vec3(0.62, 0.78, 1.0) * uLightningFlash * sheetGlow * 1.45;
+    }
+
+    // Crisp Solar or Lunar Disc
     if (includeStarsAndDisc) {
       float discRadius = mix(0.99935, 0.99945, uNightFactor);
       float disc = smoothstep(discRadius, discRadius + 0.00035, sunDot) * (1.0 - uCloudCoverage * 0.78) * smoothstep(0.0, 0.04, dir.y);
-      vec3 discCol = mix(uMieColor * 1.85, vec3(1.15, 1.24, 1.38), uNightFactor);
+      vec3 discCol = mix(uMieColor * 1.90, vec3(1.18, 1.26, 1.42), uNightFactor);
       sky += discCol * disc;
     }
 
-    // Only during offscreen PMREM cubemap baking (uIsEnvBake > 0.5), gently dim steep downward rays for realistic ocean/ground bounce!
     if (uIsEnvBake > 0.5 && normRaw.y < 0.0) {
       vec3 seaBounce = mix(horizBase * 0.78, uZenithColor * 0.36, clamp(-normRaw.y * 2.4, 0.0, 1.0));
       sky = mix(sky, seaBounce, smoothstep(0.08, 0.42, -normRaw.y));
@@ -419,7 +468,6 @@ export const SHARED_SKY_GLSL = /* glsl */ `
     return clamp(sky, vec3(0.0), vec3(24.0));
   }
 
-  // Evaluates exact matching sky/horizon radiance along any view ray (100% NaN-safe even looking straight down at nadir!)
   vec3 evalHorizonHazeColor(vec3 viewRayDir) {
     vec2 hz = viewRayDir.xz;
     float hzLen = length(hz);
@@ -447,6 +495,265 @@ const SKY_FRAGMENT_SHADER = /* glsl */ `
   }
 `;
 
+/**
+ * Browser-safe Procedural WebAudio Thunder Synthesizer:
+ * - Unlocks cleanly on first user gesture (zero autoplay errors, zero external audio assets!).
+ * - Generates distance-delayed stereo rolling North Sea thunder with crisp leader crack & deep fjord echoes!
+ */
+class ProceduralThunderAudio {
+  private ctx: AudioContext | null = null;
+  private unlocked = false;
+
+  constructor() {
+    if (typeof window === 'undefined') return;
+    const unlock = () => {
+      this.unlocked = true;
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+    };
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('keydown', unlock, { passive: true });
+  }
+
+  playStrike(distMeters: number, azimuthPan: number, strength = 1.0): void {
+    if (typeof window === 'undefined' || !this.unlocked) return;
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+      if (!this.ctx) {
+        this.ctx = new AudioCtx();
+      }
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+      const ctx = this.ctx;
+      const acousticDelay = THREE.MathUtils.clamp((distMeters / 343.0) * 0.45, 0.08, 1.15);
+      const t0 = ctx.currentTime + acousticDelay;
+      const dur = 3.8;
+      const sampleCount = Math.floor(ctx.sampleRate * dur);
+      const buffer = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+
+      // Integrate pink/brown storm noise with multi-swell fjord cliff echo envelope!
+      let b0 = 0;
+      let b1 = 0;
+      for (let i = 0; i < sampleCount; i++) {
+        const sec = i / ctx.sampleRate;
+        const white = Math.random() * 2 - 1;
+        b0 = 0.985 * b0 + white * 0.09;
+        b1 = 0.92 * b1 + white * 0.18;
+        const crackEnv = Math.exp(-sec * 11.5) * 0.85;
+        const roll1 = Math.exp(-Math.pow((sec - 0.32) / 0.42, 2.0)) * 0.95;
+        const roll2 = Math.exp(-Math.pow((sec - 1.05) / 0.68, 2.0)) * 0.68;
+        const roll3 = Math.exp(-Math.pow((sec - 2.05) / 0.95, 2.0)) * 0.42;
+        const rumbleFlutter = 0.68 + 0.32 * Math.sin(sec * 23.0 + Math.sin(sec * 7.5) * 2.5);
+        data[i] = (b0 * 1.45 + b1 * 0.65 + white * crackEnv * 0.35) * (crackEnv + (roll1 + roll2 + roll3) * rumbleFlutter);
+      }
+
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+
+      const lowpass = ctx.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      const closeness = 1.0 - THREE.MathUtils.clamp((distMeters - 220) / 520, 0, 1);
+      lowpass.frequency.setValueAtTime(240 + closeness * 460, t0);
+      lowpass.frequency.exponentialRampToValueAtTime(62, t0 + dur * 0.88);
+      lowpass.Q.value = 1.35;
+
+      const gain = ctx.createGain();
+      const peakGain = THREE.MathUtils.clamp((0.20 + 0.24 * closeness) * strength, 0.05, 0.44);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.linearRampToValueAtTime(peakGain, t0 + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
+
+      src.connect(lowpass);
+      if (typeof ctx.createStereoPanner === 'function') {
+        const panner = ctx.createStereoPanner();
+        panner.pan.value = THREE.MathUtils.clamp(azimuthPan, -0.85, 0.85);
+        lowpass.connect(panner);
+        panner.connect(gain);
+      } else {
+        lowpass.connect(gain);
+      }
+      gain.connect(ctx.destination);
+
+      src.start(t0);
+      src.stop(t0 + dur + 0.05);
+    } catch {
+      // Ignore audio errors on restricted devices
+    }
+  }
+}
+
+/**
+ * Builds a dynamic 3D Forked Sky-to-Sea Lightning Bolt mesh with recursive midpoint-displacement branches!
+ */
+function createForkedLightningBoltMesh(): {
+  mesh: THREE.Mesh;
+  uniforms: { uBoltAlpha: { value: number }; uBoltCoreColor: { value: THREE.Color } };
+  regenerateBolt: (topPos: THREE.Vector3, seaHitPos: THREE.Vector3, seed: number) => void;
+} {
+  // Pre-allocate capacity for up to 140 ribbon segments (main trunk + 5 secondary forks)
+  const maxSegs = 140;
+  const positions = new Float32Array(maxSegs * 4 * 3);
+  const nextPositions = new Float32Array(maxSegs * 4 * 3);
+  const sideAndWidth = new Float32Array(maxSegs * 4 * 3); // x: side (-1/+1), y: halfWidth, z: branchBrightness
+  const indices: number[] = [];
+  for (let i = 0; i < maxSegs; i++) {
+    const b = i * 4;
+    indices.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  }
+
+  const geom = new THREE.BufferGeometry();
+  const posAttr = new THREE.BufferAttribute(positions, 3);
+  const nextAttr = new THREE.BufferAttribute(nextPositions, 3);
+  const metaAttr = new THREE.BufferAttribute(sideAndWidth, 3);
+  geom.setAttribute('position', posAttr);
+  geom.setAttribute('aNextPos', nextAttr);
+  geom.setAttribute('aBoltMeta', metaAttr);
+  geom.setIndex(indices);
+
+  const uniforms = {
+    uBoltAlpha: { value: 0.0 },
+    uBoltCoreColor: { value: new THREE.Color(0xdcf0ff) },
+  };
+
+  const mat = new THREE.ShaderMaterial({
+    name: 'NordicForkedLightningBolt',
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    uniforms,
+    vertexShader: /* glsl */ `
+      attribute vec3 aNextPos;
+      attribute vec3 aBoltMeta;
+      varying float vAcross;
+      varying float vIntensity;
+      void main() {
+        vAcross = aBoltMeta.x;
+        vIntensity = aBoltMeta.z;
+        vec3 segDir = aNextPos - position;
+        float segLen = length(segDir);
+        vec3 tang = segLen > 1e-4 ? segDir / segLen : vec3(0.0, -1.0, 0.0);
+        vec3 toCam = cameraPosition - position;
+        float cLen = length(toCam);
+        vec3 camDir = cLen > 1e-4 ? toCam / cLen : vec3(0.0, 0.0, 1.0);
+        vec3 perp = cross(camDir, tang);
+        float pLen = length(perp);
+        perp = pLen > 1e-4 ? perp / pLen : vec3(1.0, 0.0, 0.0);
+
+        vec3 worldPt = position + perp * (aBoltMeta.x * aBoltMeta.y);
+        gl_Position = projectionMatrix * viewMatrix * vec4(worldPt, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uBoltAlpha;
+      uniform vec3 uBoltCoreColor;
+      varying float vAcross;
+      varying float vIntensity;
+      void main() {
+        if (uBoltAlpha <= 0.002) discard;
+        float d = abs(vAcross);
+        // Intense white-cyan plasma filament core + wide electric blue-violet corona!
+        float hotCore = exp(-d * d * 26.0);
+        float corona = exp(-d * d * 3.8) * 0.55;
+        vec3 col = mix(vec3(0.42, 0.62, 1.0), vec3(1.0, 0.98, 1.0), hotCore) * uBoltCoreColor;
+        float alpha = clamp((hotCore + corona) * uBoltAlpha * vIntensity, 0.0, 1.0);
+        gl_FragColor = vec4(clamp(col * (5.5 * hotCore + 2.2 * corona) * uBoltAlpha * vIntensity, vec3(0.0), vec3(18.0)), alpha);
+      }
+    `,
+  });
+
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 8;
+  mesh.visible = false;
+
+  const fractHash = (n: number) => {
+    const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return s - Math.floor(s);
+  };
+
+  const regenerateBolt = (topPos: THREE.Vector3, seaHitPos: THREE.Vector3, seed: number) => {
+    let segPtr = 0;
+    const writeSegment = (p0: THREE.Vector3, p1: THREE.Vector3, halfW: number, bright: number) => {
+      if (segPtr >= maxSegs) return;
+      const b = segPtr * 4;
+      const pts = [p0, p0, p1, p1];
+      const sides = [-1, 1, 1, -1];
+      for (let k = 0; k < 4; k++) {
+        const pt = pts[k];
+        positions[(b + k) * 3] = pt.x;
+        positions[(b + k) * 3 + 1] = pt.y;
+        positions[(b + k) * 3 + 2] = pt.z;
+        nextPositions[(b + k) * 3] = p1.x;
+        nextPositions[(b + k) * 3 + 1] = p1.y;
+        nextPositions[(b + k) * 3 + 2] = p1.z;
+        sideAndWidth[(b + k) * 3] = sides[k];
+        sideAndWidth[(b + k) * 3 + 1] = halfW;
+        sideAndWidth[(b + k) * 3 + 2] = bright;
+      }
+      segPtr++;
+    };
+
+    const buildChain = (start: THREE.Vector3, end: THREE.Vector3, steps: number, jitterAmp: number, width: number, bright: number, sOff: number): THREE.Vector3[] => {
+      const chain: THREE.Vector3[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const env = Math.sin(t * Math.PI);
+        const pt = new THREE.Vector3().lerpVectors(start, end, t);
+        if (i > 0 && i < steps) {
+          pt.x += (fractHash(seed + sOff + i * 3.1) - 0.5) * jitterAmp * env;
+          pt.y += (fractHash(seed + sOff + i * 7.7) - 0.5) * jitterAmp * 0.28 * env;
+          pt.z += (fractHash(seed + sOff + i * 11.3) - 0.5) * jitterAmp * env;
+        }
+        chain.push(pt);
+      }
+      for (let i = 0; i < chain.length - 1; i++) {
+        writeSegment(chain[i], chain[i + 1], width, bright);
+      }
+      return chain;
+    };
+
+    // 1. Main high-energy sky-to-sea jagged trunk (34 segments)
+    const trunk = buildChain(topPos, seaHitPos, 34, 28.0, 2.65, 1.0, 1.0);
+
+    // 2. 5 jagged forked secondary branches splitting off the main trunk!
+    for (let f = 0; f < 5; f++) {
+      const idx = 4 + Math.floor(fractHash(seed + f * 19.3) * 20);
+      const branchStart = trunk[Math.min(trunk.length - 2, idx)];
+      const spreadAng = fractHash(seed + f * 29.7) * Math.PI * 2.0;
+      const spreadR = 26.0 + fractHash(seed + f * 41.1) * 48.0;
+      const dropY = 34.0 + fractHash(seed + f * 53.9) * 58.0;
+      const branchEnd = new THREE.Vector3(
+        branchStart.x + Math.cos(spreadAng) * spreadR,
+        Math.max(-10.0, branchStart.y - dropY),
+        branchStart.z + Math.sin(spreadAng) * spreadR
+      );
+      const subChain = buildChain(branchStart, branchEnd, 14, 14.0, 1.25, 0.72, 100 + f * 31);
+      // Sub-twig fork!
+      if (subChain.length > 6) {
+        const twigStart = subChain[5];
+        const twigEnd = new THREE.Vector3(
+          twigStart.x + (fractHash(seed + f * 67.3) - 0.5) * 28.0,
+          Math.max(-10.0, twigStart.y - 24.0),
+          twigStart.z + (fractHash(seed + f * 79.1) - 0.5) * 28.0
+        );
+        buildChain(twigStart, twigEnd, 6, 7.0, 0.72, 0.48, 300 + f * 17);
+      }
+    }
+
+    geom.setDrawRange(0, segPtr * 6);
+    posAttr.needsUpdate = true;
+    nextAttr.needsUpdate = true;
+    metaAttr.needsUpdate = true;
+  };
+
+  return { mesh, uniforms, regenerateBolt };
+}
+
 export function createNordicAtmosphere(
   renderer: THREE.WebGLRenderer,
   scene: THREE.Scene,
@@ -471,6 +778,10 @@ export function createNordicAtmosphere(
     uCloudCoverage: { value: initCfg.cloudCoverage },
     uMistDensity: { value: initCfg.mistDensity },
     uRainIntensity: { value: initCfg.rainIntensity },
+    uWindStrength: { value: initCfg.windStrength },
+    uWindDir: { value: new THREE.Vector2(0.84, -0.54).normalize() },
+    uLightningFlash: { value: 0.0 },
+    uLightningDir: { value: new THREE.Vector3(-0.35, 0.28, -0.89).normalize() },
     uNightFactor: { value: initCfg.nightFactor },
     uAuroraIntensity: { value: initCfg.auroraIntensity },
     uWaterDeepColor: { value: new THREE.Color(initCfg.waterDeepColor) },
@@ -511,10 +822,54 @@ export function createNordicAtmosphere(
   scene.add(sunLight);
   scene.add(sunLight.target);
 
-  // Sculptural Rim / Counter-Fill Light (essential for jet-black scales in both day & moonlit night!)
+  // Sculptural Rim / Counter-Fill Light
   const rimLight = new THREE.DirectionalLight(initCfg.rimLightColor, initCfg.rimLightIntensity);
   rimLight.position.set(5.8, 4.4, 5.4);
   scene.add(rimLight);
+
+  // Dynamic Theatrical Lightning Flash Keylight (illuminates dragons, wet basalt cliffs, ferns & ocean crests during strikes!)
+  const lightningLight = new THREE.DirectionalLight(0xd6ecff, 0.0);
+  lightningLight.position.set(-40, 28, -90);
+  scene.add(lightningLight);
+
+  // Forked 3D Sky-to-Sea Lightning Bolt & Rolling Stereo Thunder Engine
+  const boltSystem = createForkedLightningBoltMesh();
+  scene.add(boltSystem.mesh);
+  const thunderAudio = new ProceduralThunderAudio();
+
+  let lightningFreq = initCfg.lightningFrequency;
+  let lastTimeSec = 0;
+  let nextAutoStrikeIn = 4.2;
+  let strikeAge = 99.0;
+  let strikeSeedCounter = 1;
+  const activeBoltDir = new THREE.Vector3(-0.35, 0.26, -0.90).normalize();
+
+  const spawnLightningBolt = (camPos?: THREE.Vector3, manualBoost = false) => {
+    strikeSeedCounter += 13.7;
+    strikeAge = 0.0;
+    const s1 = Math.sin(strikeSeedCounter * 71.3) * 43758.5453;
+    const r1 = s1 - Math.floor(s1);
+    const s2 = Math.sin(strikeSeedCounter * 19.7 + 5.1) * 43758.5453;
+    const r2 = s2 - Math.floor(s2);
+
+    // Place bolt dramatically across the North Sea horizon (-Z/+X/-X arc visible from the hero cliff!)
+    const azim = (-0.78 + r1 * 1.56) * Math.PI; // mostly forward/flanking sea vista
+    const dist = 250.0 + r2 * 310.0;
+    const anchorX = (camPos ? camPos.x * 0.35 : 0) + Math.sin(azim) * dist;
+    const anchorZ = (camPos ? camPos.z * 0.35 : 0) - Math.cos(azim) * dist;
+    const topPos = new THREE.Vector3(anchorX + (r1 - 0.5) * 34.0, 165.0 + r2 * 65.0, anchorZ + (r2 - 0.5) * 28.0);
+    const seaPos = new THREE.Vector3(anchorX, -11.5, anchorZ);
+
+    boltSystem.regenerateBolt(topPos, seaPos, strikeSeedCounter);
+    boltSystem.mesh.visible = true;
+
+    activeBoltDir.set(anchorX, 68.0, anchorZ).normalize();
+    sharedUniforms.uLightningDir.value.copy(activeBoltDir);
+    lightningLight.position.set(anchorX * 0.25, 32.0, anchorZ * 0.25);
+
+    const pan = THREE.MathUtils.clamp(Math.sin(azim), -0.85, 0.85);
+    thunderAudio.playStrike(dist, pan, manualBoost ? 1.0 : 0.65 + 0.35 * lightningFreq);
+  };
 
   // Naturalistic Hemisphere Sky/Ground Bounce
   const hemiLight = new THREE.HemisphereLight(
@@ -524,11 +879,10 @@ export function createNordicAtmosphere(
   );
   scene.add(hemiLight);
 
-  // Scene fog kept synced for fallback materials
   const fog = new THREE.FogExp2(initCfg.horizonAntiSunColor, initCfg.mistDensity);
   scene.fog = fog;
 
-  // Dedicated mini-scene for fast HDRI PMREM environment baking so scales & water reflect the active preset!
+  // Dedicated mini-scene for fast HDRI PMREM environment baking
   const envScene = new THREE.Scene();
   const envSkyClone = new THREE.Mesh(new THREE.SphereGeometry(50, 32, 20), skyMat);
   envScene.add(envSkyClone);
@@ -539,7 +893,9 @@ export function createNordicAtmosphere(
   let currentAzimuthDeg = initCfg.sunAzimuthDeg;
 
   function bakeEnvironment(targetScene: THREE.Scene): void {
+    sharedUniforms.uIsEnvBake.value = 1.0;
     const nextEnvRT = pmremGenerator.fromScene(envScene, 0.015);
+    sharedUniforms.uIsEnvBake.value = 0.0;
     if (currentEnvRT) currentEnvRT.dispose();
     currentEnvRT = nextEnvRT;
     targetScene.environment = currentEnvRT.texture;
@@ -585,6 +941,10 @@ export function createNordicAtmosphere(
       sharedUniforms.uCloudCoverage.value = cfg.cloudCoverage;
       sharedUniforms.uMistDensity.value = cfg.mistDensity;
       sharedUniforms.uRainIntensity.value = cfg.rainIntensity;
+      sharedUniforms.uWindStrength.value = cfg.windStrength;
+      lightningFreq = cfg.lightningFrequency;
+      nextAutoStrikeIn = presetId === 'stormy-squall' ? 0.65 : 3.2;
+
       sharedUniforms.uNightFactor.value = cfg.nightFactor;
       sharedUniforms.uAuroraIntensity.value = cfg.auroraIntensity;
       sharedUniforms.uWaterDeepColor.value.setHex(cfg.waterDeepColor);
@@ -622,13 +982,65 @@ export function createNordicAtmosphere(
       sharedUniforms.uRainIntensity.value = THREE.MathUtils.clamp(intensity, 0.0, 1.0);
     },
 
+    setWindStrength(strength: number) {
+      sharedUniforms.uWindStrength.value = THREE.MathUtils.clamp(strength, 0.0, 1.25);
+    },
+
+    setLightningFrequency(freq: number) {
+      lightningFreq = THREE.MathUtils.clamp(freq, 0.0, 1.0);
+      if (lightningFreq > 0.05 && nextAutoStrikeIn > 4.0) {
+        nextAutoStrikeIn = 1.1;
+      }
+    },
+
+    triggerLightningStrike(cameraPos?: THREE.Vector3) {
+      spawnLightningBolt(cameraPos, true);
+    },
+
     setSunElevation(elevDeg: number, _glRenderer: THREE.WebGLRenderer, targetScene: THREE.Scene) {
       updateSunVector(elevDeg, currentAzimuthDeg);
       bakeEnvironment(targetScene);
     },
 
     update(timeSec: number, focusPos?: THREE.Vector3, cameraPos?: THREE.Vector3) {
+      const dt = Math.min(0.1, Math.max(0.0, timeSec - lastTimeSec));
+      lastTimeSec = timeSec;
       sharedUniforms.uTime.value = timeSec;
+
+      // Slowly veer the prevailing North-Atlantic gale wind direction naturally over time!
+      const veerAng = -0.58 + Math.sin(timeSec * 0.085) * 0.16;
+      sharedUniforms.uWindDir.value.set(Math.cos(veerAng), Math.sin(veerAng));
+
+      // Schedule automatic atmospheric lightning strikes according to active storm/lightning frequency!
+      if (lightningFreq > 0.015) {
+        nextAutoStrikeIn -= dt;
+        if (nextAutoStrikeIn <= 0.0) {
+          spawnLightningBolt(cameraPos, false);
+          const minGap = THREE.MathUtils.lerp(13.5, 2.2, lightningFreq);
+          const randGap = THREE.MathUtils.lerp(14.0, 3.8, lightningFreq) * Math.abs(Math.sin(timeSec * 19.7 + strikeSeedCounter));
+          nextAutoStrikeIn = minGap + randGap;
+        }
+      }
+
+      // Realistic multi-flicker lightning discharge curve (initial leader -> rapid restrike -> ionized afterglow)
+      if (strikeAge < 0.65) {
+        strikeAge += dt;
+        const leader = Math.exp(-Math.pow((strikeAge - 0.025) / 0.028, 2.0));
+        const restrike = Math.exp(-Math.pow((strikeAge - 0.115) / 0.032, 2.0)) * 0.92;
+        const flicker3 = Math.exp(-Math.pow((strikeAge - 0.195) / 0.022, 2.0)) * 0.55;
+        const afterglow = Math.exp(-strikeAge * 7.2) * 0.34;
+        const flashVal = THREE.MathUtils.clamp(Math.max(leader, restrike, flicker3) + afterglow, 0.0, 1.25);
+
+        sharedUniforms.uLightningFlash.value = flashVal;
+        boltSystem.uniforms.uBoltAlpha.value = THREE.MathUtils.clamp(flashVal * 1.05, 0.0, 1.0);
+        lightningLight.intensity = flashVal * 8.2;
+      } else if (boltSystem.mesh.visible) {
+        sharedUniforms.uLightningFlash.value = 0.0;
+        boltSystem.uniforms.uBoltAlpha.value = 0.0;
+        lightningLight.intensity = 0.0;
+        boltSystem.mesh.visible = false;
+      }
+
       if (cameraPos) {
         skyMesh.position.copy(cameraPos);
       }
