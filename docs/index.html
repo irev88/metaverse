@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#070a12" />
+    <meta
+      name="description"
+      content="Interactive WebGL2 3D showcase of Night Fury (Toothless) & Light Fury poised above a Faroese basalt archipelago — featuring 228 skeletal bones, Hidden World bioluminescence, optical mirror cloak, and synchronized flight choreography."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Where Dusk Meets the Open Tide — Night Fury & Light Fury 3D Atelier" />
+    <meta
+      property="og:description"
+      content="Explore an interactive realtime WebGL2 archipelago with Toothless & Light Fury: sculpt poses, trigger Hidden World bioluminescence & mirror cloak, soar across North Sea swells, or free-fly through coastal sea-arches."
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none'%3E%3Crect width='64' height='64' rx='16' fill='%23090e1a'/%3E%3Ccircle cx='32' cy='32' r='24' stroke='%23ebd0b7' stroke-opacity='0.45' stroke-width='1' stroke-dasharray='2 3'/%3E%3Cpath d='M12 36C19 18 39 13 52 26' stroke='%23f2d5c4' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M52 30C45 48 25 53 12 40' stroke='%23bfd6f2' stroke-width='2.2' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='32' r='2.6' fill='%23f5e2ce'/%3E%3C/svg%3E"
+    />
+    <title>Where Dusk Meets the Open Tide — Twin Furies 3D Atelier</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #070a12;
+        color: #f3efe9;
+      }
+      #loading-curtain {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+        padding: clamp(24px, 5vh, 52px) clamp(20px, 5vw, 64px);
+        background:
+          radial-gradient(ellipse 92% 58% at 50% 88%, rgba(232, 178, 166, 0.16) 0%, rgba(162, 152, 198, 0.08) 42%, transparent 76%),
+          radial-gradient(ellipse 75% 50% at 50% 18%, rgba(124, 164, 212, 0.10) 0%, transparent 70%),
+          linear-gradient(180deg, #060911 0%, #0b1220 54%, #161d2e 84%, #1d2030 100%);
+        transition: opacity 1.15s cubic-bezier(0.22, 1, 0.36, 1), visibility 1.15s ease;
+      }
+      #loading-curtain.is-dissolving {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+    </style>
+    <script type="module" crossorigin src="./assets/index-D31j5Vsf.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-FI2zlDHh.css">
+  </head>
+  <body>
+    <div id="loading-curtain" role="status" aria-live="polite">
+      <div class="lc-top-meta">
+        <span>NORTH SEA ARCHIPELAGO &middot; 62&deg;14&prime;N</span>
+        <span class="lc-meta-sep"></span>
+        <span>WEBGL2 REALTIME ATELIER</span>
+      </div>
+
+      <div class="lc-centerpiece">
+        <div class="lc-emblem-wrap" aria-hidden="true">
+          <svg class="lc-emblem" viewBox="0 0 120 120" fill="none">
+            <circle cx="60" cy="60" r="52" stroke="url(#twilightRing)" stroke-width="0.75" stroke-dasharray="2 3" opacity="0.55" />
+            <path d="M22 66 C34 34, 72 24, 96 48" stroke="url(#wingArcWarm)" stroke-width="1.25" stroke-linecap="round" />
+            <path d="M98 54 C86 86, 48 96, 24 72" stroke="url(#wingArcCool)" stroke-width="1.25" stroke-linecap="round" />
+            <circle cx="60" cy="60" r="2.2" fill="#f3dfc8" />
+            <defs>
+              <linearGradient id="twilightRing" x1="10" y1="10" x2="110" y2="110" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#e8c7b8" stop-opacity="0.7" />
+                <stop offset="50%" stop-color="#a8c4e6" stop-opacity="0.3" />
+                <stop offset="100%" stop-color="#e8c7b8" stop-opacity="0.7" />
+              </linearGradient>
+              <linearGradient id="wingArcWarm" x1="22" y1="66" x2="96" y2="48" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#e8c5b0" stop-opacity="0.05" />
+                <stop offset="55%" stop-color="#f2d5c4" stop-opacity="0.88" />
+                <stop offset="100%" stop-color="#f7e7dc" stop-opacity="0.95" />
+              </linearGradient>
+              <linearGradient id="wingArcCool" x1="98" y1="54" x2="24" y2="72" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#a9c8ec" stop-opacity="0.05" />
+                <stop offset="55%" stop-color="#c6daf4" stop-opacity="0.85" />
+                <stop offset="100%" stop-color="#f0c8dc" stop-opacity="0.95" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+
+        <p class="lc-eyebrow">NIGHT FURY &amp; LIGHT FURY</p>
+        <h1 class="lc-title">Where Dusk Meets <em>the Open Tide</em></h1>
+        <p class="lc-epigraph">
+          Two silhouettes poised above basalt cliffs and restless northern swells&mdash;an interactive study in anatomy, luminescence, and flight.
+        </p>
+
+        <div class="lc-progress-block">
+          <div class="lc-progress-track">
+            <div class="lc-progress-fill" id="lc-progress-fill"></div>
+          </div>
+          <div class="lc-progress-meta">
+            <span class="lc-stage-text" id="lc-stage-text">Awakening coastal twilight&hellip;</span>
+            <span class="lc-pct-text" id="lc-pct-text">00%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="lc-bottom-meta">
+        <span>DRAG TO ORBIT &middot; WASD TO ROAM &middot; DOUBLE-CLICK TO FOCUS</span>
+        <span>SPACE &mdash; COURTSHIP FLIGHT &middot; ? &mdash; CONTROLS GUIDE</span>
+      </div>
+    </div>
+
+    <div id="canvas-container"></div>
+    <div id="hud-root" class="hud-entering"></div>
+  </body>
+</html>
