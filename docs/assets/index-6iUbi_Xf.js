@@ -4900,20 +4900,23 @@ void main() {
         float wetZone = 1.0 - smoothstep(-11.2, -7.5, vRockWorldPos.y);
         float submergedDepth = 1.0 - smoothstep(-24.0, -11.6, vRockWorldPos.y);
         diffuseColor.rgb *= mix(1.0, 0.36, wetZone);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.024, 0.042, 0.054), submergedDepth * 0.74);`).replace("#include <roughnessmap_fragment>",`vec3 wNR = normalize(vRockWorldNormal);
-        vec3 triWR = pow(max(abs(wNR), vec3(1e-4)), vec3(4.0));
-        triWR /= max(triWR.x + triWR.y + triWR.z, 1e-4);
-        vec3 rpRMid = vRockWorldPos * 0.34;
-        vec3 rpRFine = vRockWorldPos * 1.42;
-        float rMid =
-          texture2D(roughnessMap, rpRMid.zy).g * triWR.x +
-          texture2D(roughnessMap, rpRMid.xz).g * triWR.y +
-          texture2D(roughnessMap, rpRMid.xy).g * triWR.z;
-        float rFine =
-          texture2D(roughnessMap, rpRFine.zy).g * triWR.x +
-          texture2D(roughnessMap, rpRFine.xz).g * triWR.y +
-          texture2D(roughnessMap, rpRFine.xy).g * triWR.z;
-        roughnessFactor = roughness * mix(0.68, 1.08, mix(rMid, rFine, 0.42));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.024, 0.042, 0.054), submergedDepth * 0.74);`).replace("#include <roughnessmap_fragment>",`float roughnessFactor = roughness;
+        #ifdef USE_ROUGHNESSMAP
+          vec3 wNR = normalize(vRockWorldNormal);
+          vec3 triWR = pow(max(abs(wNR), vec3(1e-4)), vec3(4.0));
+          triWR /= max(triWR.x + triWR.y + triWR.z, 1e-4);
+          vec3 rpRMid = vRockWorldPos * 0.34;
+          vec3 rpRFine = vRockWorldPos * 1.42;
+          float rMid =
+            texture2D(roughnessMap, rpRMid.zy).g * triWR.x +
+            texture2D(roughnessMap, rpRMid.xz).g * triWR.y +
+            texture2D(roughnessMap, rpRMid.xy).g * triWR.z;
+          float rFine =
+            texture2D(roughnessMap, rpRFine.zy).g * triWR.x +
+            texture2D(roughnessMap, rpRFine.xz).g * triWR.y +
+            texture2D(roughnessMap, rpRFine.xy).g * triWR.z;
+          roughnessFactor *= mix(0.68, 1.08, mix(rMid, rFine, 0.42));
+        #endif
         float wetRough = 1.0 - smoothstep(-11.2, -7.5, vRockWorldPos.y);
         roughnessFactor = clamp(mix(roughnessFactor, 0.16, wetRough * 0.86), 0.12, 0.98);`).replace("#include <normal_fragment_maps>",`#include <normal_fragment_maps>
         // True 3D multi-scale triplanar rock fracture, cliff strata & coastal turf-tussock normal perturbation!
@@ -4922,24 +4925,28 @@ void main() {
           vec2 padN2 = (vRockWorldPos.xz - vec2(-0.05, -1.05)) / vec2(4.35, 4.10);
           float padGentle = mix(0.32, 1.0, smoothstep(0.70, 1.22, length(padN2)));
           float wallBoost = mix(0.68, 1.32, 1.0 - smoothstep(0.38, 0.82, abs(wN2.y)));
-          vec3 triW = pow(max(abs(wN2), vec3(1e-4)), vec3(4.0));
-          triW /= max(triW.x + triW.y + triW.z, 1e-4);
-
-          vec3 rpNMacro = vRockWorldPos * 0.14;
-          vec3 rpNMid = vRockWorldPos * 0.48;
-          vec3 rpNFine = vRockWorldPos * 1.75;
-          float hMacro =
-            texture2D(roughnessMap, rpNMacro.zy).g * triW.x +
-            texture2D(roughnessMap, rpNMacro.xz).g * triW.y +
-            texture2D(roughnessMap, rpNMacro.xy).g * triW.z;
-          float hMid =
-            texture2D(roughnessMap, rpNMid.zy).g * triW.x +
-            texture2D(roughnessMap, rpNMid.xz).g * triW.y +
-            texture2D(roughnessMap, rpNMid.xy).g * triW.z;
-          float hFine =
-            texture2D(roughnessMap, rpNFine.zy).g * triW.x +
-            texture2D(roughnessMap, rpNFine.xz).g * triW.y +
-            texture2D(roughnessMap, rpNFine.xy).g * triW.z;
+          float hMacro = 0.5;
+          float hMid = 0.5;
+          float hFine = 0.5;
+          #ifdef USE_ROUGHNESSMAP
+            vec3 triW = pow(max(abs(wN2), vec3(1e-4)), vec3(4.0));
+            triW /= max(triW.x + triW.y + triW.z, 1e-4);
+            vec3 rpNMacro = vRockWorldPos * 0.14;
+            vec3 rpNMid = vRockWorldPos * 0.48;
+            vec3 rpNFine = vRockWorldPos * 1.75;
+            hMacro =
+              texture2D(roughnessMap, rpNMacro.zy).g * triW.x +
+              texture2D(roughnessMap, rpNMacro.xz).g * triW.y +
+              texture2D(roughnessMap, rpNMacro.xy).g * triW.z;
+            hMid =
+              texture2D(roughnessMap, rpNMid.zy).g * triW.x +
+              texture2D(roughnessMap, rpNMid.xz).g * triW.y +
+              texture2D(roughnessMap, rpNMid.xy).g * triW.z;
+            hFine =
+              texture2D(roughnessMap, rpNFine.zy).g * triW.x +
+              texture2D(roughnessMap, rpNFine.xz).g * triW.y +
+              texture2D(roughnessMap, rpNFine.xy).g * triW.z;
+          #endif
 
           float tussockMicro = skyNoise2(vRockWorldPos.xz * 2.6) * 0.6 + skyNoise2(vRockWorldPos.xz * 6.8) * 0.4;
           float strataRelief = evalFaroeseCliffStrata(vRockWorldPos);
