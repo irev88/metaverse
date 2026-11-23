@@ -92,7 +92,13 @@ const OCEAN_VERT = /* glsl */ `
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
     float distFromOrigin = length(wp.xz);
-    float farDamp = 1.0 - smoothstep(520.0, 2150.0, distFromOrigin);
+    float distFromCam = length(wp.xz - cameraPosition.xz);
+    float effDist = max(distFromOrigin * 0.85, distFromCam);
+
+    // Nyquist-safe per-band damping so short & medium wavelengths fade out cleanly before radial grid spacing coarsens!
+    float farDampLong = 1.0 - smoothstep(380.0, 1080.0, effDist);
+    float farDampCross = 1.0 - smoothstep(240.0, 680.0, effDist);
+    float farDampChop = 1.0 - smoothstep(110.0, 340.0, effDist);
     float t = uTime * uWaveSpeed;
 
     // 1. Irregular Swell Wave-Packet Envelopes ("Seventh-Wave" swell sets vs calmer lulls!)
@@ -127,9 +133,9 @@ const OCEAN_VERT = /* glsl */ `
     vec3 disp = vec3(0.0);
     vec2 slopeXZ = vec2(0.0);
 
-    float envPrimary = farDamp * groupA * coastalShelter;
-    float envCross = farDamp * groupB * coastalShelter;
-    float envChop = farDamp * mix(0.55, 1.35, swellSetB) * (0.38 + 0.92 * uChoppiness);
+    float envPrimary = farDampLong * groupA * coastalShelter;
+    float envCross = farDampCross * groupB * coastalShelter;
+    float envChop = farDampChop * mix(0.55, 1.35, swellSetB) * (0.38 + 0.92 * uChoppiness);
 
     // Primary North Atlantic irregular long swell train
     accumTrochoidalWave(pPrimary, vec2(0.81, 0.58), 0.19, 48.0, 1.00, t, envPrimary, disp, slopeXZ);
@@ -144,7 +150,7 @@ const OCEAN_VERT = /* glsl */ `
     accumTrochoidalWave(wp.xz, vec2(0.93, -0.36), 0.045, 2.7, 1.54, t + 3.2, envChop * 0.85, disp, slopeXZ);
 
     // Subtle low-frequency tidal surge & irregular ocean current heave
-    float currentUndulation = (swellSetA - 0.5) * 0.55 * uWaveAmp * farDamp;
+    float currentUndulation = (swellSetA - 0.5) * 0.55 * uWaveAmp * farDampLong;
     disp.y += currentUndulation;
 
     wp.xyz += disp;
@@ -161,7 +167,6 @@ const OCEAN_VERT = /* glsl */ `
 const OCEAN_FRAG = /* glsl */ `
   ${SHARED_SKY_GLSL}
 
-  uniform float uTime;
   uniform float uWaveAmp;
   uniform float uWaveSpeed;
   uniform float uChoppiness;
@@ -206,26 +211,30 @@ const OCEAN_FRAG = /* glsl */ `
     vec3 V = toCam / max(dist, 1e-4);
     vec3 L = normalize(uSunDir);
 
-    float detailFade = 1.0 - smoothstep(65.0, 620.0, dist);
+    float detailFade = 1.0 - smoothstep(55.0, 480.0, dist);
     // Irregular wind-catspaw roughness patches (glassy current slicks vs wind-rippled patches!)
     float windCatspaw = mix(0.52, 1.28, smoothstep(0.25, 0.78, skyFbm(p * 0.018 + vec2(uTime * 0.025, -uTime * 0.018))));
     float localDetail = detailFade * windCatspaw;
 
-    float eps = mix(0.14, 1.15, smoothstep(15.0, 480.0, dist));
+    float eps = mix(0.14, 1.15, smoothstep(15.0, 420.0, dist));
     float hC = waterMicroDetail(p, localDetail);
     float hX = waterMicroDetail(p + vec2(eps, 0.0), localDetail);
     float hZ = waterMicroDetail(p + vec2(0.0, eps), localDetail);
 
     vec3 microN = normalize(vec3(hC - hX, eps * 1.92, hC - hZ));
     vec3 combinedN = normalize(vec3(vMacroNormal.x + microN.x * localDetail, vMacroNormal.y, vMacroNormal.z + microN.z * localDetail));
-    vec3 N = normalize(mix(vec3(0.0, 1.0, 0.0), combinedN, 1.0 - smoothstep(450.0, 1850.0, dist)));
+    vec3 N = normalize(mix(vec3(0.0, 1.0, 0.0), combinedN, 1.0 - smoothstep(220.0, 820.0, dist)));
 
     vec3 R = reflect(-V, N);
-    R.y = abs(R.y) * 0.88 + 0.012;
+    // Smooth grazing horizon clamp: NEVER use abs(R.y), which flipped wave back-slopes up into dark overhead zenith sky!
+    R.y = mix(0.005, R.y, smoothstep(-0.02, 0.14, R.y));
     R = normalize(R);
 
-    float cosTheta = clamp(dot(N, V), 0.0, 1.0);
-    float fresnel = 0.024 + 0.976 * pow(1.0 - cosTheta, 4.8);
+    // Grazing wave-slope masking: at distance, wave crests occlude steep front troughs so effective Fresnel follows macro grazing V.y!
+    float localCos = clamp(dot(N, V), 0.0, 1.0);
+    float macroCos = clamp(V.y, 0.0, 1.0);
+    float effectiveCos = mix(localCos, macroCos, smoothstep(130.0, 520.0, dist));
+    float fresnel = 0.028 + 0.972 * pow(1.0 - effectiveCos, 4.8);
 
     // Coastal shoaling tint & surf around all 24 archipelago islands, crescents, lagoons & sea-stacks!
     float foamLace = skyFbm(p * 0.88 + vec2(uTime * 0.20 * uWaveSpeed, -uTime * 0.14 * uWaveSpeed));
@@ -260,14 +269,16 @@ const OCEAN_FRAG = /* glsl */ `
     vec3 crestSSS = uWaterShallowColor * 1.68 * thinCrest * (0.28 + 0.85 * sunBacklit) * (1.0 - uNightFactor * 0.55);
 
     vec3 skyReflect = evalPhysicalSky(R, uTime, false);
-    vec3 col = mix(waterBody + crestSSS, skyReflect, fresnel);
+    // Softly lift deep-water body shadow at far distances so high-altitude / low-mist views never form a dark band below the horizon!
+    vec3 farWaterScatter = mix(waterBody + crestSSS, skyReflect * 0.72, smoothstep(320.0, 1450.0, dist));
+    vec3 col = mix(farWaterScatter, skyReflect, fresnel);
 
     // Dual-lobe solar / lunar glitter path modulated by wind catspaws
     vec3 H = normalize(L + V);
     float ndoth = clamp(dot(N, H), 0.0, 1.0);
-    float specPowerTight = mix(440.0, 105.0, smoothstep(35.0, 560.0, dist));
-    float specTight = pow(ndoth, specPowerTight) * (0.30 + 0.70 * localDetail);
-    float specBroad = pow(ndoth, 36.0) * (1.0 - smoothstep(480.0, 1850.0, dist));
+    float specPowerTight = mix(440.0, 105.0, smoothstep(35.0, 520.0, dist));
+    float specTight = pow(ndoth, specPowerTight) * (0.30 + 0.70 * localDetail) * (1.0 - smoothstep(420.0, 1200.0, dist));
+    float specBroad = pow(ndoth, 36.0) * (1.0 - smoothstep(420.0, 1550.0, dist));
     col += uSunColor * (specTight * uGlitterIntensity + specBroad * uGlitterIntensity * 0.09);
 
     // Irregular wave-group whitecaps & wind-driven Langmuir foam streaks!
@@ -284,12 +295,13 @@ const OCEAN_FRAG = /* glsl */ `
     vec3 foamAmbient = mix(uHorizonAntiColor, uHorizonSunColor, 0.45) * 1.25 + uSunColor * 0.32;
     col = mix(col, foamAmbient, totalFoam);
 
-    // Gradual aerial perspective convergence to exact horizon sky (100% seamless from any altitude!)
+    // Gradual aerial perspective convergence to exact horizon sky (100% pixel-identical to skydome at every angle & altitude!)
     vec3 viewRay = normalize(vWorldPos - cameraPosition);
     vec3 exactHorizonSky = evalHorizonHazeColor(viewRay);
-    float aerialExtinction = 1.0 - exp(-pow(uMistDensity * dist, 1.28));
-    float outerRimFeather = smoothstep(1850.0, 3480.0, length(p));
-    float horizonBlend = clamp(max(aerialExtinction, outerRimFeather), 0.0, 1.0);
+    float aerialExtinction = 1.0 - exp(-pow(uMistDensity * dist, 1.24));
+    float distRimFeather = smoothstep(1650.0, 5100.0, dist);
+    float outerRimFeather = smoothstep(2400.0, 5350.0, length(p));
+    float horizonBlend = clamp(max(aerialExtinction, max(distRimFeather, outerRimFeather)), 0.0, 1.0);
     col = mix(col, exactHorizonSky, horizonBlend);
 
     // Physical coastal water clarity ONLY in shallow near-island reefs (< 165m);
@@ -302,7 +314,7 @@ const OCEAN_FRAG = /* glsl */ `
   }
 `;
 
-function buildRadialOceanGeometry(maxRadius = 3600, radialRings = 270, angularSegs = 220): THREE.BufferGeometry {
+function buildRadialOceanGeometry(maxRadius = 5600, radialRings = 300, angularSegs = 256): THREE.BufferGeometry {
   const vCount = (radialRings + 1) * (angularSegs + 1);
   const positions = new Float32Array(vCount * 3);
   const uvs = new Float32Array(vCount * 2);
@@ -374,7 +386,7 @@ export function createNorthSeaOcean(
     uStackCenters: { value: stackUniformArray },
   };
 
-  const geom = buildRadialOceanGeometry(3600, 270, 220);
+  const geom = buildRadialOceanGeometry(5600, 300, 256);
 
   const mat = new THREE.ShaderMaterial({
     name: 'NorthSeaPhysicalOcean',

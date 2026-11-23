@@ -46,7 +46,7 @@ async function bootstrap(): Promise<void> {
     42,
     window.innerWidth / window.innerHeight,
     0.12,
-    7500
+    9500
   );
   let activeBookmark: CameraBookmark = CAMERA_BOOKMARKS[0];
   camera.position.copy(activeBookmark.position);
@@ -88,7 +88,7 @@ async function bootstrap(): Promise<void> {
   composer.addPass(new OutputPass());
 
   // 1. Build Photorealistic Nordic Atmosphere, Bathymetric Seafloor & Multi-Belt Archipelago
-  await loadingScreen.advanceTo(34, 'Sculpting Faroese tablelands, headland sea-arches & North Sea swells…');
+  await loadingScreen.advanceTo(34, 'Sculpting Nordic archipelago ridges, sea-arches & North Sea swells…');
   const initialWeatherPreset = 'golden-hour';
   const atmosphere = createNordicAtmosphere(renderer, scene, initialWeatherPreset);
   const cliffWorld = createNordicCliffWorld(atmosphere.sharedUniforms);

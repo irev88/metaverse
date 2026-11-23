@@ -240,6 +240,7 @@ export interface AtmosphereSharedUniforms {
   uWaterDeepColor: { value: THREE.Color };
   uWaterShallowColor: { value: THREE.Color };
   uGlitterIntensity: { value: number };
+  uIsEnvBake: { value: number };
   uTime: { value: number };
 }
 
@@ -284,6 +285,8 @@ export const SHARED_SKY_GLSL = /* glsl */ `
   uniform float uMistDensity;
   uniform float uNightFactor;
   uniform float uAuroraIntensity;
+  uniform float uIsEnvBake;
+  uniform float uTime;
 
   float skyHash21(vec2 p) {
     p = fract(p * vec2(127.1, 311.7));
@@ -314,9 +317,10 @@ export const SHARED_SKY_GLSL = /* glsl */ `
     return v;
   }
 
-  // Evaluates clean, continuous sky + perspective cloud radiance (ZERO horizon blob artifacts!)
+  // Evaluates clean, continuous sky + perspective cloud radiance (100% seamless across rawDir.y = 0, ZERO horizon dark strip!)
   vec3 evalPhysicalSky(vec3 rawDir, float timeSec, bool includeStarsAndDisc) {
-    vec3 dir = normalize(rawDir);
+    vec3 normRaw = normalize(rawDir);
+    vec3 dir = uIsEnvBake > 0.5 ? normRaw : normalize(vec3(normRaw.x, max(normRaw.y, 0.0), normRaw.z));
     vec3 sunN = normalize(uSunDir);
     float elev = clamp(dir.y, 0.0, 1.0);
     float sunDot = clamp(dot(dir, sunN), 0.0, 1.0);
@@ -364,7 +368,7 @@ export const SHARED_SKY_GLSL = /* glsl */ `
     }
 
     // Continuous Perspective Cloud Deck: naturally foreshortens into delicate horizon strata as dir.y -> 0,
-    // fading cleanly into the atmospheric horizon mist with ZERO dark/white horizon blobs!
+    // fading cleanly into the exact local sky+Mie radiance with ZERO dark/white horizon bands!
     if (dir.y > 0.004 && uCloudCoverage > 0.01) {
       vec2 cUv = dir.xz / (dir.y + 0.14) * 0.92 + vec2(timeSec * 0.0055, timeSec * 0.0028);
       float n1 = skyFbm(cUv);
@@ -372,16 +376,15 @@ export const SHARED_SKY_GLSL = /* glsl */ `
       float cField = n1 * 0.72 + n2 * 0.28;
 
       float thresh = mix(0.68, 0.24, uCloudCoverage);
-      // Gentle horizon aerial extinction on distant clouds (>25 km away near dir.y -> 0) so they melt smoothly into horizon haze!
-      float cloudHorizonFade = smoothstep(0.006, 0.13, dir.y);
+      float cloudHorizonFade = smoothstep(0.008, 0.15, dir.y);
       float cMask = smoothstep(thresh, thresh + 0.34, cField) * cloudHorizonFade;
 
       float sunLining = pow(sunDot, 3.2) * (1.0 - uCloudCoverage * 0.35);
       float thickness = smoothstep(thresh, thresh + 0.42, cField);
       vec3 cCol = mix(uCloudLitColor, uCloudDarkColor, thickness * 0.68);
       cCol += uMieColor * sunLining * 0.35;
-      // Blend distant low-angle clouds toward horizBase so they never create high-contrast patches near the horizon!
-      cCol = mix(horizBase, cCol, smoothstep(0.01, 0.18, dir.y));
+      // Blend distant low-angle clouds toward local sky (including Mie glow!) so they never create dark bands above the horizon!
+      cCol = mix(sky, cCol, smoothstep(0.015, 0.20, dir.y));
       sky = mix(sky, cCol, cMask * min(0.92, 0.45 + uCloudCoverage * 0.52));
     }
 
@@ -393,25 +396,20 @@ export const SHARED_SKY_GLSL = /* glsl */ `
       sky += discCol * disc;
     }
 
-    // Lower hemisphere: keep visible skydome horizon 100% seamless across rawDir.y = 0 (ZERO dark horizon strip
-    // when viewed from high altitudes!), while gently darkening steep downward rays for cubemap water/scale bounce.
-    if (rawDir.y < 0.0) {
-      if (includeStarsAndDisc) {
-        vec3 deepBelow = mix(horizBase, uHorizonAntiColor * 0.85, smoothstep(0.06, 0.35, -rawDir.y));
-        sky = deepBelow + uMieColor * pow(sunDot, uMieExponent) * uMieStrength * 0.35 * (1.0 - smoothstep(0.0, 0.18, -rawDir.y));
-      } else {
-        vec3 seaBounce = mix(horizBase * 0.82, uZenithColor * 0.40, clamp(-rawDir.y * 2.8, 0.0, 1.0));
-        sky = mix(horizBase, seaBounce, smoothstep(0.08, 0.32, -rawDir.y));
-      }
+    // Only during offscreen PMREM cubemap baking (uIsEnvBake > 0.5), gently dim steep downward rays for realistic ocean/ground bounce!
+    if (uIsEnvBake > 0.5 && normRaw.y < 0.0) {
+      vec3 seaBounce = mix(horizBase * 0.78, uZenithColor * 0.36, clamp(-normRaw.y * 2.4, 0.0, 1.0));
+      sky = mix(sky, seaBounce, smoothstep(0.08, 0.42, -normRaw.y));
     }
 
     return sky;
   }
 
-  // Evaluates pure horizon haze color along any horizontal view ray for seamless aerial perspective!
+  // Evaluates exact matching sky/horizon radiance along any view ray for 100% seamless ocean & mountain horizon blending!
   vec3 evalHorizonHazeColor(vec3 viewRayDir) {
-    vec3 flatDir = normalize(vec3(viewRayDir.x, max(0.004, viewRayDir.y * 0.20), viewRayDir.z));
-    return evalPhysicalSky(flatDir, 0.0, false);
+    vec3 nRay = normalize(viewRayDir);
+    vec3 rayDir = normalize(vec3(nRay.x, max(nRay.y, 0.0), nRay.z));
+    return evalPhysicalSky(rayDir, uTime, false);
   }
 `;
 
@@ -426,7 +424,6 @@ const SKY_VERTEX_SHADER = /* glsl */ `
 
 const SKY_FRAGMENT_SHADER = /* glsl */ `
   ${SHARED_SKY_GLSL}
-  uniform float uTime;
   varying vec3 vWorldDir;
 
   void main() {
@@ -463,6 +460,7 @@ export function createNordicAtmosphere(
     uWaterDeepColor: { value: new THREE.Color(initCfg.waterDeepColor) },
     uWaterShallowColor: { value: new THREE.Color(initCfg.waterShallowColor) },
     uGlitterIntensity: { value: initCfg.glitterIntensity },
+    uIsEnvBake: { value: 0 },
     uTime: { value: 0 },
   };
 
