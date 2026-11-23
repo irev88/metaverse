@@ -56,25 +56,25 @@ function smoothstep(e0: number, e1: number, x: number): number {
 }
 
 /**
- * Angular tectonic / basalt-cleavage ridge noise in [0, 1].
- * Uses a tighter hyperboloid crest (0.018) to form realistic glaciated mountain ridgelines,
- * angular coastal cliff spurs, and vertical basalt fracture ribs without infinite-slope aliasing.
+ * Weathered glaciated ridge noise in [0, 1].
+ * Uses a broad, smooth hyperboloid crest (0.068) so mountain ridges and coastal spurs have
+ * natural weathered shoulders — NEVER razor-sharp creases, cones, or spiky pinnacles!
  */
-function roundedRidge2D(x: number, y: number, octaves = 3): number {
+function roundedRidge2D(x: number, y: number, octaves = 2): number {
   let sum = 0;
   let weight = 1.0;
-  let amp = 0.54;
+  let amp = 0.56;
   let freq = 1.0;
   let norm = 0;
   for (let i = 0; i < octaves; i++) {
     const n = valueNoise2D(x * freq, y * freq) * 2.0 - 1.0;
-    const ridge = 1.0 - (Math.sqrt(n * n + 0.018) - 0.134) / 0.88;
+    const ridge = 1.0 - (Math.sqrt(n * n + 0.068) - 0.261) / 0.78;
     const clamped = Math.max(0, Math.min(1, ridge));
     sum += amp * clamped * weight;
     norm += amp;
-    weight = 0.48 + 0.52 * clamped;
-    freq *= 2.07;
-    amp *= 0.48;
+    weight = 0.55 + 0.45 * clamped;
+    freq *= 2.03;
+    amp *= 0.46;
   }
   return sum / Math.max(1e-4, norm);
 }
@@ -88,22 +88,27 @@ function applyBasaltHamrarTerraces(
   rawHeight: number,
   bedTiltOffset: number,
   stepHeight: number,
-  benchStrength: number
+  benchStrength: number,
+  summitSoftCapY = 999.0
 ): number {
   if (rawHeight <= 0.4) return rawHeight;
   const bed = (rawHeight + bedTiltOffset) / stepHeight;
   const k = Math.floor(bed);
   const f = bed - k;
-  // Concave-upward grassy bench (0..0.70) rising into a crisp basalt rock riser (0.70..0.98)
-  const benchProfile = 0.34 * Math.pow(f, 1.35) + 0.66 * smoothstep(0.66, 0.96, f);
+  // Concave-upward grassy bench (0..0.68) rising into a weathered basalt rock riser (0.68..0.96)
+  const benchProfile = 0.38 * Math.pow(f, 1.28) + 0.62 * smoothstep(0.64, 0.96, f);
   const terraced = (k + benchProfile) * stepHeight - bedTiltOffset;
-  return THREE.MathUtils.lerp(rawHeight, terraced, benchStrength);
+  // Attenuate terrace steps near the very top summit crown so no step riser ever creates a sharp peak nub!
+  const crownFade = 1.0 - smoothstep(summitSoftCapY * 0.74, summitSoftCapY * 0.95, rawHeight);
+  return THREE.MathUtils.lerp(rawHeight, terraced, benchStrength * crownFade);
 }
 
 /**
- * Evaluates a realistic stepped, fractured basalt sea-cliff descent from uplandY down to seaShelfY:
- * Incorporates an irregular mid-cliff lava-flow bench, angular vertical buttress ribs, and recessed
- * wave-cut gullies directly inside the monotonic heightfield (100% free of triangle folding!).
+ * Evaluates a deeply undulating, stepped, fractured basalt sea-cliff descent from uplandY down to seaShelfY:
+ * - Warps horizontal cliff progress `t` in 3D with multi-scale jutting rock buttresses & recessed sea-clefts
+ *   so vertical cliff walls are NEVER flat or straight!
+ * - Forms discontinuous mid-cliff rock benches AND emergent dark rocky wave-cut shore aprons right at
+ *   the ocean waterline (SEA_LEVEL_Y = -11.5m), 100% free of heightfield triangle folding!
  */
 function evalSteppedRockyCliffDescent(
   uplandY: number,
@@ -113,30 +118,53 @@ function evalSteppedRockyCliffDescent(
   wz: number,
   seed: number
 ): number {
-  const t = Math.max(0, Math.min(1, cliffT));
-  // Irregular mid-cliff basalt ledge / bench (like Mulafossur & Reynisfjara cliffs)
-  const benchPresence = smoothstep(
-    0.34,
-    0.76,
-    fbm2D(wx * 0.065 + seed * 1.7, wz * 0.065 - seed * 1.3, 2)
+  const rawT = Math.max(0, Math.min(1, cliffT));
+  const midMask = Math.sin(rawT * Math.PI);
+
+  // Multi-scale lateral buttress & sea-cave warping so vertical cliff faces weave in and out organically!
+  const macroButtress = fbm2D(wx * 0.052 + seed * 1.3, wz * 0.052 - seed * 1.7, 3) - 0.5;
+  const mesoButtress = roundedRidge2D(wx * 0.115 - seed * 2.1, wz * 0.115 + seed * 1.4, 2) - 0.48;
+  const fineJoint = fbm2D(wx * 0.24 + seed * 0.9, wz * 0.24 - seed * 2.3, 2) - 0.5;
+  const warpedT = THREE.MathUtils.clamp(
+    rawT - (macroButtress * 0.34 + mesoButtress * 0.24 + fineJoint * 0.11) * midMask,
+    0.0,
+    1.0
   );
-  const benchLevel = 0.38 + 0.18 * (fbm2D(wx * 0.09 - seed, wz * 0.09 + seed, 2) - 0.5);
 
-  const upperScarp = smoothstep(0.0, 0.44, t);
-  const lowerScarp = smoothstep(0.56, 1.0, t);
-  const steppedFrac =
-    upperScarp * benchLevel + lowerScarp * (1.0 - benchLevel);
-  const sheerFrac = Math.pow(t, 0.78);
-  const baseFrac = THREE.MathUtils.lerp(sheerFrac, steppedFrac, benchPresence * 0.72);
+  // Discontinuous staggered mid-cliff basalt benches (never continuous horizontal stripes!)
+  const benchPresence = smoothstep(
+    0.28,
+    0.74,
+    fbm2D(wx * 0.058 + seed * 1.7, wz * 0.058 - seed * 1.3, 2)
+  );
+  const benchLevel = 0.36 + 0.24 * (fbm2D(wx * 0.085 - seed, wz * 0.085 + seed, 2) - 0.5);
 
-  // Angular vertical rocky buttress ribs & recessed fracture chutes along the cliff face
-  const ribNoise = roundedRidge2D(wx * 0.14 + seed * 2.1, wz * 0.14 - seed * 1.9, 3);
-  const blockFracture = fbm2D(wx * 0.28 - seed, wz * 0.28 + seed * 2.3, 2) - 0.5;
-  const midFaceEnvelope = Math.sin(Math.min(1, t) * Math.PI);
-  const rockRibLift = ((ribNoise - 0.46) * 3.2 + blockFracture * 1.35) * midFaceEnvelope;
+  const upperScarp = smoothstep(0.0, 0.42, warpedT);
+  const lowerScarp = smoothstep(0.56, 1.0, warpedT);
+  const steppedFrac = upperScarp * benchLevel + lowerScarp * (1.0 - benchLevel);
+  const sheerFrac = Math.pow(warpedT, 0.80);
+  const baseFrac = THREE.MathUtils.lerp(sheerFrac, steppedFrac, benchPresence * 0.76);
 
-  const rawCliffY = THREE.MathUtils.lerp(uplandY, seaShelfY, baseFrac) + rockRibLift;
-  return Math.min(uplandY + 0.12, Math.max(seaShelfY - 1.2, rawCliffY));
+  // Blunt weathered rock ribs & recessed vertical chutes along the cliff wall (clamped below uplandY so zero spikes!)
+  const ribNoise = roundedRidge2D(wx * 0.13 + seed * 2.1, wz * 0.13 - seed * 1.9, 2);
+  const blockFracture = fbm2D(wx * 0.26 - seed, wz * 0.26 + seed * 2.3, 2) - 0.5;
+  const rockRibLift = ((ribNoise - 0.48) * 2.8 + blockFracture * 1.65) * midMask;
+
+  // Emergent dark wave-cut rocky shore shelf / tidal reef bench right near SEA_LEVEL_Y (-11.5m .. -9.9m)!
+  const shoreShelfNoise = fbm2D(wx * 0.095 + seed * 3.1, wz * 0.095 - seed * 2.7, 3);
+  const shoreShelfMask =
+    smoothstep(0.42, 0.78, shoreShelfNoise) *
+    smoothstep(0.62, 0.86, rawT) *
+    (1.0 - smoothstep(0.95, 1.0, rawT));
+  const shoreBenchTargetY = SEA_LEVEL_Y + 0.25 + (shoreShelfNoise - 0.5) * 1.85;
+
+  let rawCliffY = THREE.MathUtils.lerp(uplandY, seaShelfY, baseFrac) + rockRibLift;
+  rawCliffY = THREE.MathUtils.lerp(
+    rawCliffY,
+    Math.max(rawCliffY, shoreBenchTargetY),
+    shoreShelfMask * 0.82
+  );
+  return Math.min(uplandY + 0.04, Math.max(seaShelfY - 1.2, rawCliffY));
 }
 
 /**
@@ -243,12 +271,13 @@ export function sampleHeroCliffHeight(x: number, z: number): number {
     const hBlend = Math.max(0, 1.0 - Math.abs(perchDist - nwLobeDist) / 0.52);
     perchDist = Math.min(perchDist, nwLobeDist) - 0.11 * hBlend * hBlend;
 
-    // Concave-sweeping dip-slope rising toward a sharp NW seaward escarpment (not a round dome!)
-    const nwSlopeSweep = Math.pow(Math.max(0, 1.0 - nwRaw / 0.96), 0.82);
-    const nwTilt = THREE.MathUtils.clamp(0.62 - nwDX * 0.42 - nwDZ * 0.25, 0.22, 1.18);
+    // Broad-shouldered asymmetric NW cuesta headland (smooth C^infinity crown — zero pointy cone!)
+    const nwSq = Math.min(1.0, (nwRaw / 0.98) * (nwRaw / 0.98));
+    const nwSlopeSweep = Math.pow(Math.max(0, 1.0 - nwSq), 1.18);
+    const nwTilt = THREE.MathUtils.clamp(0.62 - nwDX * 0.38 - nwDZ * 0.22, 0.26, 1.12);
     const nwRawH =
-      nwSlopeSweep * nwTilt * (8.4 + 3.2 * roundedRidge2D(x * 0.055 + 5.1, z * 0.055 - 3.2, 3));
-    nwHillBoost = applyBasaltHamrarTerraces(nwRawH, x * 0.04 - z * 0.03, 3.6, 0.58);
+      nwSlopeSweep * nwTilt * (7.8 + 2.4 * roundedRidge2D(x * 0.05 + 5.1, z * 0.05 - 3.2, 2));
+    nwHillBoost = applyBasaltHamrarTerraces(nwRawH, x * 0.04 - z * 0.03, 3.6, 0.52);
   }
 
   // Angular wave-cut sea-cove indenting the NE cliff wall
@@ -263,34 +292,37 @@ export function sampleHeroCliffHeight(x: number, z: number): number {
   const sightlineLowMask =
     1.0 - 0.78 * smoothstep(-0.4, 4.2, z) * (1.0 - smoothstep(4.2, 11.8, Math.abs(x)));
   const coastalMicroRelief =
-    ((fbm2D(x * 0.095 + 4.2, z * 0.095 - 1.7, 3) - 0.47) * 1.45 +
-      (roundedRidge2D(x * 0.16 - 2.3, z * 0.16 + 6.1, 2) - 0.46) * 0.62) *
+    ((fbm2D(x * 0.095 + 4.2, z * 0.095 - 1.7, 3) - 0.47) * 1.35 +
+      (roundedRidge2D(x * 0.15 - 2.3, z * 0.15 + 6.1, 2) - 0.48) * 0.52) *
     pawPadFlat *
     sightlineLowMask;
 
-  // Asymmetric glaciated headland ridge & stepped basalt "hamrar" terraces rising behind the dragons (z < -6.2m)
-  const northDist = Math.max(0, (-z - 6.2) / 24.0);
-  const concaveValleySweep = Math.pow(Math.min(1.35, northDist), 1.38);
-  const lateralEnv = smoothstep(39.0, 8.0, Math.abs(x + 3.2));
-  const ridgeCrest = roundedRidge2D(x * 0.052 + 1.8, z * 0.048 - 2.7, 3);
+  // Broad-shouldered glaciated headland & stepped basalt "hamrar" benches behind the dragons (z < -6.2m, zero spikes!)
+  const northDist = Math.max(0, (-z - 6.2) / 25.0);
+  const concaveValleySweep = Math.pow(Math.min(1.22, northDist), 1.32) / (1.0 + 0.22 * northDist * northDist);
+  const lateralEnv = smoothstep(39.0, 9.0, Math.abs(x + 3.2));
+  const ridgeCrest = roundedRidge2D(x * 0.046 + 1.8, z * 0.042 - 2.7, 2);
   const rawBackHighland =
-    concaveValleySweep * lateralEnv * (7.8 + 8.6 * ridgeCrest + (fbm2D(x * 0.08 - 3.4, z * 0.08 + 1.9, 2) - 0.5) * 3.2);
-  const backHighland = applyBasaltHamrarTerraces(rawBackHighland, x * 0.05 + z * 0.03, 4.2, 0.64);
+    concaveValleySweep * lateralEnv * (7.4 + 6.4 * ridgeCrest + (fbm2D(x * 0.075 - 3.4, z * 0.075 + 1.9, 2) - 0.5) * 2.8);
+  const backHighland = applyBasaltHamrarTerraces(rawBackHighland, x * 0.045 + z * 0.028, 4.0, 0.56, 13.5);
 
   const uplandSurfaceY = coastalMicroRelief + Math.max(backHighland, nwHillBoost * pawPadFlat);
 
-  // Irregular fractured cliff brink with angular rock spurs & notches
+  // Irregular fractured cliff brink with rocky spurs & notches + variable cliff-apron width
   const brinkIrreg =
-    0.11 * (roundedRidge2D(x * 0.13 + 3.7, z * 0.13 - 2.1, 2) - 0.48) +
-    0.07 * (fbm2D(Math.cos(ang) * 2.4 + 2.1, Math.sin(ang) * 2.4 - 1.3, 3) - 0.5);
-  const brinkStart = 0.77 + brinkIrreg * rimWarpMask;
+    0.13 * (roundedRidge2D(x * 0.12 + 3.7, z * 0.12 - 2.1, 2) - 0.48) +
+    0.09 * (fbm2D(Math.cos(ang) * 2.6 + 2.1, Math.sin(ang) * 2.6 - 1.3, 3) - 0.5);
+  const brinkStart = 0.76 + brinkIrreg * rimWarpMask;
   if (perchDist <= brinkStart) {
     return uplandSurfaceY;
   }
 
-  const cliffFall = smoothstep(brinkStart, 1.54, perchDist);
-  const deepSkirt = smoothstep(1.42, 2.24, perchDist);
-  const seaShelfY = SEA_LEVEL_Y - 1.85;
+  const cliffOuterEnd = 1.48 + 0.24 * (fbm2D(Math.cos(ang) * 2.2 - 4.1, Math.sin(ang) * 2.2 + 3.3, 2) - 0.5);
+  const cliffFall = smoothstep(brinkStart, cliffOuterEnd, perchDist);
+  const deepSkirt = smoothstep(cliffOuterEnd - 0.08, cliffOuterEnd + 0.78, perchDist);
+  // Variable rocky intertidal apron right near sea level (-11.5m)
+  const apronWave = fbm2D(x * 0.08 + 5.7, z * 0.08 - 4.3, 2);
+  const seaShelfY = SEA_LEVEL_Y - 1.35 + smoothstep(0.45, 0.85, apronWave) * 1.95;
   const upperCliffY = evalSteppedRockyCliffDescent(uplandSurfaceY, seaShelfY, cliffFall, x, z, 7.3);
   return THREE.MathUtils.lerp(upperCliffY, ISLAND_SKIRT_BASE_Y, deepSkirt);
 }
@@ -348,40 +380,43 @@ function makeNaturalNordicIslandFn(opts: {
     const lx = dx * cosR - dz * sinR;
     const lz = dx * sinR + dz * cosR;
 
-    // Angular coastline headlands, rocky peninsulas & recessed sea-clefts
+    // Irregular coastline headlands, rocky peninsulas & recessed sea-coves (never straight or uniform!)
     const warpX =
       lx +
-      (fbm2D(lx * 0.038 + opts.seed, lz * 0.038 - opts.seed, 3) - 0.5) * (opts.rx * 0.40) +
-      (roundedRidge2D(lx * 0.095 + opts.seed, lz * 0.095, 2) - 0.48) * (opts.rx * 0.14);
+      (fbm2D(lx * 0.042 + opts.seed, lz * 0.042 - opts.seed, 3) - 0.5) * (opts.rx * 0.48) +
+      (roundedRidge2D(lx * 0.095 + opts.seed, lz * 0.095, 2) - 0.48) * (opts.rx * 0.18);
     const warpZ =
       lz +
-      (fbm2D(lx * 0.038 - opts.seed, lz * 0.038 + opts.seed, 3) - 0.5) * (opts.rz * 0.40) +
-      (roundedRidge2D(lx * 0.095 - opts.seed, lz * 0.095 + 2.1, 2) - 0.48) * (opts.rz * 0.14);
+      (fbm2D(lx * 0.042 - opts.seed, lz * 0.042 + opts.seed, 3) - 0.5) * (opts.rz * 0.48) +
+      (roundedRidge2D(lx * 0.095 - opts.seed, lz * 0.095 + 2.1, 2) - 0.48) * (opts.rz * 0.18);
 
     const ang = Math.atan2(warpZ, warpX);
     const lobe =
       1.0 +
-      0.19 * Math.sin(ang * 2.0 + opts.seed) +
-      0.13 * Math.cos(ang * 3.0 - opts.seed * 1.5) +
-      0.08 * Math.sin(ang * 5.0 + 0.9);
+      0.21 * Math.sin(ang * 2.0 + opts.seed) +
+      0.15 * Math.cos(ang * 3.0 - opts.seed * 1.5) +
+      0.10 * Math.sin(ang * 5.0 + 0.9) +
+      0.06 * Math.cos(ang * 7.0 - opts.seed * 0.6);
 
     const rPrimary = Math.sqrt(
       Math.pow(warpX / (opts.rx * lobe), 2) + Math.pow(warpZ / (opts.rz * lobe), 2)
     );
     let rNorm = rPrimary;
 
-    // Asymmetric tilted cuesta + concave-flanked ridge profile (NEVER a round hamburger-bun dome!)
-    const rSumPrimary = Math.sqrt(
-      Math.pow((warpX - sumOffX) / (opts.rx * lobe * 0.98), 2) +
-        Math.pow((warpZ - sumOffZ) / (opts.rz * lobe * 0.98), 2)
-    );
+    // Asymmetric tilted cuesta & elongated whaleback ridge (smooth C^infinity crest — ZERO pointy cone tips!)
+    // Stretch along structural strike so summits are broad elongated ridges/tablelands, never cones or round balls!
+    const strikeCoord = (warpX - sumOffX) * (-dipSin) + (warpZ - sumOffZ) * dipCos;
+    const dipShiftCoord = (warpX - sumOffX) * dipCos + (warpZ - sumOffZ) * dipSin;
+    const rElongSq =
+      Math.pow(strikeCoord / (opts.rx * lobe * 1.28), 2) +
+      Math.pow(dipShiftCoord / (opts.rz * lobe * 0.88), 2);
     const dipCoord = (lx * dipCos + lz * dipSin) / Math.max(8.0, opts.rx);
-    // Concave-upward sweep along the structural dip-slope rising toward the asymmetric escarpment crest
-    const cuestaTilt = THREE.MathUtils.clamp(0.58 + 0.46 * dipCoord, 0.24, 1.22);
-    const concaveFlank = Math.pow(Math.max(0, 1.0 - Math.min(1.0, rSumPrimary / 1.02)), 0.86);
-    const sharpCrest = Math.pow(Math.max(0, 1.0 - Math.min(1.0, rSumPrimary / 0.78)), 1.65);
+    const cuestaTilt = THREE.MathUtils.clamp(0.62 + 0.38 * dipCoord, 0.30, 1.12);
+    // Smooth quadratic core (zero slope at r=0 -> broad weathered crown) + concave lower valley sweep!
+    const broadCrown = Math.pow(Math.max(0, 1.0 - Math.min(1.0, rElongSq)), 1.38);
+    const plateauShoulder = 1.0 / (1.0 + 1.85 * rElongSq * rElongSq);
     let baseHillY =
-      opts.peakY * (0.22 + 0.52 * concaveFlank * cuestaTilt + 0.34 * sharpCrest);
+      opts.peakY * (0.20 + 0.50 * broadCrown * cuestaTilt + 0.24 * plateauShoulder);
 
     if (opts.secondaryLobe) {
       const sl = opts.secondaryLobe;
@@ -389,82 +424,101 @@ function makeNaturalNordicIslandFn(opts: {
       const sz = warpZ - sl.dz;
       const sAng = Math.atan2(sz, sx);
       const sLobe =
-        1.0 + 0.16 * Math.cos(sAng * 2.0 - opts.seed) + 0.11 * Math.sin(sAng * 3.0 + opts.seed);
+        1.0 + 0.18 * Math.cos(sAng * 2.0 - opts.seed) + 0.12 * Math.sin(sAng * 3.0 + opts.seed);
       const rSec = Math.sqrt(Math.pow(sx / (sl.rx * sLobe), 2) + Math.pow(sz / (sl.rz * sLobe), 2));
-      const kSmooth = sl.lowSaddle ? 0.44 : 0.36;
+      const kSmooth = sl.lowSaddle ? 0.44 : 0.38;
       const h = Math.max(0, Math.min(1, 0.5 + (0.5 * (rSec - rNorm)) / kSmooth));
       rNorm = rSec * (1 - h) + rNorm * h - kSmooth * h * (1 - h);
 
-      const secPeakY = opts.peakY * sl.peakScale;
-      const secFlank = Math.pow(Math.max(0, 1.0 - Math.min(1.0, rSec / 0.98)), 0.88);
-      const secCrest = Math.pow(Math.max(0, 1.0 - Math.min(1.0, rSec / 0.72)), 1.60);
-      const secHillY = secPeakY * (0.24 + 0.48 * secFlank + 0.34 * secCrest);
-      // Concave U-shaped glacial saddle ("botn") carved between the twin peaks
-      const saddleDip = sl.lowSaddle ? Math.sin(h * Math.PI) * 0.46 : Math.sin(h * Math.PI) * 0.24;
+      const secPeakY = opts.peakY * Math.min(sl.peakScale, 1.06);
+      const rSecSq = Math.min(1.0, rSec * rSec);
+      const secBroadCrown = Math.pow(Math.max(0, 1.0 - rSecSq), 1.35);
+      const secHillY = secPeakY * (0.22 + 0.68 * secBroadCrown);
+      // Concave U-shaped glacial saddle ("botn") carved between the twin massifs
+      const saddleDip = sl.lowSaddle ? Math.sin(h * Math.PI) * 0.44 : Math.sin(h * Math.PI) * 0.22;
       baseHillY = THREE.MathUtils.lerp(secHillY, baseHillY, h) * (1.0 - saddleDip);
     }
 
-    // Crisp glaciated ridge spine + concave valley swales + basalt "hamrar" rock terraces!
-    const interiorMask = 1.0 - smoothstep(0.58, 1.04, rNorm);
+    // Gentle weathered ridge undulation + concave valley swales + basalt "hamrar" benches (no spiky peaks!)
+    const interiorMask = 1.0 - smoothstep(0.56, 1.02, rNorm);
     const ridgeSpine = roundedRidge2D(
-      lx * 0.036 + opts.seed * 1.3,
-      lz * 0.044 - opts.seed * 0.9,
-      3
+      lx * 0.032 + opts.seed * 1.3,
+      lz * 0.038 - opts.seed * 0.9,
+      2
     );
-    const valleySwale = Math.pow(fbm2D(lx * 0.048 - opts.seed * 0.7, lz * 0.048 + opts.seed * 1.4, 3), 1.45);
+    const valleySwale = fbm2D(lx * 0.045 - opts.seed * 0.7, lz * 0.045 + opts.seed * 1.4, 3);
 
     const rawUplandY =
       baseHillY +
-      (ridgeSpine - 0.42) * (opts.peakY * 0.34) * (0.30 + 0.70 * interiorMask) +
-      (valleySwale - 0.36) * (opts.peakY * 0.16) * interiorMask;
+      (ridgeSpine - 0.48) * (opts.peakY * 0.18) * (0.35 + 0.65 * interiorMask) +
+      (valleySwale - 0.48) * (opts.peakY * 0.12) * interiorMask;
 
     let topSurfaceY = applyBasaltHamrarTerraces(
       rawUplandY,
-      lx * 0.035 * dipCos + lz * 0.035 * dipSin,
-      Math.max(3.6, opts.peakY * 0.21),
-      0.56
+      lx * 0.032 * dipCos + lz * 0.032 * dipSin,
+      Math.max(3.8, opts.peakY * 0.22),
+      0.48,
+      opts.peakY
     );
 
-    // Mulafossur-style upland river notch & sheer dark-basalt sea-cove amphitheater on the eastern (+lx) cliff!
+    // Localized rocky waterfall cleft notch ONLY right at the eastern sea-cliff brink + sheer sea-cove amphitheater!
+    // (No awkward artificial river trough cutting across the top of the green island!)
     let inWaterfallCove = 0.0;
-    if (opts.carveRiverToEast && lx > -opts.rx * 0.55) {
+    if (opts.carveRiverToEast && lx > 4.2) {
       const streamCenterLZ = Math.sin(lx * 0.11 + 0.35) * 1.85;
-      const distFromStream = Math.abs(lz - streamCenterLZ);
-      const valleyProfile = 1.0 - smoothstep(1.35, 6.4, distFromStream);
-      if (valleyProfile > 0.001) {
-        const targetBedY = 11.2 - smoothstep(-opts.rx * 0.45, 10.6, lx) * 3.1;
-        topSurfaceY = THREE.MathUtils.lerp(topSurfaceY, Math.min(topSurfaceY, targetBedY), valleyProfile);
+      const distFromLip = Math.abs(lz - streamCenterLZ);
+      // Subtle natural rocky cleft dip strictly in the final 4.2m leading into the waterfall brink!
+      const lipNotchMask =
+        smoothstep(5.2, 8.8, lx) * (1.0 - smoothstep(0.95, 3.8, distFromLip));
+      if (lipNotchMask > 0.001) {
+        const notchFloorY = 8.35 - smoothstep(5.5, 10.4, lx) * 0.75;
+        topSurfaceY = THREE.MathUtils.lerp(topSurfaceY, Math.min(topSurfaceY, notchFloorY), lipNotchMask);
       }
 
-      // Carve a sheer concave ocean amphitheater cove right at lx >= 10.6m so the waterfall plunges cleanly into open sea!
-      const coveWidthMask = Math.exp(-Math.pow((lz - streamCenterLZ) / 7.8, 2.0));
-      if (coveWidthMask > 0.02 && lx > 7.5) {
-        const coveLipX = 10.6 - 1.15 * coveWidthMask;
+      // Concave basalt sea-cove amphitheater with organic irregular rock walls so the waterfall drops into open sea!
+      const coveWallIrreg = (fbm2D(lx * 0.18 + 3.1, lz * 0.18 - 1.9, 2) - 0.5) * 1.35;
+      const coveWidthMask = Math.exp(-Math.pow((lz - streamCenterLZ + coveWallIrreg * 0.35) / 7.8, 2.0));
+      if (coveWidthMask > 0.02 && lx > 7.2) {
+        const coveLipX = 10.55 - 1.15 * coveWidthMask + coveWallIrreg * 0.35;
         inWaterfallCove = smoothstep(coveLipX - 0.6, coveLipX + 0.9, lx) * coveWidthMask;
         rNorm = Math.max(rNorm, 0.72 + smoothstep(coveLipX - 0.2, coveLipX + 1.15, lx) * 0.72 * coveWidthMask);
       }
     }
 
     const brinkIrreg =
-      0.10 * (roundedRidge2D(lx * 0.11 + opts.seed, lz * 0.11 - opts.seed, 2) - 0.48) +
-      0.08 * (fbm2D(Math.cos(ang) * 2.2 + opts.seed, Math.sin(ang) * 2.2 - opts.seed, 2) - 0.5);
-    const brinkR = 0.68 + brinkIrreg * (1.0 - inWaterfallCove * 0.7);
+      0.13 * (roundedRidge2D(lx * 0.10 + opts.seed, lz * 0.10 - opts.seed, 2) - 0.48) +
+      0.10 * (fbm2D(Math.cos(ang) * 2.5 + opts.seed, Math.sin(ang) * 2.5 - opts.seed, 3) - 0.5);
+    const brinkR = 0.66 + brinkIrreg * (1.0 - inWaterfallCove * 0.65);
     if (rNorm <= brinkR) {
       return topSurfaceY;
     }
 
-    // Sheer vertical cliff drop inside the waterfall amphitheater; stepped rocky basalt cliffs around the rest!
-    const cliffSpanEnd = THREE.MathUtils.lerp(1.06, brinkR + 0.09, inWaterfallCove);
+    // Variable cliff-apron width + undulating vertical cliff walls + emergent dark rocky shore shelves!
+    const outerVar = 1.06 + 0.18 * (fbm2D(Math.cos(ang) * 2.3 - opts.seed, Math.sin(ang) * 2.3 + opts.seed, 2) - 0.5);
+    const cliffSpanEnd = THREE.MathUtils.lerp(outerVar, brinkR + 0.09, inWaterfallCove);
     const cliffDrop = smoothstep(brinkR, cliffSpanEnd, rNorm);
     const submarinePlunge = smoothstep(
-      THREE.MathUtils.lerp(1.00, brinkR + 0.07, inWaterfallCove),
-      THREE.MathUtils.lerp(1.36, brinkR + 0.24, inWaterfallCove),
+      THREE.MathUtils.lerp(outerVar - 0.06, brinkR + 0.07, inWaterfallCove),
+      THREE.MathUtils.lerp(outerVar + 0.34, brinkR + 0.24, inWaterfallCove),
       rNorm
     );
-    const seaShelfY = THREE.MathUtils.lerp(SEA_LEVEL_Y - 1.85, SEA_LEVEL_Y - 5.8, inWaterfallCove);
+    const shoreWave = fbm2D(wx * 0.075 + opts.seed, wz * 0.075 - opts.seed, 2);
+    const outerRockyShelfY = SEA_LEVEL_Y - 1.35 + smoothstep(0.44, 0.84, shoreWave) * 1.95;
+    const seaShelfY = THREE.MathUtils.lerp(outerRockyShelfY, SEA_LEVEL_Y - 5.8, inWaterfallCove);
     const aboveSubShelf =
       inWaterfallCove > 0.35
-        ? THREE.MathUtils.lerp(topSurfaceY, seaShelfY, Math.pow(cliffDrop, 0.65))
+        ? THREE.MathUtils.lerp(
+            topSurfaceY,
+            seaShelfY,
+            Math.pow(
+              THREE.MathUtils.clamp(
+                cliffDrop + (fbm2D(wx * 0.16, wz * 0.16, 2) - 0.5) * 0.18 * Math.sin(cliffDrop * Math.PI),
+                0,
+                1
+              ),
+              0.68
+            )
+          )
         : evalSteppedRockyCliffDescent(topSurfaceY, seaShelfY, cliffDrop, wx, wz, opts.seed);
     return THREE.MathUtils.lerp(aboveSubShelf, ISLAND_SKIRT_BASE_Y, submarinePlunge);
   };
@@ -472,8 +526,8 @@ function makeNaturalNordicIslandFn(opts: {
 
 /**
  * Builds an Asymmetric Glaciated Crescent / Breached-Caldera Island:
- * - Steep, stepped rocky outer sea-cliffs & crisp asymmetric ridge crest sweeping down a
- *   concave grassy inner slope ("botn") toward a sheltered turquoise lagoon.
+ * - Steep, stepped rocky outer sea-cliffs & weathered asymmetric ridge crest sweeping down a
+ *   concave grassy inner slope ("botn") toward a sheltered turquoise lagoon (zero pointy spikes!).
  */
 function makeNaturalCrescentIslandFn(opts: {
   cx: number;
@@ -491,12 +545,12 @@ function makeNaturalCrescentIslandFn(opts: {
 
     const wxWarp =
       dx +
-      (fbm2D(dx * 0.035 + opts.seed, dz * 0.035 - opts.seed, 3) - 0.5) * (opts.ringRadius * 0.28) +
-      (roundedRidge2D(dx * 0.09 + opts.seed, dz * 0.09, 2) - 0.48) * 3.4;
+      (fbm2D(dx * 0.038 + opts.seed, dz * 0.038 - opts.seed, 3) - 0.5) * (opts.ringRadius * 0.34) +
+      (roundedRidge2D(dx * 0.085 + opts.seed, dz * 0.085, 2) - 0.48) * 3.8;
     const wzWarp =
       dz +
-      (fbm2D(dx * 0.035 - opts.seed, dz * 0.035 + opts.seed, 3) - 0.5) * (opts.ringRadius * 0.28) +
-      (roundedRidge2D(dx * 0.09 - opts.seed, dz * 0.09 + 1.7, 2) - 0.48) * 3.4;
+      (fbm2D(dx * 0.038 - opts.seed, dz * 0.038 + opts.seed, 3) - 0.5) * (opts.ringRadius * 0.34) +
+      (roundedRidge2D(dx * 0.085 - opts.seed, dz * 0.085 + 1.7, 2) - 0.48) * 3.8;
 
     const r = Math.hypot(wxWarp, wzWarp);
     const ang = Math.atan2(wzWarp, wxWarp);
@@ -509,48 +563,53 @@ function makeNaturalCrescentIslandFn(opts: {
 
     const hornMask = 1.0 - smoothstep(opts.arcHalfSpanRad * 0.72, opts.arcHalfSpanRad * 1.08, absAng);
     const widthMod =
-      opts.ringHalfWidth * (0.70 + 0.42 * hornMask + 0.16 * Math.sin(dAng * 2.6 + opts.seed));
+      opts.ringHalfWidth * (0.72 + 0.42 * hornMask + 0.18 * Math.sin(dAng * 2.6 + opts.seed));
 
-    // Strongly asymmetric cuesta cross-section: sheer outer sea-scarp, sweeping concave inner lagoon slope!
+    // Asymmetric cuesta cross-section with smooth quadratic crown (zero sharp ridge crease!)
     const signedFromSpine = r - opts.ringRadius * 1.06;
-    const asymWidth = signedFromSpine >= 0 ? widthMod * 0.68 : widthMod * 1.28;
+    const asymWidth = signedFromSpine >= 0 ? widthMod * 0.72 : widthMod * 1.28;
     const radialDistFromSpine = Math.abs(signedFromSpine) / Math.max(3.5, asymWidth);
     const effectiveDist = radialDistFromSpine + (1.0 - hornMask) * 1.35;
 
     const arcPeaks =
-      0.70 +
-      0.26 * Math.cos(dAng * 2.5 + opts.seed * 0.7) +
-      0.15 * Math.sin(dAng * 4.2 - opts.seed);
-    const ridgeCrest = roundedRidge2D(dx * 0.042 + opts.seed, dz * 0.042 - opts.seed, 3);
-    // Concave-flanked asymmetric ridge crown (not a round tube!)
+      0.72 +
+      0.20 * Math.cos(dAng * 2.2 + opts.seed * 0.7) +
+      0.11 * Math.sin(dAng * 3.6 - opts.seed);
+    const ridgeCrest = roundedRidge2D(dx * 0.036 + opts.seed, dz * 0.036 - opts.seed, 2);
+    const effSq = Math.min(1.0, (effectiveDist / 0.94) * (effectiveDist / 0.94));
     const crossProfile =
       signedFromSpine < 0
-        ? Math.pow(Math.max(0, 1.0 - Math.min(1.0, effectiveDist / 0.96)), 1.48)
-        : Math.pow(Math.max(0, 1.0 - Math.min(1.0, effectiveDist / 0.84)), 0.85);
+        ? Math.pow(Math.max(0, 1.0 - effSq), 1.45)
+        : Math.pow(Math.max(0, 1.0 - effSq), 1.05);
 
     const rawRidgeY =
-      opts.peakY * (0.24 + 0.76 * crossProfile) * (0.56 + 0.44 * hornMask) * arcPeaks +
-      (ridgeCrest - 0.42) * (opts.peakY * 0.28) * hornMask;
+      opts.peakY * (0.24 + 0.72 * crossProfile) * (0.58 + 0.42 * hornMask) * arcPeaks +
+      (ridgeCrest - 0.48) * (opts.peakY * 0.16) * hornMask;
 
     const ridgeTopY = applyBasaltHamrarTerraces(
       rawRidgeY,
       dx * 0.03 - dz * 0.025,
-      Math.max(3.4, opts.peakY * 0.22),
-      0.52
+      Math.max(3.6, opts.peakY * 0.22),
+      0.46,
+      opts.peakY
     );
 
     const insideLagoon = (1.0 - smoothstep(opts.ringRadius * 0.55, opts.ringRadius * 1.15, r)) * 0.65;
     const floorTargetY = THREE.MathUtils.lerp(ISLAND_SKIRT_BASE_Y, -16.2, insideLagoon);
 
     const brinkDist =
-      0.56 + 0.11 * (roundedRidge2D(dx * 0.10 + opts.seed, dz * 0.10 - opts.seed, 2) - 0.48);
+      0.54 +
+      0.13 * (roundedRidge2D(dx * 0.095 + opts.seed, dz * 0.095 - opts.seed, 2) - 0.48) +
+      0.08 * (fbm2D(dx * 0.06 - opts.seed, dz * 0.06 + opts.seed, 2) - 0.5);
     if (effectiveDist <= brinkDist) {
       return ridgeTopY;
     }
 
-    const cliffDrop = smoothstep(brinkDist, 1.05, effectiveDist);
-    const subPlunge = smoothstep(0.98, 1.36, effectiveDist);
-    const seaBenchY = SEA_LEVEL_Y - 1.85;
+    const outerEnd = 1.06 + 0.16 * (fbm2D(Math.cos(ang) * 2.4 + opts.seed, Math.sin(ang) * 2.4, 2) - 0.5);
+    const cliffDrop = smoothstep(brinkDist, outerEnd, effectiveDist);
+    const subPlunge = smoothstep(outerEnd - 0.06, outerEnd + 0.34, effectiveDist);
+    const shoreWave = fbm2D(wx * 0.08 + opts.seed, wz * 0.08 - opts.seed, 2);
+    const seaBenchY = SEA_LEVEL_Y - 1.35 + smoothstep(0.45, 0.84, shoreWave) * 1.90;
     const upperY = evalSteppedRockyCliffDescent(ridgeTopY, seaBenchY, cliffDrop, wx, wz, opts.seed);
     return THREE.MathUtils.lerp(upperY, floorTargetY, subPlunge);
   };
@@ -970,14 +1029,14 @@ function applyVerticalCliffWallRelief(
 }
 
 /**
- * Builds an Authentic Drangarnir-Style Asymmetric Headland Sea-Arch (modeled after Faroe Islands Drangarnir):
- * - Inclined asymmetric green cuesta crest rising to a bold sheer basalt peak on the landward side and
- *   sweeping down across a rocky arch bridge to a secondary crag pillar on the seaward end!
- * - Irregular, faceted wave-carved basalt tunnel and fractured cliff walls.
+ * Builds a Natural Faroese Headland Sea-Arch with Deeply Sculpted, Non-Flat Cliff Walls & Broad Grassy Top:
+ * - Gently inclined, broad-shouldered grassy ridge/plateau crown (ZERO sharp spikes or Gaussian pinnacles!).
+ * - Curving S-shaped headland spine with multi-meter asymmetric rock buttresses, recessed sea-alcoves,
+ *   stepped horizontal basalt shelves, and emergent dark rocky surf aprons so the vertical walls are NEVER flat or straight!
  */
 function buildFaroeseHeadlandSeaArchGeometry(spec: FaroeseSeaArchSpec): THREE.BufferGeometry {
-  const uSegs = 116;
-  const vSegs = 64;
+  const uSegs = 120;
+  const vSegs = 68;
 
   const ringCount = uSegs + 1;
   const loopVerts = vSegs + 1;
@@ -992,71 +1051,80 @@ function buildFaroeseHeadlandSeaArchGeometry(spec: FaroeseSeaArchSpec): THREE.Bu
     const u = iu / uSegs;
     const xRaw = (u - 0.5) * 2.0 * spec.halfLength;
 
-    // Irregular rock-joint planform spine (not a straight fin!)
+    // Organic S-curved headland spine with multi-meter rock-joint jogs (never a straight slab!)
     const zCenter =
-      Math.sin(u * Math.PI * 1.35 + spec.seed) * 1.15 +
-      (fbm2D(u * 3.8 + spec.seed, 1.7, 3) - 0.5) * 1.45;
+      Math.sin(u * Math.PI * 1.65 + spec.seed) * 2.45 +
+      Math.cos(u * Math.PI * 2.9 - spec.seed * 0.7) * 1.05 +
+      (fbm2D(u * 4.2 + spec.seed, 1.7, 3) - 0.5) * 2.15;
 
-    const endCliffTaper = smoothstep(0.0, 0.055, u) * smoothstep(1.0, 0.945, u);
-    // Drangarnir-style tilted cuesta slope: high sheer landward crag sweeping down to a seaward rock pinnacle!
-    const cuestaRamp = Math.pow(Math.max(0, 1.0 - u * 0.92), 1.18) * 5.2;
-    const seawardPinnacle = Math.exp(-Math.pow((u - 0.86) / 0.085, 2.0)) * 2.85;
-    const bridgeDip = -Math.exp(-Math.pow((u - 0.54) / 0.18, 2.0)) * 0.95;
-    const cragSteps =
-      applyBasaltHamrarTerraces(cuestaRamp, u * 1.8, 2.4, 0.45) -
-      cuestaRamp +
-      (roundedRidge2D(xRaw * 0.12 + spec.seed, zCenter * 0.12, 2) - 0.46) * 1.05;
-    const yTopBase = spec.plateauTopY - 1.1 + cuestaRamp + seawardPinnacle + bridgeDip + cragSteps;
-    const yTop = THREE.MathUtils.lerp(SEA_LEVEL_Y - 4.0, yTopBase, endCliffTaper);
+    const endCliffTaper = smoothstep(0.0, 0.085, u) * smoothstep(1.0, 0.915, u);
+    // Broad, gently inclined grassy headland ridge (smooth weathered profile — zero sharp spikes!)
+    const gentleCuestaSlope = (0.5 - u) * 2.2 + Math.sin(u * Math.PI) * 0.85;
+    const naturalShoulderWave =
+      (fbm2D(xRaw * 0.09 + spec.seed, zCenter * 0.09, 3) - 0.5) * 1.15 +
+      (roundedRidge2D(xRaw * 0.08 + spec.seed, 2.3, 2) - 0.48) * 0.65;
+    const yTopBase = spec.plateauTopY + gentleCuestaSlope + naturalShoulderWave;
+    const yTop = THREE.MathUtils.lerp(SEA_LEVEL_Y - 3.2, yTopBase, endCliffTaper);
 
-    // Asymmetric, faceted wave-carved basalt arch opening (like Drangarnir's triangular/polygonal sea-portal!)
-    const shiftedX = xRaw - spec.openingHalfSpan * 0.08;
+    // Natural wave-carved basalt arch opening
+    const shiftedX = xRaw - spec.openingHalfSpan * 0.06;
     const normSpan = Math.abs(shiftedX) / spec.openingHalfSpan;
-    const archWindowMask = 1.0 - smoothstep(0.78, 1.14, normSpan);
-    const pointedArch = Math.max(0, 1.0 - Math.pow(Math.min(1.16, normSpan), 1.65));
-    const vaultFacets =
-      (roundedRidge2D(xRaw * 0.28 + spec.seed, 4.3, 2) - 0.48) * 0.85 +
-      (fbm2D(xRaw * 0.45 - spec.seed, 2.1, 2) - 0.5) * 0.45;
+    const archWindowMask = 1.0 - smoothstep(0.76, 1.16, normSpan);
+    const roundedVault = Math.pow(Math.max(0, 1.0 - Math.min(1.0, normSpan * normSpan)), 0.88);
+    const vaultIrreg =
+      (fbm2D(xRaw * 0.35 - spec.seed, 2.1, 3) - 0.5) * 0.75;
     const tunnelCeilingY =
-      (SEA_LEVEL_Y - 5.5) + (spec.vaultCrownY + 0.6 - (SEA_LEVEL_Y - 5.5)) * pointedArch + vaultFacets;
+      (SEA_LEVEL_Y - 5.2) + (spec.vaultCrownY + 0.35 - (SEA_LEVEL_Y - 5.2)) * roundedVault + vaultIrreg;
     const yBot = THREE.MathUtils.lerp(ISLAND_SKIRT_BASE_Y, tunnelCeilingY, archWindowMask);
 
+    // Strong variable pier buttresses & alcoves along the headland length
     const pierButtress =
       1.0 +
-      0.38 * (1.0 - archWindowMask) +
-      0.16 * (fbm2D(u * 4.5 + spec.seed, 6.2, 2) - 0.5);
-    const baseHalfW = spec.halfThickness * pierButtress * (0.48 + 0.52 * endCliffTaper);
+      0.44 * (1.0 - archWindowMask) +
+      0.28 * Math.sin(u * Math.PI * 3.4 + spec.seed * 1.3) +
+      0.22 * (fbm2D(u * 5.2 + spec.seed, 6.2, 3) - 0.5);
+    const baseHalfW = spec.halfThickness * pierButtress * (0.46 + 0.54 * endCliffTaper);
 
     for (let iv = 0; iv <= vSegs; iv++) {
       const v = iv / vSegs;
       const phi = v * Math.PI * 2.0;
       const sinPhi = Math.sin(phi);
       const cosPhi = Math.cos(phi);
-      // Blockier cliff-walled cross-section with a tilted cuesta crest on top!
-      const localZFrac = Math.sign(sinPhi) * Math.pow(Math.abs(sinPhi), 0.44);
-      const localYFrac = 0.5 + 0.5 * Math.sign(cosPhi) * Math.pow(Math.abs(cosPhi), 0.56);
-      const onVerticalWall = Math.pow(Math.abs(sinPhi), 1.15);
+      // Natural rounded-blocky cliff cross-section (0.68 avoids artificial flat box-wall slabs!)
+      const localZFrac = Math.sign(sinPhi) * Math.pow(Math.abs(sinPhi), 0.68);
+      const localYFrac = 0.5 + 0.5 * Math.sign(cosPhi) * Math.pow(Math.abs(cosPhi), 0.64);
+      const onVerticalWall = Math.pow(Math.abs(sinPhi), 0.95);
 
-      // Asymmetric cross-ridge tilt so one cliff wall is sheerer and the green top slopes naturally
-      const crossTilt = (0.35 - 0.45 * localZFrac) * Math.max(0, cosPhi) * endCliffTaper;
+      const crossTilt = (0.28 - 0.36 * localZFrac) * Math.max(0, cosPhi) * endCliffTaper;
       let wy = THREE.MathUtils.lerp(yBot, yTop, localYFrac) + crossTilt;
 
       if (cosPhi < -0.22 && archWindowMask > 0.05) {
-        wy += (-cosPhi - 0.22) * (1.0 - localZFrac * localZFrac) * 1.15 * archWindowMask;
+        wy += (-cosPhi - 0.22) * (1.0 - localZFrac * localZFrac) * 1.05 * archWindowMask;
       }
 
+      // Independent left/right 3D cliff-wall buttress ribs, recessed sea-caves & stepped strata ledges!
+      const sideSeed = sinPhi >= 0 ? spec.seed + 11.7 : spec.seed - 19.3;
+      const sideButtress =
+        (fbm2D(xRaw * 0.14 + sideSeed, wy * 0.11, 3) - 0.48) * 2.25 +
+        (roundedRidge2D(xRaw * 0.22 - sideSeed, wy * 0.08, 2) - 0.48) * 1.35;
+      const strataStep = Math.sin(wy * 1.15 + xRaw * 0.08 + sideSeed) * 0.38;
+
+      // Emergent dark rocky wave-cut plinth right at SEA_LEVEL_Y (-11.5m)
       const seaPlinth =
-        Math.exp(-Math.pow((wy - (SEA_LEVEL_Y - 0.45)) / 2.1, 2.0)) * 1.35 * (1.0 - archWindowMask * 0.65);
+        Math.exp(-Math.pow((wy - (SEA_LEVEL_Y + 0.15)) / 2.2, 2.0)) *
+        (1.65 + 0.95 * fbm2D(xRaw * 0.18 + sideSeed, 3.7, 2)) *
+        (1.0 - archWindowMask * 0.72);
 
-      const wallRelief = evalCliffWallStrataAndButtresses(xRaw, zCenter + localZFrac * 4.5, wy, spec.seed);
-      const effHalfW =
-        baseHalfW +
-        seaPlinth +
-        wallRelief.radialOffset * 0.72 * onVerticalWall * smoothstep(-22.0, -14.0, wy);
+      const wallRelief = evalCliffWallStrataAndButtresses(xRaw, zCenter + localZFrac * 5.0, wy, sideSeed);
+      const wallFade = onVerticalWall * smoothstep(-22.0, -14.0, wy);
+      const effHalfW = Math.max(
+        1.45,
+        baseHalfW + seaPlinth + (sideButtress + strataStep + wallRelief.radialOffset * 0.85) * wallFade
+      );
 
-      const px = xRaw;
+      const px = xRaw + (fbm2D(wy * 0.14 + sideSeed, u * 4.0, 2) - 0.5) * 0.85 * wallFade;
       const pz = zCenter + localZFrac * effHalfW;
-      const py = wy + wallRelief.verticalLedgeOffset * 0.48 * onVerticalWall;
+      const py = wy + wallRelief.verticalLedgeOffset * 0.52 * onVerticalWall;
 
       const idx = iu * loopVerts + iv;
       positions[idx * 3] = px;
@@ -1106,14 +1174,14 @@ function buildFaroeseHeadlandSeaArchGeometry(spec: FaroeseSeaArchSpec): THREE.Bu
 }
 
 /**
- * Builds a Rugged Reynisdrangar / Drangarnir-Style Angular Basalt Sea-Stack or Coastal Crag Skerry:
- * - Faceted polygonal columnar-basalt cliff walls with stepped horizontal rock ledges
- * - Asymmetric, tilted, craggy rock-and-turf pinnacle crown (NEVER a smooth round cap!).
+ * Builds a Natural Blocky Tabular Sea-Stack ("Clett") or Low Dark Wave-Washed Skerry:
+ * - Deeply sculpted, stepped, multi-buttressed 3D rock walls (never a smooth straight cylinder!)
+ * - Broad, gently tilted, weathered flat/whaleback crown (ZERO pointy cone tips or spikes!).
  */
 function buildTabularSeaStackGeometry(spec: TabularSeaStackSpec): THREE.BufferGeometry {
   const hSegs = 36;
-  const rSegs = 40;
-  const capRings = 7;
+  const rSegs = 44;
+  const capRings = 6;
   const ringVerts = rSegs + 1;
   const centerVert = 1;
   const vCount = (hSegs + capRings + 1) * ringVerts + centerVert;
@@ -1124,25 +1192,30 @@ function buildTabularSeaStackGeometry(spec: TabularSeaStackSpec): THREE.BufferGe
   const cosRot = Math.cos(spec.rotY);
   const sinRot = Math.sin(spec.rotY);
 
-  const evalPlanRadius = (cosT: number, sinT: number, theta: number): { lx: number; lz: number } => {
-    // Angular fractured basalt buttresses & polygonal column ribs (like Reynisdrangar!)
+  const evalPlanRadius = (
+    cosT: number,
+    sinT: number,
+    theta: number,
+    heightFrac: number
+  ): { lx: number; lz: number } => {
+    // 3D height-varying rock buttresses & recesses so vertical stack faces are deeply irregular, never straight!
     const angularButtresses =
       1.0 +
-      0.16 * Math.cos(theta * 3.0 + spec.seed) +
-      0.13 * Math.sin(theta * 5.0 - spec.seed * 0.8) +
-      0.08 * Math.cos(theta * 7.0 + spec.seed * 1.7);
-    const rockCleavage =
-      0.84 + 0.28 * roundedRidge2D(cosT * 1.5 + spec.seed, sinT * 1.5 - spec.seed, 2);
+      0.18 * Math.cos(theta * 3.0 + spec.seed + heightFrac * 0.9) +
+      0.14 * Math.sin(theta * 5.0 - spec.seed * 0.8 - heightFrac * 1.2) +
+      0.09 * Math.cos(theta * 7.0 + spec.seed * 1.7);
+    const rockMass3D =
+      0.84 +
+      0.30 * fbm2D(cosT * 1.8 + spec.seed, sinT * 1.8 + heightFrac * 2.4, 3);
     return {
-      lx: cosT * spec.rx * angularButtresses * rockCleavage,
-      lz: sinT * spec.rz * angularButtresses * rockCleavage,
+      lx: cosT * spec.rx * angularButtresses * rockMass3D,
+      lz: sinT * spec.rz * angularButtresses * rockMass3D,
     };
   };
 
+  // Gentle weathered bevel crown (0.45m .. 0.72m — ZERO pointy cones!)
   const isTallStack = spec.topY > SEA_LEVEL_Y + 4.0;
-  const crownHeight = isTallStack ? 3.45 : 1.55;
-  const crestOffX = spec.rx * 0.26 * Math.sin(spec.seed * 1.7);
-  const crestOffZ = spec.rz * -0.22 * Math.cos(spec.seed * 1.1);
+  const bevelHeight = isTallStack ? 0.68 : 0.42;
 
   for (let ih = 0; ih <= hSegs + capRings; ih++) {
     const inCrown = ih > hSegs;
@@ -1155,26 +1228,29 @@ function buildTabularSeaStackGeometry(spec: TabularSeaStackSpec): THREE.BufferGe
       const cosT = Math.cos(theta);
       const sinT = Math.sin(theta);
 
-      const basePlan = evalPlanRadius(cosT, sinT, theta);
-      // Asymmetric tilted & stepped crag rim (like Drangarnir's sea-stack in Photo 4!)
-      const rimStep =
-        (roundedRidge2D(basePlan.lx * 0.22 + spec.seed, basePlan.lz * 0.22, 2) - 0.45) * 1.45;
-      const rimY = spec.topY + basePlan.lx * (spec.topSlopeX * 1.65 + 0.08) + rimStep;
+      const basePlan = evalPlanRadius(cosT, sinT, theta, tWall);
+      const rimWave =
+        (fbm2D(basePlan.lx * 0.18 + spec.seed, basePlan.lz * 0.18 - spec.seed, 2) - 0.5) * 0.85;
+      const rimY = spec.topY + basePlan.lx * spec.topSlopeX + rimWave * (1.0 - sCrown * 0.65);
 
-      const crownRadialScale = inCrown ? Math.pow(1.0 - sCrown, 0.82) : 1.0;
-      const crownCragLift = inCrown
-        ? Math.pow(sCrown, 0.78) *
-          (crownHeight +
-            (roundedRidge2D(cosT * 1.8 + spec.seed, sinT * 1.8 - spec.seed, 2) - 0.45) * 1.25)
-        : 0.0;
+      // Smooth C^infinity tabular/whaleback bevel cap (zero slope at sCrown = 1 -> flat/weathered top!)
+      const crownRadialScale = inCrown ? Math.cos(sCrown * Math.PI * 0.5) : 1.0;
+      const crownBevelLift = inCrown ? Math.sin(sCrown * Math.PI * 0.5) * bevelHeight : 0.0;
 
-      // Stepped basalt ledges along the vertical stack shaft
-      const stepT = tWall + 0.022 * Math.sin(tWall * 22.0 + spec.seed);
-      const wy = THREE.MathUtils.lerp(ISLAND_SKIRT_BASE_Y, rimY, Math.min(1.0, Math.max(0.0, stepT))) + crownCragLift;
+      // Stepped horizontal basalt benches along the vertical stack wall
+      const stepT = tWall + 0.028 * Math.sin(tWall * 18.0 + spec.seed + theta * 0.5);
+      const wy =
+        THREE.MathUtils.lerp(ISLAND_SKIRT_BASE_Y, rimY, Math.min(1.0, Math.max(0.0, stepT))) +
+        crownBevelLift;
 
       const steppedTaper =
-        1.22 - 0.36 * Math.pow(tWall, 0.82) + (isTallStack ? 0.05 * Math.cos(tWall * 18.0 + spec.seed) : 0.0);
-      const surfApron = 1.0 + 0.36 * Math.exp(-Math.pow((wy - (SEA_LEVEL_Y - 0.45)) / 2.1, 2.0));
+        1.26 -
+        0.30 * Math.pow(tWall, 0.85) +
+        0.07 * Math.cos(tWall * 14.0 + spec.seed + sinT * 1.4);
+      // Prominent dark rocky wave-cut surf shelf right at SEA_LEVEL_Y (-11.5m)
+      const surfApron =
+        1.0 +
+        (0.46 + 0.22 * sinT) * Math.exp(-Math.pow((wy - (SEA_LEVEL_Y + 0.1)) / 2.1, 2.0));
 
       const wallRelief = evalCliffWallStrataAndButtresses(
         spec.x + basePlan.lx,
@@ -1183,17 +1259,11 @@ function buildTabularSeaStackGeometry(spec: TabularSeaStackSpec): THREE.BufferGe
         spec.seed
       );
       const reliefFade =
-        smoothstep(0.16, 0.42, tWall) * (1.0 - smoothstep(0.88, 1.0, tWall)) * (inCrown ? 0.25 : 1.0);
+        smoothstep(0.14, 0.40, tWall) * (1.0 - smoothstep(0.86, 1.0, tWall)) * (inCrown ? 0.15 : 1.0);
 
       const scaleXZ = steppedTaper * surfApron * crownRadialScale;
-      const lx =
-        THREE.MathUtils.lerp(0, crestOffX, sCrown) +
-        basePlan.lx * scaleXZ +
-        cosT * wallRelief.radialOffset * 0.58 * reliefFade;
-      const lz =
-        THREE.MathUtils.lerp(0, crestOffZ, sCrown) +
-        basePlan.lz * scaleXZ +
-        sinT * wallRelief.radialOffset * 0.58 * reliefFade;
+      const lx = basePlan.lx * scaleXZ + cosT * wallRelief.radialOffset * 0.72 * reliefFade;
+      const lz = basePlan.lz * scaleXZ + sinT * wallRelief.radialOffset * 0.72 * reliefFade;
 
       const wx = spec.x + lx * cosRot - lz * sinRot;
       const wz = spec.z + lx * sinRot + lz * cosRot;
@@ -1203,18 +1273,16 @@ function buildTabularSeaStackGeometry(spec: TabularSeaStackSpec): THREE.BufferGe
       positions[idx * 3 + 1] = wy;
       positions[idx * 3 + 2] = wz;
       uvs[idx * 2] = v * 2.4;
-      uvs[idx * 2 + 1] = tWall * 3.0 + sCrown * 0.6;
+      uvs[idx * 2 + 1] = tWall * 3.0 + sCrown * 0.4;
     }
   }
 
   const capCenterIdx = (hSegs + capRings + 1) * ringVerts;
-  const wxCrest = spec.x + crestOffX * cosRot - crestOffZ * sinRot;
-  const wzCrest = spec.z + crestOffX * sinRot + crestOffZ * cosRot;
-  positions[capCenterIdx * 3] = wxCrest;
-  positions[capCenterIdx * 3 + 1] = spec.topY + crownHeight + 0.35;
-  positions[capCenterIdx * 3 + 2] = wzCrest;
+  positions[capCenterIdx * 3] = spec.x;
+  positions[capCenterIdx * 3 + 1] = spec.topY + bevelHeight;
+  positions[capCenterIdx * 3 + 2] = spec.z;
   uvs[capCenterIdx * 2] = 0.5;
-  uvs[capCenterIdx * 2 + 1] = 3.7;
+  uvs[capCenterIdx * 2 + 1] = 3.5;
 
   const indices: number[] = [];
   const totalRings = hSegs + capRings;
@@ -1241,16 +1309,14 @@ function buildTabularSeaStackGeometry(spec: TabularSeaStackSpec): THREE.BufferGe
 }
 
 /**
- * Sculpts True 3D Angular Basalt Crag Buttresses, Overhanging Rock Ledges & Columnar Ribs
- * along the Hero Jump-Off Cliff Face & Rim (right below Toothless & the Light Fury!).
- * Breaks up any remaining heightfield regularity with real 3D rock silhouettes, overhangs, and crevices
- * while keeping top elevations <= 0.04m near the front sightline so the dragons remain 100% unobstructed.
+ * Sculpts Natural 3D Weathered Basalt Cliff Buttresses, Stepped Rock Ledges & Overhanging Shelves
+ * across the Hero Jump-Off Cliff, Waterfall Sea-Cove Walls & Foreground Archipelago Cliffs!
+ * - Uses 16-segment 3D FBM-warped rock masses with flat/beveled weathered shelves (NEVER flat prism slabs or pointy spikes!).
  */
 function buildHeroCliffRockOutcrops(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
 
-  // Helper: builds a faceted, flat-cleaved 3D polygonal basalt column / crag buttress rib
-  const makeBasaltCragPillar = (opts: {
+  const makeWeatheredCliffButtress = (opts: {
     x: number;
     z: number;
     topY: number;
@@ -1260,62 +1326,76 @@ function buildHeroCliffRockOutcrops(): THREE.BufferGeometry {
     rotY: number;
     leanX: number;
     leanZ: number;
-    sides: number;
     seed: number;
   }): THREE.BufferGeometry => {
-    const hSegs = 10;
-    const rSegs = opts.sides;
+    const hSegs = 12;
+    const rSegs = 16;
+    const bevelRings = 3;
     const ringV = rSegs + 1;
-    const vCount = (hSegs + 1) * ringV + 2;
+    const vCount = (hSegs + bevelRings + 1) * ringV + 2;
     const pos = new Float32Array(vCount * 3);
     const uvs = new Float32Array(vCount * 2);
     const cosR = Math.cos(opts.rotY);
     const sinR = Math.sin(opts.rotY);
 
-    for (let ih = 0; ih <= hSegs; ih++) {
-      const t = ih / hSegs;
-      // Slight overhang bulge near the upper ledge (t ~ 0.82) like fractured basalt lava caps!
+    for (let ih = 0; ih <= hSegs + bevelRings; ih++) {
+      const inBevel = ih > hSegs;
+      const t = Math.min(1.0, ih / hSegs);
+      const sBev = inBevel ? (ih - hSegs) / bevelRings : 0.0;
+      const bevelScale = inBevel ? Math.cos(sBev * Math.PI * 0.5) : 1.0;
+      const bevelLift = inBevel ? Math.sin(sBev * Math.PI * 0.5) * 0.22 : 0.0;
+
+      // Natural stepped rock shelves & wave-washed basal flare (zero flat straight walls!)
       const ledgeProfile =
-        1.08 - 0.16 * t + 0.18 * Math.exp(-Math.pow((t - 0.82) / 0.14, 2.0)) +
-        0.07 * Math.sin(t * 15.0 + opts.seed);
-      const wy = THREE.MathUtils.lerp(opts.botY, opts.topY, t);
-      const shiftX = opts.leanX * (t - 0.5);
-      const shiftZ = opts.leanZ * (t - 0.5);
+        (1.16 -
+          0.18 * t +
+          0.16 * Math.exp(-Math.pow((t - 0.78) / 0.16, 2.0)) +
+          0.11 * Math.sin(t * 11.5 + opts.seed)) *
+        bevelScale;
+      const wy = THREE.MathUtils.lerp(opts.botY, opts.topY - 0.22, t) + bevelLift;
+      const shiftX = opts.leanX * (t - 0.45);
+      const shiftZ = opts.leanZ * (t - 0.45);
 
       for (let ir = 0; ir <= rSegs; ir++) {
         const u = ir / rSegs;
         const ang = u * Math.PI * 2.0;
-        const facetMod =
-          0.86 + 0.26 * hash2D(Math.floor(ir % rSegs) + opts.seed * 7.1, Math.floor(ih * 0.5) + 3.3);
-        const lx = Math.cos(ang) * opts.rx * ledgeProfile * facetMod;
-        const lz = Math.sin(ang) * opts.rz * ledgeProfile * facetMod;
+        const cA = Math.cos(ang);
+        const sA = Math.sin(ang);
+        // Continuous 3D rock-cleavage undulation around the circumference & height
+        const rockShape =
+          0.78 +
+          0.38 * fbm2D(cA * 1.9 + opts.seed, sA * 1.9 + t * 2.6 - opts.seed, 3) +
+          0.10 * Math.cos(ang * 3.0 + opts.seed + t * 2.0);
+        const lx = cA * opts.rx * ledgeProfile * rockShape;
+        const lz = sA * opts.rz * ledgeProfile * rockShape;
         const wx = opts.x + shiftX + lx * cosR - lz * sinR;
         const wz = opts.z + shiftZ + lx * sinR + lz * cosR;
         const idx = ih * ringV + ir;
         pos[idx * 3] = wx;
-        pos[idx * 3 + 1] = wy + (t > 0.92 ? (hash2D(ir, opts.seed) - 0.5) * 0.18 : 0.0);
+        pos[idx * 3 + 1] = wy;
         pos[idx * 3 + 2] = wz;
-        uvs[idx * 2] = u * 1.5;
-        uvs[idx * 2 + 1] = t * 2.2;
+        uvs[idx * 2] = u * 1.8;
+        uvs[idx * 2 + 1] = t * 2.2 + sBev * 0.3;
       }
     }
 
-    const botCap = (hSegs + 1) * ringV;
+    const totalRings = hSegs + bevelRings;
+    const botCap = (totalRings + 1) * ringV;
     const topCap = botCap + 1;
-    pos[botCap * 3] = opts.x - opts.leanX * 0.5;
+    pos[botCap * 3] = opts.x - opts.leanX * 0.45;
     pos[botCap * 3 + 1] = opts.botY;
-    pos[botCap * 3 + 2] = opts.z - opts.leanZ * 0.5;
+    pos[botCap * 3 + 2] = opts.z - opts.leanZ * 0.45;
     uvs[botCap * 2] = 0.5;
     uvs[botCap * 2 + 1] = 0.0;
 
-    pos[topCap * 3] = opts.x + opts.leanX * 0.5;
-    pos[topCap * 3 + 1] = opts.topY + 0.04;
-    pos[topCap * 3 + 2] = opts.z + opts.leanZ * 0.5;
+    pos[topCap * 3] = opts.x + opts.leanX * 0.55;
+    pos[topCap * 3 + 1] = opts.topY;
+    pos[topCap * 3 + 2] = opts.z + opts.leanZ * 0.55;
     uvs[topCap * 2] = 0.5;
-    uvs[topCap * 2 + 1] = 2.2;
+    uvs[topCap * 2 + 1] = 2.5;
 
     const indices: number[] = [];
-    for (let ih = 0; ih < hSegs; ih++) {
+    for (let ih = 0; ih < totalRings; ih++) {
       for (let ir = 0; ir < rSegs; ir++) {
         const a = ih * ringV + ir;
         const b = (ih + 1) * ringV + ir;
@@ -1324,7 +1404,7 @@ function buildHeroCliffRockOutcrops(): THREE.BufferGeometry {
         indices.push(a, b, c, a, c, d);
       }
     }
-    const topRing = hSegs * ringV;
+    const topRing = totalRings * ringV;
     for (let ir = 0; ir < rSegs; ir++) {
       indices.push(botCap, ir, ir + 1);
       indices.push(topCap, topRing + ir + 1, topRing + ir);
@@ -1334,18 +1414,15 @@ function buildHeroCliffRockOutcrops(): THREE.BufferGeometry {
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     g.setIndex(indices);
-    // Flat-faceted rock cleavage normals via non-indexed normal computation -> re-merged cleanly
     g.computeVertexNormals();
     return g;
   };
 
-  // Scan around the Hero Promontory cliff face (concentrating heavily on the +Z jump-off precipice!)
+  // 1. Hero Promontory cliff buttresses & stepped rock shelves
   const rayAngles: number[] = [];
-  // Dense coverage across the southern (+Z) jump-off cliff (angles +0.18*PI .. +0.82*PI in atan2(z+4.2, x))
   for (let i = 0; i < 34; i++) {
     rayAngles.push(0.14 * Math.PI + (i / 33) * 0.72 * Math.PI);
   }
-  // Flanking East, West & North-West sea-cliffs
   for (let i = 0; i < 24; i++) {
     rayAngles.push(-0.88 * Math.PI + (i / 23) * 1.00 * Math.PI);
   }
@@ -1355,7 +1432,6 @@ function buildHeroCliffRockOutcrops(): THREE.BufferGeometry {
     const dirX = Math.cos(ang);
     const dirZ = Math.sin(ang);
 
-    // Ray-march outward from (0, -4.2) to find the exact cliff brink & mid-cliff rock wall!
     let brinkR = -1;
     let brinkH = 0;
     for (let r = 4.5; r <= 34.0; r += 0.35) {
@@ -1363,7 +1439,7 @@ function buildHeroCliffRockOutcrops(): THREE.BufferGeometry {
       const sz = -4.2 + dirZ * r;
       const h = sampleHeroCliffHeight(sx, sz);
       const hAhead = sampleHeroCliffHeight(sx + dirX * 1.1, sz + dirZ * 1.1);
-      if (h > -2.6 && h - hAhead > 1.35) {
+      if (h > -2.6 && h - hAhead > 1.25) {
         brinkR = r;
         brinkH = h;
         break;
@@ -1373,51 +1449,75 @@ function buildHeroCliffRockOutcrops(): THREE.BufferGeometry {
 
     const bx = dirX * brinkR;
     const bz = -4.2 + dirZ * brinkR;
-    // Keep Dragon Paw Stance Pads 100% clear!
     const dTL = Math.hypot((bx - 4.45) / 2.65, (bz - 0.22) / 2.15);
     const dLF = Math.hypot((bx + 4.45) / 2.65, (bz + 0.22) / 2.15);
     if (Math.min(dTL, dLF) < 1.02) continue;
 
     const isFrontJumpCliff = bz > -0.2 && Math.abs(bx) < 13.5;
-    // Upper overhanging fractured basalt brink slab / crag rib (capped strictly below -0.06m on front sightline!)
     const upperTopY = isFrontJumpCliff
-      ? Math.min(-0.08, brinkH - 0.04)
-      : brinkH + (hash2D(k, 31.7) - 0.45) * 0.42;
-    const upperBotY = Math.max(SEA_LEVEL_Y - 3.2, upperTopY - (4.8 + hash2D(k, 43.2) * 5.6));
+      ? Math.min(-0.10, brinkH - 0.06)
+      : brinkH - 0.08 + (hash2D(k, 31.7) - 0.5) * 0.28;
+    const upperBotY = Math.max(SEA_LEVEL_Y - 2.6, upperTopY - (4.8 + hash2D(k, 43.2) * 5.4));
 
     parts.push(
-      makeBasaltCragPillar({
-        x: bx + dirX * 0.55,
-        z: bz + dirZ * 0.55,
+      makeWeatheredCliffButtress({
+        x: bx + dirX * 0.62,
+        z: bz + dirZ * 0.62,
         topY: upperTopY,
         botY: upperBotY,
-        rx: 0.95 + hash2D(k, 51.3) * 1.35,
-        rz: 0.78 + hash2D(k, 63.8) * 1.05,
+        rx: 1.15 + hash2D(k, 51.3) * 1.55,
+        rz: 0.92 + hash2D(k, 63.8) * 1.25,
         rotY: ang + (hash2D(k, 71.9) - 0.5) * 0.8,
-        leanX: dirX * (0.35 + hash2D(k, 83.1) * 0.55),
-        leanZ: dirZ * (0.35 + hash2D(k, 83.1) * 0.55),
-        sides: 5 + Math.floor(hash2D(k, 91.4) * 3),
+        leanX: dirX * (0.30 + hash2D(k, 83.1) * 0.45),
+        leanZ: dirZ * (0.30 + hash2D(k, 83.1) * 0.45),
         seed: 10.0 + k * 3.7,
       })
     );
 
-    // Lower wave-battered columnar basalt buttress rib plunging into the surf zone (-13.5m)!
-    const lowerTopY = upperBotY + 2.4 + hash2D(k, 104.2) * 2.2;
+    // Lower dark wave-washed rock buttress & shore ledge right down into the ocean surface!
+    const lowerTopY = Math.min(upperTopY - 0.9, SEA_LEVEL_Y + 3.2 + hash2D(k, 104.2) * 3.8);
     parts.push(
-      makeBasaltCragPillar({
-        x: bx + dirX * (1.55 + hash2D(k, 112.6) * 1.15),
-        z: bz + dirZ * (1.55 + hash2D(k, 112.6) * 1.15),
-        topY: Math.min(upperTopY - 0.8, lowerTopY),
-        botY: SEA_LEVEL_Y - 3.8,
-        rx: 1.15 + hash2D(k, 124.5) * 1.45,
-        rz: 0.92 + hash2D(k, 137.1) * 1.20,
+      makeWeatheredCliffButtress({
+        x: bx + dirX * (1.85 + hash2D(k, 112.6) * 1.45),
+        z: bz + dirZ * (1.85 + hash2D(k, 112.6) * 1.45),
+        topY: lowerTopY,
+        botY: SEA_LEVEL_Y - 3.6,
+        rx: 1.35 + hash2D(k, 124.5) * 1.75,
+        rz: 1.05 + hash2D(k, 137.1) * 1.45,
         rotY: ang + (hash2D(k, 149.8) - 0.5) * 0.6,
-        leanX: -dirX * 0.25,
-        leanZ: -dirZ * 0.25,
-        sides: 6,
+        leanX: -dirX * 0.22,
+        leanZ: -dirZ * 0.22,
         seed: 200.0 + k * 5.3,
       })
     );
+  }
+
+  // 2. Waterfall Sea-Cove Flanking Rock Buttresses (breaks up the sheer amphitheater walls on either side of the chute!)
+  const cosW = Math.cos(0.18);
+  const sinW = Math.sin(0.18);
+  for (const side of [-1, 1]) {
+    for (let j = 0; j < 5; j++) {
+      const lx = 8.8 + j * 0.85;
+      const lz = side * (3.4 + j * 1.55);
+      const wx = -66.0 + lx * cosW + lz * sinW;
+      const wz = -32.0 - lx * sinW + lz * cosW;
+      const h = evalWestWaterfallIsland(wx, wz);
+      const topY = Math.min(7.8 - j * 0.9, Math.max(SEA_LEVEL_Y + 4.5, h - 0.2));
+      parts.push(
+        makeWeatheredCliffButtress({
+          x: wx,
+          z: wz,
+          topY,
+          botY: SEA_LEVEL_Y - 4.2,
+          rx: 1.75 + hash2D(j + side * 7, 31.2) * 1.35,
+          rz: 1.45 + hash2D(j + side * 7, 57.9) * 1.15,
+          rotY: 0.18 + j * 0.5,
+          leanX: cosW * 0.35,
+          leanZ: -sinW * 0.35,
+          seed: 410.0 + side * 37.0 + j * 9.1,
+        })
+      );
+    }
   }
 
   return mergeGeometries(parts, false)!;
@@ -1798,24 +1898,28 @@ function buildDistantFjordArchipelago(atmosphereUniforms: AtmosphereSharedUnifor
         const wx = isl.cx + lx * cosR - lz * sinR;
         const wz = isl.cz + lx * sinR + lz * cosR;
 
-        // Asymmetric tilted cuesta & stepped basalt fjord mountain-island silhouette (like Faroe Islands mountains!)
-        const rSum = Math.hypot((lx - isl.offX * 1.35) / (isl.rx * 0.96), lz / (isl.rz * 0.96));
-        const dipTilt = THREE.MathUtils.clamp(0.56 + (lx / Math.max(20.0, isl.rx)) * 0.44, 0.22, 1.24);
-        const concaveFlank = Math.pow(Math.max(0, 1.0 - Math.min(1.0, rSum / 1.02)), 0.85);
-        const crestPeak = Math.pow(Math.max(0, 1.0 - Math.min(1.0, rSum / 0.76)), 1.65);
+        // Broad-shouldered asymmetric tilted cuesta & tableland fjord islands (smooth C^infinity crests — zero pointy cones!)
+        const rSq = Math.min(
+          1.0,
+          Math.pow((lx - isl.offX * 1.15) / (isl.rx * 1.05), 2) +
+            Math.pow(lz / (isl.rz * 0.96), 2)
+        );
+        const dipTilt = THREE.MathUtils.clamp(0.60 + (lx / Math.max(20.0, isl.rx)) * 0.36, 0.28, 1.14);
+        const broadShoulder = Math.pow(Math.max(0, 1.0 - rSq), 1.32);
+        const tablePlateau = 1.0 / (1.0 + 1.9 * rSq * rSq);
         const ridgeY =
-          (roundedRidge2D(wx * 0.009 + isl.seed, wz * 0.011 - isl.seed, 3) - 0.40) *
-          (isl.peakY * 0.34) *
+          (roundedRidge2D(wx * 0.008 + isl.seed, wz * 0.010 - isl.seed, 2) - 0.48) *
+          (isl.peakY * 0.18) *
           (1.0 - smoothstep(0.55, 1.05, rNorm));
         const rawUplandY =
-          isl.peakY * (0.20 + 0.50 * concaveFlank * dipTilt + 0.32 * crestPeak) + ridgeY;
-        const uplandY = applyBasaltHamrarTerraces(rawUplandY, lx * 0.02, Math.max(8.5, isl.peakY * 0.18), 0.48);
+          isl.peakY * (0.20 + 0.48 * broadShoulder * dipTilt + 0.26 * tablePlateau) + ridgeY;
+        const uplandY = applyBasaltHamrarTerraces(rawUplandY, lx * 0.02, Math.max(9.0, isl.peakY * 0.20), 0.42);
 
-        const brinkR = 0.68 + 0.11 * Math.sin(theta * 3.0 - isl.seed) + 0.06 * Math.cos(theta * 5.0 + isl.seed);
-        const cliffDrop = smoothstep(brinkR, 1.05, rNorm);
+        const brinkR = 0.66 + 0.13 * Math.sin(theta * 3.0 - isl.seed) + 0.08 * Math.cos(theta * 5.0 + isl.seed);
+        const cliffDrop = smoothstep(brinkR, 1.06, rNorm);
         const subDrop = smoothstep(0.98, 1.38, rNorm);
-        const seaY = SEA_LEVEL_Y - 2.0;
-        const upperY = THREE.MathUtils.lerp(uplandY, seaY, Math.pow(cliffDrop, 0.80));
+        const seaY = SEA_LEVEL_Y - 1.5;
+        const upperY = evalSteppedRockyCliffDescent(uplandY, seaY, cliffDrop, wx, wz, isl.seed);
         const wy = THREE.MathUtils.lerp(upperY, ISLAND_SKIRT_BASE_Y, subDrop);
 
         const idx = ir * (aSegs + 1) + ia;
@@ -2116,9 +2220,10 @@ export function createNordicCliffWorld(
         float dPadLF = length((vRockWorldPos.xz - vec2(-4.45, -0.22)) / vec2(2.35, 1.95));
         float dragonPadClear = smoothstep(0.68, 1.18, min(dPadTL, dPadLF));
 
-        // Expose bare fractured basalt rock on cliffs, "hamrar" terrace risers & wind-scoured cliff rims (wN.y < 0.68)!
+        // Expose bare fractured basalt rock on cliffs, "hamrar" terrace risers, shore reefs & cliff rims!
+        // Keep coastal turf well above the ocean wave-splash zone (> -8.8m) so all shoreline rocks stay dark bare basalt!
         float crownSlope = smoothstep(0.60, 0.84, wNCol.y);
-        float aboveSpray = smoothstep(-4.8, 0.2, vRockWorldPos.y);
+        float aboveSpray = smoothstep(-8.8, -3.2, vRockWorldPos.y);
         float rimRockBreakup = smoothstep(0.24, 0.62, skyFbm(vRockWorldPos.xz * 0.16 + 2.9) * 0.78 + skyNoise2(vRockWorldPos.xz * 0.45) * 0.22);
         float turfMask = dragonPadClear * crownSlope * aboveSpray * mix(rimRockBreakup, 1.0, smoothstep(0.76, 0.93, wNCol.y));
 
@@ -2130,11 +2235,14 @@ export function createNordicCliffWorld(
         vec3 turfLush = mix(lushEmerald, uplandOlive, uplandElev * 0.36 * (1.0 - meadowMacro * 0.5));
         diffuseColor.rgb = mix(diffuseColor.rgb, turfLush, clamp(turfMask * 0.92, 0.0, 0.92));
 
-        // Dark wet intertidal basalt splash zone (-11.8m .. -7.2m) & submarine rock below
-        float wetZone = 1.0 - smoothstep(-11.3, -7.2, vRockWorldPos.y);
-        float submergedDepth = 1.0 - smoothstep(-24.0, -11.6, vRockWorldPos.y);
-        diffuseColor.rgb *= mix(1.0, 0.34, wetZone);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.024, 0.042, 0.054), submergedDepth * 0.74);`
+        // Rich, dark, glistened wet-basalt intertidal rock zone right near the ocean surface (-12.0m .. -6.4m)!
+        float wetNoise = (skyFbm(vRockWorldPos.xz * 0.22) - 0.5) * 1.1;
+        float wetZone = 1.0 - smoothstep(-11.4, -6.5, vRockWorldPos.y + wetNoise);
+        float nearWaterline = 1.0 - smoothstep(-11.6, -9.2, vRockWorldPos.y + wetNoise * 0.5);
+        float submergedDepth = 1.0 - smoothstep(-24.0, -11.7, vRockWorldPos.y);
+        diffuseColor.rgb *= mix(1.0, 0.25, wetZone);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.018, 0.022, 0.028), nearWaterline * 0.52);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.022, 0.038, 0.050), submergedDepth * 0.76);`
       )
       .replace(
         '#include <roughnessmap_fragment>',
@@ -2328,52 +2436,8 @@ export function createNordicCliffWorld(
   }
   const streamRightDir = new THREE.Vector2(-streamFlowDir.y, streamFlowDir.x);
 
-  // Upland mountain stream ribbon flowing down the carved gorge right to the sheer cliff lip
-  const streamSegsU = 36;
-  const streamSegsV = 8;
-  const stVerts = new Float32Array((streamSegsU + 1) * (streamSegsV + 1) * 3);
-  const stUvs = new Float32Array((streamSegsU + 1) * (streamSegsV + 1) * 2);
-  for (let iu = 0; iu <= streamSegsU; iu++) {
-    const u = iu / streamSegsU;
-    const lx = THREE.MathUtils.lerp(-9.0, lipLX + 0.18, u);
-    const center = streamWorldPt(lx);
-    const nextC = streamWorldPt(lx + 0.35);
-    const localTan = new THREE.Vector2(nextC.x - center.x, nextC.z - center.z).normalize();
-    const localRight = new THREE.Vector2(-localTan.y, localTan.x);
-    // Narrows slightly into a fast rocky chute right at the Mulafossur brink!
-    const halfW = THREE.MathUtils.lerp(1.15, 0.92, smoothstep(0.55, 1.0, u));
-    for (let iv = 0; iv <= streamSegsV; iv++) {
-      const v = iv / streamSegsV;
-      const lat = (v - 0.5) * 2.0 * halfW;
-      const wx = center.x + localRight.x * lat;
-      const wz = center.z + localRight.y * lat;
-      const bedY = evalWestWaterfallIsland(wx, wz);
-      const wy = Math.max(bedY + 0.12, center.y + 0.18);
-      const idx = iu * (streamSegsV + 1) + iv;
-      stVerts[idx * 3] = wx;
-      stVerts[idx * 3 + 1] = wy;
-      stVerts[idx * 3 + 2] = wz;
-      stUvs[idx * 2] = v;
-      stUvs[idx * 2 + 1] = 1.0 + (1.0 - u) * 2.4;
-    }
-  }
-  const stIndices: number[] = [];
-  for (let iu = 0; iu < streamSegsU; iu++) {
-    for (let iv = 0; iv < streamSegsV; iv++) {
-      const a = iu * (streamSegsV + 1) + iv;
-      const b = (iu + 1) * (streamSegsV + 1) + iv;
-      const c = (iu + 1) * (streamSegsV + 1) + (iv + 1);
-      const d = iu * (streamSegsV + 1) + (iv + 1);
-      stIndices.push(a, b, c, a, c, d);
-    }
-  }
-  const streamGeom = new THREE.BufferGeometry();
-  streamGeom.setAttribute('position', new THREE.BufferAttribute(stVerts, 3));
-  streamGeom.setAttribute('uv', new THREE.BufferAttribute(stUvs, 2));
-  streamGeom.setIndex(stIndices);
-  streamGeom.computeVertexNormals();
-
-  // Build free-falling parabolic Mulafossur cascade + outer wind-feathered mist veil (guaranteed 100% clear of rock!)
+  // Build free-falling parabolic Mulafossur cascade + outer wind-feathered mist veil
+  // (Emerges directly out of the recessed rocky cliff-edge cleft — NO awkward river ribbon on top of the island!)
   const buildCascadeSheetGeometry = (
     topHalfW: number,
     botHalfW: number,
@@ -2383,7 +2447,7 @@ export function createNordicCliffWorld(
   ): THREE.BufferGeometry => {
     const wfSegsY = 52;
     const wfSegsX = 20;
-    const lipStartY = lipPt.y + 0.18;
+    const lipStartY = lipPt.y - 0.12;
     const fallBottomY = SEA_LEVEL_Y - 1.85;
     const fallHeight = lipStartY - fallBottomY;
 
@@ -2394,7 +2458,7 @@ export function createNordicCliffWorld(
       const s = iy / wfSegsY;
       // Ballistic horizontal throw x(s) ~ v0 * t, vertical drop y(s) ~ 0.5 * g * t^2
       const wy = lipStartY - fallHeight * Math.pow(s, 1.62);
-      const ballisticForward = 0.28 + throwDist * Math.pow(s, 0.72);
+      const ballisticForward = 0.22 + throwDist * Math.pow(s, 0.72);
       const halfWidth = THREE.MathUtils.lerp(topHalfW, botHalfW, Math.pow(s, 0.88));
       const windShift = windDriftRight * s * s;
 
@@ -2528,9 +2592,10 @@ export function createNordicCliffWorld(
 
           float baseAlpha = pow(max(sideFeather, 1e-5), mix(0.52, 1.15, uVeilMode))
                           * (mix(0.48, 0.14, uVeilMode) + mix(0.52, 0.34, uVeilMode) * threads + crestFoam * (1.0 - uVeilMode * 0.6) + plungeBoil * 0.5);
-          // Soft sub-surface fade below sea level (-11.5m) so the curtain dissolves into the ocean boil seamlessly!
+          // Smooth emergence at the rocky cliff cleft (vUv.y ~ 1.0) & soft sub-surface fade into the ocean boil!
+          float topLipEmergence = smoothstep(1.0, 0.90, vUv.y);
           float subSeaFade = smoothstep(-13.2, -11.35, vWorldPos.y);
-          float alpha = clamp(baseAlpha * subSeaFade, 0.0, mix(0.95, 0.44, uVeilMode));
+          float alpha = clamp(baseAlpha * topLipEmergence * subSeaFade, 0.0, mix(0.95, 0.44, uVeilMode));
           gl_FragColor = vec4(clamp(col, vec3(0.0), vec3(24.0)), alpha);
         }
       `,
@@ -2539,13 +2604,10 @@ export function createNordicCliffWorld(
   const wfCoreMat = makeWaterfallLayerMaterial(false);
   const wfMistMat = makeWaterfallLayerMaterial(true);
 
-  const wfStreamMesh = new THREE.Mesh(streamGeom, wfCoreMat);
-  wfStreamMesh.renderOrder = 3;
   const wfCurtainMesh = new THREE.Mesh(wfCoreGeom, wfCoreMat);
   wfCurtainMesh.renderOrder = 3;
   const wfMistVeilMesh = new THREE.Mesh(wfMistVeilGeom, wfMistMat);
   wfMistVeilMesh.renderOrder = 4;
-  group.add(wfStreamMesh);
   group.add(wfCurtainMesh);
   group.add(wfMistVeilMesh);
 
@@ -2648,24 +2710,90 @@ export function createNordicCliffWorld(
   group.add(sprayPoints);
 
   // ============================================================================
-  // 4. BLOCKY COASTAL TALUS BOULDERS AT WATERLINE & LOW FLAT MEADOW ERRATICS!
+  // 4. DARK OCEAN-SURFACE ROCK CLUSTERS, ROCKY SHORE LOGS / FALLEN BASALT COLUMNS & MEADOW SLABS!
   // ============================================================================
   const dummy = new THREE.Object3D();
 
-  // Natural weathered blocky basalt slab (low, wide, flat-bottomed — NEVER pointy!)
-  const erraticGeom = new THREE.DodecahedronGeometry(0.58, 1);
+  // Natural weathered blocky basalt rock (low, wide, rounded-blocky — NEVER pointy!)
+  const erraticGeom = new THREE.DodecahedronGeometry(0.62, 1);
   const bPos = erraticGeom.getAttribute('position') as THREE.BufferAttribute;
   for (let i = 0; i < bPos.count; i++) {
     const bx = bPos.getX(i);
     let by = bPos.getY(i);
     const bz = bPos.getZ(i);
-    const blockMod = 0.84 + 0.28 * fbm2D(bx * 2.2 + 4.3, by * 2.2 + bz * 2.2, 3);
-    if (by < -0.06) {
-      by = -0.06 + (by + 0.06) * 0.25;
+    const blockMod = 0.82 + 0.32 * fbm2D(bx * 2.2 + 4.3, by * 2.2 + bz * 2.2, 3);
+    if (by < -0.10) {
+      by = -0.10 + (by + 0.10) * 0.35;
     }
-    bPos.setXYZ(i, bx * blockMod * 1.38, by * blockMod * 0.52, bz * blockMod * 1.22);
+    bPos.setXYZ(i, bx * blockMod * 1.36, by * blockMod * 0.62, bz * blockMod * 1.22);
   }
   erraticGeom.computeVertexNormals();
+
+  // Elongated horizontal dark rocky log / fallen hexagonal basalt column / wave-worn shore rib!
+  const rockyLogGeom = (() => {
+    const uSegs = 14;
+    const rSegs = 8;
+    const ringV = rSegs + 1;
+    const vCount = (uSegs + 1) * ringV + 2;
+    const pos = new Float32Array(vCount * 3);
+    const uvs = new Float32Array(vCount * 2);
+    for (let iu = 0; iu <= uSegs; iu++) {
+      const u = iu / uSegs;
+      const lx = (u - 0.5) * 3.4;
+      // Natural crooked bend & weathered end taper (like a dark petrified/basalt shore log!)
+      const endTaper = 0.58 + 0.42 * Math.sin(u * Math.PI);
+      const bendZ = Math.sin(u * Math.PI * 1.3 + 0.4) * 0.18;
+      const bendY = -Math.pow(u - 0.5, 2.0) * 0.14;
+      for (let ir = 0; ir <= rSegs; ir++) {
+        const v = ir / rSegs;
+        const ang = v * Math.PI * 2.0;
+        const facet =
+          0.84 +
+          0.26 * fbm2D(lx * 1.3 + 2.1, Math.cos(ang) * 1.7 + Math.sin(ang) * 1.7, 2);
+        const radY = 0.30 * endTaper * facet;
+        const radZ = 0.38 * endTaper * facet;
+        const idx = iu * ringV + ir;
+        pos[idx * 3] = lx;
+        pos[idx * 3 + 1] = bendY + Math.sin(ang) * radY;
+        pos[idx * 3 + 2] = bendZ + Math.cos(ang) * radZ;
+        uvs[idx * 2] = u * 2.4;
+        uvs[idx * 2 + 1] = v;
+      }
+    }
+    const c0 = (uSegs + 1) * ringV;
+    const c1 = c0 + 1;
+    pos[c0 * 3] = -1.72;
+    pos[c0 * 3 + 1] = -0.04;
+    pos[c0 * 3 + 2] = 0.0;
+    uvs[c0 * 2] = 0;
+    uvs[c0 * 2 + 1] = 0.5;
+    pos[c1 * 3] = 1.72;
+    pos[c1 * 3 + 1] = -0.04;
+    pos[c1 * 3 + 2] = 0.0;
+    uvs[c1 * 2] = 2.4;
+    uvs[c1 * 2 + 1] = 0.5;
+    const indices: number[] = [];
+    for (let iu = 0; iu < uSegs; iu++) {
+      for (let ir = 0; ir < rSegs; ir++) {
+        const a = iu * ringV + ir;
+        const b = (iu + 1) * ringV + ir;
+        const c = (iu + 1) * ringV + (ir + 1);
+        const d = iu * ringV + (ir + 1);
+        indices.push(a, b, c, a, c, d);
+      }
+    }
+    const lastR = uSegs * ringV;
+    for (let ir = 0; ir < rSegs; ir++) {
+      indices.push(c0, ir + 1, ir);
+      indices.push(c1, lastR + ir, lastR + ir + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    g.setIndex(indices);
+    g.computeVertexNormals();
+    return g;
+  })();
 
   const floraZones: Array<{
     cx: number;
@@ -2675,56 +2803,153 @@ export function createNordicCliffWorld(
     isHero: boolean;
     evalH: (x: number, z: number) => number;
   }> = [
-    { cx: -3.5, cz: -14.0, spanX: 62.0, spanZ: 58.0, isHero: true, evalH: sampleHeroCliffHeight },
-    { cx: -74.0, cz: -36.0, spanX: 68.0, spanZ: 58.0, isHero: false, evalH: evalWestWaterfallIsland },
-    { cx: 88.0, cz: 36.0, spanX: 74.0, spanZ: 74.0, isHero: false, evalH: evalStarboardCrescentAtoll },
-    { cx: 84.0, cz: -46.0, spanX: 68.0, spanZ: 78.0, isHero: false, evalH: evalEastSerpentineTomboloIsland },
-    { cx: -124.0, cz: -86.0, spanX: 68.0, spanZ: 58.0, isHero: false, evalH: evalWestTraelanipaTableIsland },
-    { cx: -48.0, cz: -92.0, spanX: 52.0, spanZ: 48.0, isHero: false, evalH: evalNorthWestHolmPair },
+    { cx: -3.5, cz: -14.0, spanX: 64.0, spanZ: 60.0, isHero: true, evalH: sampleHeroCliffHeight },
+    { cx: -70.0, cz: -34.0, spanX: 74.0, spanZ: 64.0, isHero: false, evalH: evalWestWaterfallIsland },
+    { cx: 88.0, cz: 36.0, spanX: 78.0, spanZ: 78.0, isHero: false, evalH: evalStarboardCrescentAtoll },
+    { cx: 84.0, cz: -46.0, spanX: 74.0, spanZ: 82.0, isHero: false, evalH: evalEastSerpentineTomboloIsland },
+    { cx: -124.0, cz: -86.0, spanX: 74.0, spanZ: 64.0, isHero: false, evalH: evalWestTraelanipaTableIsland },
+    { cx: -48.0, cz: -92.0, spanX: 58.0, spanZ: 54.0, isHero: false, evalH: evalNorthWestHolmPair },
+    { cx: 36.0, cz: -108.0, spanX: 56.0, spanZ: 56.0, isHero: false, evalH: evalNorthEastHeadlandTable },
   ];
 
-  const maxRockSlabs = 220;
-  const boulderInst = new THREE.InstancedMesh(erraticGeom, rockMat, maxRockSlabs);
+  const maxShoreRocks = 820;
+  const boulderInst = new THREE.InstancedMesh(erraticGeom, rockMat, maxShoreRocks);
   boulderInst.castShadow = true;
   boulderInst.receiveShadow = true;
   let bPlaced = 0;
+
+  const maxRockyLogs = 210;
+  const rockyLogInst = new THREE.InstancedMesh(rockyLogGeom, rockMat, maxRockyLogs);
+  rockyLogInst.castShadow = true;
+  rockyLogInst.receiveShadow = true;
+  let logsPlaced = 0;
+
   const upAxis = new THREE.Vector3(0, 1, 0);
   const surfNormal = new THREE.Vector3();
   const alignQuat = new THREE.Quaternion();
   const yawQuat = new THREE.Quaternion();
 
-  // Subtle low wave-washed basalt talus slabs right at cliff-foot waterline (-12.2m .. -10.5m)
+  // Dense, naturalistic clusters of smaller dark wave-slicked rocks & horizontal rocky logs right at the ocean surface!
   for (let zIdx = 0; zIdx < floraZones.length; zIdx++) {
     const fz = floraZones[zIdx];
-    let talusInZone = 0;
-    for (let i = 0; i < 550 && talusInZone < 20 && bPlaced < maxRockSlabs; i++) {
-      const seed = 7000 + zIdx * 800 + i;
-      const tx = fz.cx + (hash2D(seed, 14.7) - 0.5) * (fz.spanX * 1.25);
-      const tz = fz.cz + (hash2D(seed, 53.9) - 0.5) * (fz.spanZ * 1.25);
+    const clusterTarget = fz.isHero ? 36 : 24;
+    let clustersMade = 0;
+    for (let i = 0; i < 900 && clustersMade < clusterTarget && bPlaced < maxShoreRocks - 6; i++) {
+      const seed = 7000 + zIdx * 1100 + i;
+      const tx = fz.cx + (hash2D(seed, 14.7) - 0.5) * (fz.spanX * 1.28);
+      const tz = fz.cz + (hash2D(seed, 53.9) - 0.5) * (fz.spanZ * 1.28);
       const ty = fz.evalH(tx, tz);
-      if (ty < -12.3 || ty > -10.6) continue;
-      if (Math.hypot(tx - lipPt.x, tz - lipPt.z) < 7.0) continue;
+      // Sample right in the coastal surf & shallow reef zone (-16.2m .. -9.2m) around the cliff base!
+      if (ty < -16.2 || ty > -9.2) continue;
+      // Keep the immediate waterfall impact boil clear while rimming the outer cove mouth with dark rocks!
+      if (Math.hypot(tx - plungeX, tz - plungeZ) < 6.8) continue;
 
-      const sc = 1.25 + hash2D(seed, 29.1) * 2.10;
-      dummy.position.set(tx, ty - 0.25 * sc, tz);
+      clustersMade++;
+
+      // 1. Primary dark emergent rock breaking visibly above SEA_LEVEL_Y (-11.5m)!
+      const mainSc = 1.05 + hash2D(seed, 29.1) * 1.85;
+      const emergeY = Math.max(ty - 0.12, SEA_LEVEL_Y - 0.08 + hash2D(seed, 37.4) * 0.62);
+      dummy.position.set(tx, emergeY, tz);
       dummy.rotation.set(
-        (hash2D(seed, 3.3) - 0.5) * 0.18,
+        (hash2D(seed, 3.3) - 0.5) * 0.24,
         hash2D(seed, 9.8) * Math.PI * 2,
-        (hash2D(seed, 6.1) - 0.5) * 0.18
+        (hash2D(seed, 6.1) - 0.5) * 0.24
       );
-      dummy.scale.set(sc * (0.95 + hash2D(seed, 4.4) * 0.35), sc * 0.58, sc);
+      dummy.scale.set(
+        mainSc * (0.92 + hash2D(seed, 4.4) * 0.45),
+        mainSc * (0.58 + hash2D(seed, 8.2) * 0.35),
+        mainSc * (0.88 + hash2D(seed, 11.6) * 0.42)
+      );
       dummy.updateMatrix();
       boulderInst.setMatrixAt(bPlaced++, dummy.matrix);
-      talusInZone++;
+
+      // 2. Smaller dark satellite rocks & wave-washed cobble skerries clustered nearby at the ocean surface!
+      const satCount = 2 + Math.floor(hash2D(seed, 45.2) * 3);
+      for (let s = 0; s < satCount && bPlaced < maxShoreRocks; s++) {
+        const sSeed = seed * 7 + s * 19.3;
+        const offAng = hash2D(sSeed, 2.7) * Math.PI * 2;
+        const offDist = 1.15 + hash2D(sSeed, 5.9) * 3.4;
+        const sx = tx + Math.cos(offAng) * offDist;
+        const sz = tz + Math.sin(offAng) * offDist;
+        if (Math.hypot(sx - plungeX, sz - plungeZ) < 6.5) continue;
+        const smSc = 0.48 + hash2D(sSeed, 12.4) * 0.95;
+        const smY = SEA_LEVEL_Y - 0.10 + hash2D(sSeed, 18.8) * 0.44;
+        dummy.position.set(sx, smY, sz);
+        dummy.rotation.set(
+          (hash2D(sSeed, 21.1) - 0.5) * 0.32,
+          hash2D(sSeed, 25.6) * Math.PI * 2,
+          (hash2D(sSeed, 29.3) - 0.5) * 0.32
+        );
+        dummy.scale.set(
+          smSc * (0.95 + hash2D(sSeed, 33.1) * 0.55),
+          smSc * (0.52 + hash2D(sSeed, 37.7) * 0.32),
+          smSc
+        );
+        dummy.updateMatrix();
+        boulderInst.setMatrixAt(bPlaced++, dummy.matrix);
+      }
+
+      // 3. Horizontal dark basalt-column "rocky logs" / wave-washed coastal rock ribs resting right at the waterline!
+      if (logsPlaced < maxRockyLogs && hash2D(seed, 63.5) > 0.28) {
+        const lAng = hash2D(seed, 71.2) * Math.PI * 2;
+        const lx = tx + Math.cos(lAng) * (1.2 + hash2D(seed, 77.8) * 2.4);
+        const lz = tz + Math.sin(lAng) * (1.2 + hash2D(seed, 81.4) * 2.4);
+        const logLen = 0.72 + hash2D(seed, 88.9) * 1.15;
+        const logThick = 0.68 + hash2D(seed, 93.1) * 0.65;
+        const logY = Math.max(fz.evalH(lx, lz) - 0.08, SEA_LEVEL_Y - 0.04 + hash2D(seed, 97.6) * 0.36);
+        // Align roughly tangent to the local shoreline with natural wave-tossed yaw & slight pitch!
+        const gHx = fz.evalH(lx + 1.0, lz) - fz.evalH(lx - 1.0, lz);
+        const gHz = fz.evalH(lx, lz + 1.0) - fz.evalH(lx, lz - 1.0);
+        const shoreTanYaw = Math.atan2(gHx, -gHz) + (hash2D(seed, 102.3) - 0.5) * 0.95;
+        dummy.position.set(lx, logY, lz);
+        dummy.rotation.set(
+          (hash2D(seed, 108.7) - 0.5) * 0.16,
+          shoreTanYaw,
+          (hash2D(seed, 114.2) - 0.5) * 0.18
+        );
+        dummy.scale.set(logLen, logThick, logThick * 1.08);
+        dummy.updateMatrix();
+        rockyLogInst.setMatrixAt(logsPlaced++, dummy.matrix);
+      }
     }
   }
 
-  // Low weathered meadow slabs strictly on gentle grassy plateaus (slope <= 0.24)!
+  // Also scatter dark emergent reef rock clusters & rocky logs around the base of Sea-Stacks & Sea-Arches!
+  for (let sIdx = 0; sIdx < TABULAR_SEA_STACKS.length; sIdx++) {
+    const st = TABULAR_SEA_STACKS[sIdx];
+    for (let k = 0; k < 6 && bPlaced < maxShoreRocks; k++) {
+      const seed = 19000 + sIdx * 71 + k * 13;
+      const ang = (k / 6) * Math.PI * 2 + (hash2D(seed, 4.1) - 0.5) * 0.55;
+      const rOut = Math.max(st.rx, st.rz) * (1.12 + hash2D(seed, 8.7) * 0.52);
+      const rx = st.x + Math.cos(ang) * rOut;
+      const rz = st.z + Math.sin(ang) * rOut;
+      const sc = 0.65 + hash2D(seed, 15.3) * 1.15;
+      dummy.position.set(rx, SEA_LEVEL_Y - 0.08 + hash2D(seed, 19.9) * 0.48, rz);
+      dummy.rotation.set(0.08, hash2D(seed, 24.4) * Math.PI * 2, -0.06);
+      dummy.scale.set(sc * 1.25, sc * 0.62, sc);
+      dummy.updateMatrix();
+      boulderInst.setMatrixAt(bPlaced++, dummy.matrix);
+
+      if (k % 2 === 0 && logsPlaced < maxRockyLogs) {
+        dummy.position.set(
+          rx + Math.cos(ang + 0.6) * 1.6,
+          SEA_LEVEL_Y + 0.02 + hash2D(seed, 31.2) * 0.26,
+          rz + Math.sin(ang + 0.6) * 1.6
+        );
+        dummy.rotation.set(0.05, ang + Math.PI * 0.5 + (hash2D(seed, 36.8) - 0.5) * 0.6, -0.09);
+        dummy.scale.set(0.75 + hash2D(seed, 41.5) * 0.85, 0.72, 0.78);
+        dummy.updateMatrix();
+        rockyLogInst.setMatrixAt(logsPlaced++, dummy.matrix);
+      }
+    }
+  }
+
+  // Low weathered meadow slabs strictly on gentle grassy plateaus (slope <= 0.38)!
   for (let zIdx = 0; zIdx < floraZones.length; zIdx++) {
     const fz = floraZones[zIdx];
-    const quota = fz.isHero ? 26 : 12;
+    const quota = fz.isHero ? 24 : 10;
     let countInZone = 0;
-    for (let i = 0; i < 400 && countInZone < quota && bPlaced < maxRockSlabs; i++) {
+    for (let i = 0; i < 400 && countInZone < quota && bPlaced < maxShoreRocks; i++) {
       const seed = zIdx * 500 + i;
       const bx = fz.cx + (hash2D(seed, 41.2) - 0.5) * fz.spanX;
       const bz = fz.cz + (hash2D(seed, 83.7) - 0.5) * fz.spanZ;
@@ -2762,6 +2987,11 @@ export function createNordicCliffWorld(
   boulderInst.count = bPlaced;
   boulderInst.instanceMatrix.needsUpdate = true;
   group.add(boulderInst);
+
+  rockyLogInst.count = logsPlaced;
+  rockyLogInst.instanceMatrix.needsUpdate = true;
+  rockyLogInst.name = 'ShorelineBasaltRockyLogs';
+  group.add(rockyLogInst);
 
   // ============================================================================
   // 5. NATURAL MULTI-SPECIES SWAYING GRASS & COASTAL WILDFLOWERS
