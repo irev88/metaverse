@@ -18,10 +18,19 @@ import {
   sampleWorldTerrainHeight,
   TOOTHLESS_PERCH_POSE,
 } from './world/NordicCliffWorld';
-import { createLivingWorldDirector, LivingWorldDirector } from './world/LivingWorldDirector';
+import {
+  CinematicLoveStoryController,
+  createCinematicLoveStoryDirector,
+} from './world/CinematicLoveStoryDirector';
+import { createCelestialFireworksSystem } from './world/CelestialFireworksSystem';
+import { createCourtshipSanctuaryProps } from './world/CourtshipSanctuaryProps';
 import { createRenderQualityManager } from './world/RenderQualityManager';
 import { createLoadingScreenController } from './ui/LoadingScreen';
 import { CAMERA_BOOKMARKS, CameraBookmark, createRigStudioHUD } from './ui/RigStudioHUD';
+import {
+  checkSanctuarySealedOnBoot,
+  executePermanentSanctuaryShutdown,
+} from './ui/SanctuaryGatekeeper';
 import { createUserExperienceHUD, UserExperienceHUDController } from './ui/UserExperienceHUD';
 
 type AppInterfaceMode = 'developer' | 'user';
@@ -38,6 +47,11 @@ async function bootstrap(): Promise<void> {
   const appMode = resolveAppMode();
   const isUserMode = appMode === 'user';
   document.title = 'Our World';
+
+  if (isUserMode) {
+    const isSealed = await checkSanctuarySealedOnBoot();
+    if (isSealed) return;
+  }
 
   const loadingScreen = createLoadingScreenController();
   const canvasContainer = document.getElementById('canvas-container')!;
@@ -204,35 +218,106 @@ async function bootstrap(): Promise<void> {
 
   let devHud: ReturnType<typeof createRigStudioHUD> | null = null;
   let userHud: UserExperienceHUDController | null = null;
-  let livingDirector: LivingWorldDirector | null = null;
+  let storyDirector: CinematicLoveStoryController | null = null;
+  let renderLoopHalted = false;
+  let rafHandle = 0;
+  const userExploreHomePos = new THREE.Vector3(0.05, 2.75, 11.40);
+  const userExploreHomeTarget = new THREE.Vector3(0.0, 1.18, -0.45);
 
   if (isUserMode) {
-    livingDirector = createLivingWorldDirector(
+    // Lock manual pan/zoom/rotate during the 2-minute love-story sequence
+    controls.enabled = false;
+
+    const sanctuaryProps = createCourtshipSanctuaryProps();
+    scene.add(sanctuaryProps.group);
+
+    const fireworksSystem = createCelestialFireworksSystem();
+    scene.add(fireworksSystem.group);
+
+    storyDirector = createCinematicLoveStoryDirector(
       renderer,
       scene,
+      camera,
       atmosphere,
       cliffWorld.ocean,
       toothlessAsset,
       toothlessController,
       lightFuryAsset,
       lightFuryController,
-      flightChoreographer
+      sanctuaryProps,
+      fireworksSystem,
+      {
+        onReachConfessionPrompt() {
+          userHud?.showConfessionPrompt();
+        },
+        onDeclineProgress(fade01) {
+          userHud?.setDeclineEclipseProgress(fade01);
+        },
+        onDeclineComplete() {
+          renderLoopHalted = true;
+          if (rafHandle) cancelAnimationFrame(rafHandle);
+          void executePermanentSanctuaryShutdown({
+            stopRenderLoop: () => {
+              renderLoopHalted = true;
+              if (rafHandle) cancelAnimationFrame(rafHandle);
+            },
+            muteAudio: () => atmosphere.setAudioMuted(true),
+            scene,
+            renderer,
+            composer,
+          });
+        },
+        onReachMovieComplete() {
+          userHud?.showCompletionInvitation();
+        },
+        onEnterFreeExplore(finalCamPos, finalCamTarget) {
+          userExploreHomePos.copy(finalCamPos);
+          userExploreHomeTarget.copy(finalCamTarget);
+          camera.position.copy(finalCamPos);
+          controls.target.copy(finalCamTarget);
+          camera.fov = 42;
+          camera.updateProjectionMatrix();
+          controls.enabled = true;
+          controls.update();
+          userHud?.unlockFreeExploreHUD();
+        },
+      }
     );
+
     userHud = createUserExperienceHUD(hudRoot, {
       quality: qualityController,
       onCaptureSnapshot() {
         snapshotPending = true;
       },
       onResetView() {
+        if (storyDirector?.isCameraLocked()) return;
         activeCamTransition = {
-          goalPos: CAMERA_BOOKMARKS[0].position.clone(),
-          goalTarget: CAMERA_BOOKMARKS[0].target.clone(),
+          goalPos: userExploreHomePos.clone(),
+          goalTarget: userExploreHomeTarget.clone(),
         };
       },
       onToggleAudioMute() {
         const nextMuted = !atmosphere.isAudioMuted();
         atmosphere.setAudioMuted(nextMuted);
         return nextMuted;
+      },
+      onConfessionHoverBias(bias) {
+        storyDirector?.setConfessionHoverBias(bias);
+      },
+      onConfessionChooseYes() {
+        storyDirector?.chooseYes();
+      },
+      onConfessionChooseNo() {
+        storyDirector?.chooseNo();
+      },
+      onClickExploreWorld() {
+        storyDirector?.enterFreeExplore();
+      },
+      onClickReplayStory() {
+        activeCamTransition = null;
+        roamVelocity.set(0, 0, 0);
+        controls.enabled = false;
+        storyDirector?.replayStory();
       },
     });
   } else {
@@ -333,6 +418,7 @@ async function bootstrap(): Promise<void> {
   const ndcPointer = new THREE.Vector2();
 
   renderer.domElement.addEventListener('dblclick', (ev) => {
+    if (storyDirector?.isCameraLocked()) return;
     if (flightChoreographer.isPlaying && !isUserMode) return;
     const rect = renderer.domElement.getBoundingClientRect();
     ndcPointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
@@ -449,10 +535,18 @@ async function bootstrap(): Promise<void> {
   });
 
   // Warm-up render behind the twilight curtain so the reveal is 60 FPS butter-smooth!
-  toothlessController.update(0.016);
-  lightFuryController.update(0.016);
-  atmosphere.update(0, new THREE.Vector3(0, 1.15, 0.35), camera.position);
-  cliffWorld.update(0, camera.position);
+  if (storyDirector) {
+    const warm = storyDirector.update(0.016);
+    toothlessController.update(0.016);
+    lightFuryController.update(0.016);
+    atmosphere.update(warm.worldTimeSec, warm.focusPoint, camera.position);
+    cliffWorld.update(warm.worldTimeSec, camera.position);
+  } else {
+    toothlessController.update(0.016);
+    lightFuryController.update(0.016);
+    atmosphere.update(0, new THREE.Vector3(0, 1.15, 0.35), camera.position);
+    cliffWorld.update(0, camera.position);
+  }
   composer.render();
 
   const clock = new THREE.Clock();
@@ -462,26 +556,36 @@ async function bootstrap(): Promise<void> {
   let wasFlightPlaying = false;
 
   function animate(): void {
-    requestAnimationFrame(animate);
+    if (renderLoopHalted) return;
+    rafHandle = requestAnimationFrame(animate);
 
     const dt = Math.min(clock.getDelta(), 0.05);
     const elapsed = clock.elapsedTime;
 
-    if (livingDirector) {
-      livingDirector.update(dt, elapsed);
+    let effectiveWorldTime = elapsed;
+    let worldFocus = new THREE.Vector3(0, 1.15, 0.35);
+    const cameraLockedByStory = Boolean(storyDirector?.isCameraLocked());
+
+    if (storyDirector) {
+      const storyStep = storyDirector.update(dt);
+      if (renderLoopHalted) return;
+      effectiveWorldTime = storyStep.worldTimeSec;
+      worldFocus.copy(storyStep.focusPoint);
     }
 
     const flightActiveBefore = flightChoreographer.isPlaying;
-    const flightStep = flightChoreographer.update(
-      dt * flightSpeedMultiplier,
-      camera,
-      controls.target
-    );
+    const flightStep = !storyDirector
+      ? flightChoreographer.update(dt * flightSpeedMultiplier, camera, controls.target)
+      : { isAirborne: false, worldFocus };
+
+    if (!storyDirector) {
+      worldFocus.copy(flightStep.worldFocus);
+    }
 
     controls.maxPolarAngle = flightStep.isAirborne || isUserMode ? Math.PI * 0.78 : Math.PI * 0.56;
 
-    if (isUserMode) {
-      // Smoothly adapt rotate, pan & zoom speeds to viewing distance for effortless accessibility!
+    if (isUserMode && !cameraLockedByStory) {
+      // Smoothly adapt rotate, pan & zoom speeds to viewing distance once Free Explore is unlocked!
       const viewDist = camera.position.distanceTo(controls.target);
       const closeT = THREE.MathUtils.clamp((viewDist - 1.5) / 28.0, 0, 1);
       controls.rotateSpeed = THREE.MathUtils.lerp(0.46, 0.72, closeT);
@@ -503,9 +607,9 @@ async function bootstrap(): Promise<void> {
       devHud.updateFlightUI();
     }
 
-    // Apply WASD / Arrow / Q / E Free-Roam Camera Velocity
+    // Apply WASD / Arrow / Q / E Free-Roam Camera Velocity (only when camera is unlocked!)
     roamDesired.set(0, 0, 0);
-    if (!flightChoreographer.isPlaying || !flightChoreographer.followCamera || isUserMode) {
+    if (!cameraLockedByStory && (!flightChoreographer.isPlaying || !flightChoreographer.followCamera || isUserMode)) {
       const moveFwd =
         (pressedKeys.has('KeyW') || pressedKeys.has('ArrowUp') ? 1 : 0) -
         (pressedKeys.has('KeyS') || pressedKeys.has('ArrowDown') ? 1 : 0);
@@ -532,41 +636,48 @@ async function bootstrap(): Promise<void> {
         roamDesired.multiplyScalar(baseSpeed * sprintMult);
       }
     }
-    roamVelocity.lerp(roamDesired, 1.0 - Math.exp(-8.5 * dt));
-    if (roamVelocity.lengthSq() > 1e-4) {
-      camera.position.addScaledVector(roamVelocity, dt);
-      controls.target.addScaledVector(roamVelocity, dt);
-    }
 
-    if (activeCamTransition && (!flightChoreographer.isPlaying || isUserMode)) {
-      const alpha = 1.0 - Math.exp(-5.0 * dt);
-      camera.position.lerp(activeCamTransition.goalPos, alpha);
-      controls.target.lerp(activeCamTransition.goalTarget, alpha);
-      if (
-        camera.position.distanceTo(activeCamTransition.goalPos) < 0.012 &&
-        controls.target.distanceTo(activeCamTransition.goalTarget) < 0.012
-      ) {
-        activeCamTransition = null;
+    if (!cameraLockedByStory) {
+      roamVelocity.lerp(roamDesired, 1.0 - Math.exp(-8.5 * dt));
+      if (roamVelocity.lengthSq() > 1e-4) {
+        camera.position.addScaledVector(roamVelocity, dt);
+        controls.target.addScaledVector(roamVelocity, dt);
       }
-    }
-    controls.update();
 
-    // Prevent manual orbit or WASD roam camera from ever dipping below the ocean surface or into solid cliffs!
-    const camGround = sampleWorldTerrainHeight(camera.position.x, camera.position.z);
-    const minOrbitCamY = Math.max(-9.8, camGround + 0.55);
-    if (camera.position.y < minOrbitCamY) {
-      camera.position.y = minOrbitCamY;
+      if (activeCamTransition && (!flightChoreographer.isPlaying || isUserMode)) {
+        const alpha = 1.0 - Math.exp(-5.0 * dt);
+        camera.position.lerp(activeCamTransition.goalPos, alpha);
+        controls.target.lerp(activeCamTransition.goalTarget, alpha);
+        if (
+          camera.position.distanceTo(activeCamTransition.goalPos) < 0.012 &&
+          controls.target.distanceTo(activeCamTransition.goalTarget) < 0.012
+        ) {
+          activeCamTransition = null;
+        }
+      }
+      controls.update();
+
+      // Prevent manual orbit or WASD roam camera from ever dipping below the ocean surface or into solid cliffs!
+      const camGround = sampleWorldTerrainHeight(camera.position.x, camera.position.z);
+      const minOrbitCamY = Math.max(-9.8, camGround + 0.55);
+      if (camera.position.y < minOrbitCamY) {
+        camera.position.y = minOrbitCamY;
+      }
     }
 
     toothlessController.update(dt);
     lightFuryController.update(dt);
 
-    // Subtle Interactive Pointer Gaze-Tracking when Perched & Close!
+    // Subtle Interactive Pointer Gaze-Tracking when Perched & Close (only when camera is unlocked!)
     const nowSec = performance.now() * 0.001;
     const pointerRecent = nowSec - lastPointerMoveTime < 4.0 && !isPointerDragging;
     const camNearPerch = camera.position.distanceTo(new THREE.Vector3(0, 1.1, 0)) < 26.0;
     const wantGaze =
-      cursorGazeEnabled && !flightChoreographer.isPlaying && pointerRecent && camNearPerch
+      !cameraLockedByStory &&
+      cursorGazeEnabled &&
+      !flightChoreographer.isPlaying &&
+      pointerRecent &&
+      camNearPerch
         ? 1.0
         : 0.0;
     smoothedGazeWeight += (wantGaze - smoothedGazeWeight) * (1.0 - Math.exp(-4.2 * dt));
@@ -613,12 +724,12 @@ async function bootstrap(): Promise<void> {
       }
     }
 
-    const camDist = camera.position.distanceTo(flightStep.worldFocus);
+    const camDist = camera.position.distanceTo(worldFocus);
     const currentLOD = toothlessAsset.updateAutoLOD(camDist);
     lightFuryAsset.updateAutoLOD(camDist);
 
-    atmosphere.update(elapsed, flightStep.worldFocus, camera.position);
-    cliffWorld.update(elapsed, camera.position);
+    atmosphere.update(effectiveWorldTime, worldFocus, camera.position);
+    cliffWorld.update(effectiveWorldTime, camera.position);
 
     fpsAccum += dt;
     fpsFrames++;

@@ -10,29 +10,42 @@ export interface UserExperienceHUDCallbacks {
   onCaptureSnapshot: () => void;
   onResetView: () => void;
   onToggleAudioMute: () => boolean;
+  onConfessionHoverBias: (bias: number) => void;
+  onConfessionChooseYes: () => void;
+  onConfessionChooseNo: () => void;
+  onClickExploreWorld: () => void;
+  onClickReplayStory: () => void;
 }
 
 export interface UserExperienceHUDController {
   showToast: (msg: string) => void;
   triggerShutterFlash: () => void;
+  showConfessionPrompt: () => void;
+  setDeclineEclipseProgress: (fade01: number) => void;
+  showCompletionInvitation: () => void;
+  unlockFreeExploreHUD: () => void;
 }
 
-/**
- * High-End Romantic Digital-Artwork Viewer Experience ("Our World"):
- * - Zero world/weather/posture/flight mutation controls and zero top-left technical text.
- * - Frames the 3D sanctuary with a museum-grade filigree passe-partout, cursor-reactive
- *   specular glass dock, magnetic jewel buttons, floating heart micro-particles,
- *   5-Stage Resolution & Quality crystal selector (up to Stage V Masterpiece SSAA),
- *   and an accessible illustrated Gesture Carte.
- */
 export function createUserExperienceHUD(
   rootEl: HTMLElement,
   callbacks: UserExperienceHUDCallbacks
 ): UserExperienceHUDController {
   rootEl.innerHTML = '';
-  rootEl.classList.add('ux-viewer-mode');
+  rootEl.classList.add('ux-viewer-mode', 'is-cinema-film');
 
-  // 1. Delicate Digital-Artwork Gallery Frame (zero pointer blocking, omitted from canvas PNG snapshots)
+  let isFreeExplore = false;
+
+  // 1. Soft Widescreen Cinema Letterbox Framing (active during 2-minute film, retracts on Free Explore)
+  const letterboxTop = document.createElement('div');
+  letterboxTop.className = 'ux-letterbox ux-letterbox-top';
+  letterboxTop.setAttribute('aria-hidden', 'true');
+  const letterboxBottom = document.createElement('div');
+  letterboxBottom.className = 'ux-letterbox ux-letterbox-bottom';
+  letterboxBottom.setAttribute('aria-hidden', 'true');
+  rootEl.appendChild(letterboxTop);
+  rootEl.appendChild(letterboxBottom);
+
+  // 2. Museum Passe-Partout Filigree Frame
   const artFrame = document.createElement('div');
   artFrame.className = 'ux-artwork-frame';
   artFrame.setAttribute('aria-hidden', 'true');
@@ -44,7 +57,13 @@ export function createUserExperienceHUD(
   `;
   rootEl.appendChild(artFrame);
 
-  // 2. Micro-Particle Layer for Romantic Heart Sparkles on UI Interactions
+  // 3. Silent Eclipse Curtain (only darkens if "No" is chosen before permanent shutdown)
+  const eclipseCurtain = document.createElement('div');
+  eclipseCurtain.className = 'ux-eclipse-curtain';
+  eclipseCurtain.setAttribute('aria-hidden', 'true');
+  rootEl.appendChild(eclipseCurtain);
+
+  // 4. Micro-Particle Layer for Romantic Heart Sparkles
   const fxLayer = document.createElement('div');
   fxLayer.className = 'ux-fx-layer';
   fxLayer.setAttribute('aria-hidden', 'true');
@@ -59,10 +78,10 @@ export function createUserExperienceHUD(
       const heart = document.createElement('span');
       heart.className = 'ux-micro-heart';
       heart.innerHTML = '&#10084;';
-      const dx = (Math.random() - 0.5) * 64;
-      const dy = -26 - Math.random() * 44;
-      const rot = (Math.random() - 0.5) * 38;
-      const scale = 0.65 + Math.random() * 0.55;
+      const dx = (Math.random() - 0.5) * 82;
+      const dy = -28 - Math.random() * 54;
+      const rot = (Math.random() - 0.5) * 42;
+      const scale = 0.65 + Math.random() * 0.65;
       heart.style.left = `${cx.toFixed(1)}px`;
       heart.style.top = `${cy.toFixed(1)}px`;
       heart.style.setProperty('--hx', `${dx.toFixed(1)}px`);
@@ -70,11 +89,11 @@ export function createUserExperienceHUD(
       heart.style.setProperty('--hr', `${rot.toFixed(1)}deg`);
       heart.style.setProperty('--hs', scale.toFixed(2));
       fxLayer.appendChild(heart);
-      window.setTimeout(() => heart.remove(), 1100);
+      window.setTimeout(() => heart.remove(), 1150);
     }
   }
 
-  // 3. Soft Rose-Champagne Shutter Bloom & Polite Poetic Toast
+  // 5. Shutter Bloom & Polite Poetic Toast
   const shutterEl = document.createElement('div');
   shutterEl.className = 'shutter-flash';
   shutterEl.setAttribute('aria-hidden', 'true');
@@ -103,7 +122,180 @@ export function createUserExperienceHUD(
     window.setTimeout(() => shutterEl.classList.remove('flash'), 520);
   }
 
-  // 4. Sculpted Celestial Glass Dock (Top-Right) with Magnetic Micro-Interactions
+  // 6. Diegetic Frameless Confession Veil (Appears at 1:28 Before "Her Acceptance")
+  const confessionVeil = document.createElement('section');
+  confessionVeil.className = 'ux-confession-veil';
+  confessionVeil.setAttribute('aria-label', 'A quiet question');
+  confessionVeil.innerHTML = `
+    <div class="ux-confession-aura" aria-hidden="true"></div>
+    <svg class="ux-confession-crest" viewBox="0 0 120 88" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="uxConfGrad" x1="15%" y1="10%" x2="85%" y2="90%">
+          <stop offset="0%" stop-color="#ffe6d4" />
+          <stop offset="50%" stop-color="#f7b2cc" />
+          <stop offset="100%" stop-color="#86d6ff" />
+        </linearGradient>
+      </defs>
+      <path
+        class="ux-conf-heart-stroke"
+        d="M60 76 C44 65, 24 52, 24 34 C24 22, 34 15, 44 15 C51 15, 57 19, 60 25 C63 19, 69 15, 76 15 C86 15, 96 22, 96 34 C96 52, 76 65, 60 76 Z"
+        stroke="url(#uxConfGrad)"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        pathLength="100"
+      />
+    </svg>
+    <p class="ux-confession-whisper">Will you stay with me, and make this world ours?</p>
+    <div class="ux-confession-sigils">
+      <button type="button" class="ux-sigil-btn ux-sigil-yes" id="ux-confess-yes">
+        <span class="ux-sigil-ring" aria-hidden="true"></span>
+        <span class="ux-sigil-icon" aria-hidden="true">&#10084;</span>
+        <span class="ux-sigil-text">Yes</span>
+      </button>
+      <button type="button" class="ux-sigil-btn ux-sigil-no" id="ux-confess-no">
+        <span class="ux-sigil-ring" aria-hidden="true"></span>
+        <span class="ux-sigil-text">No</span>
+      </button>
+    </div>
+  `;
+  rootEl.appendChild(confessionVeil);
+
+  const yesBtn = confessionVeil.querySelector('#ux-confess-yes') as HTMLButtonElement;
+  const noBtn = confessionVeil.querySelector('#ux-confess-no') as HTMLButtonElement;
+  let confessionResolved = false;
+  let hoverSparkTimer = 0;
+
+  // Cursor-proximity & hover coupling directly into Toothless & Light Fury's 3D expressions!
+  confessionVeil.addEventListener('pointermove', (ev) => {
+    if (confessionResolved || !confessionVeil.classList.contains('is-visible')) return;
+    const yesRect = yesBtn.getBoundingClientRect();
+    const noRect = noBtn.getBoundingClientRect();
+    const yesCx = yesRect.left + yesRect.width * 0.5;
+    const yesCy = yesRect.top + yesRect.height * 0.5;
+    const noCx = noRect.left + noRect.width * 0.5;
+    const noCy = noRect.top + noRect.height * 0.5;
+
+    const dYes = Math.hypot(ev.clientX - yesCx, ev.clientY - yesCy);
+    const dNo = Math.hypot(ev.clientX - noCx, ev.clientY - noCy);
+
+    if (dYes < 165 && dYes < dNo) {
+      callbacks.onConfessionHoverBias(Math.min(1, (165 - dYes) / 110));
+    } else if (dNo < 150) {
+      callbacks.onConfessionHoverBias(-Math.min(1, (150 - dNo) / 100));
+    } else {
+      callbacks.onConfessionHoverBias(0);
+    }
+  });
+
+  confessionVeil.addEventListener('pointerleave', () => {
+    if (!confessionResolved) callbacks.onConfessionHoverBias(0);
+  });
+
+  yesBtn.addEventListener('pointerenter', () => {
+    callbacks.onConfessionHoverBias(1);
+    spawnHeartSparklesFromElement(yesBtn, 4);
+    window.clearInterval(hoverSparkTimer);
+    hoverSparkTimer = window.setInterval(() => {
+      if (confessionVeil.classList.contains('is-visible') && !confessionResolved) {
+        spawnHeartSparklesFromElement(yesBtn, 2);
+      }
+    }, 650);
+  });
+
+  yesBtn.addEventListener('pointerleave', () => {
+    window.clearInterval(hoverSparkTimer);
+  });
+
+  noBtn.addEventListener('pointerenter', () => {
+    callbacks.onConfessionHoverBias(-1);
+  });
+
+  // Magnetic pull on both sigil orbs
+  [yesBtn, noBtn].forEach((orb) => {
+    orb.addEventListener('pointermove', (ev) => {
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+      const r = orb.getBoundingClientRect();
+      const ox = ((ev.clientX - (r.left + r.width * 0.5)) / r.width) * 7.0;
+      const oy = ((ev.clientY - (r.top + r.height * 0.5)) / r.height) * 7.0;
+      orb.style.transform = `translate3d(${ox.toFixed(2)}px, ${oy.toFixed(2)}px, 0)`;
+    });
+    orb.addEventListener('pointerleave', () => {
+      orb.style.transform = '';
+    });
+  });
+
+  yesBtn.addEventListener('click', () => {
+    if (confessionResolved) return;
+    confessionResolved = true;
+    window.clearInterval(hoverSparkTimer);
+    spawnHeartSparklesFromElement(yesBtn, 16);
+    confessionVeil.classList.add('is-accepted');
+    confessionVeil.classList.remove('is-visible');
+    callbacks.onConfessionChooseYes();
+  });
+
+  noBtn.addEventListener('click', () => {
+    if (confessionResolved) return;
+    confessionResolved = true;
+    window.clearInterval(hoverSparkTimer);
+    confessionVeil.classList.add('is-declined');
+    confessionVeil.classList.remove('is-visible');
+    dockWrap.classList.add('is-vanished');
+    callbacks.onConfessionChooseNo();
+  });
+
+  // 7. Artisanal 2:00 Completion Invitation ("Explore Our World" + "Watch Again")
+  const finaleVeil = document.createElement('section');
+  finaleVeil.className = 'ux-finale-veil';
+  finaleVeil.setAttribute('aria-label', 'Story complete');
+  finaleVeil.innerHTML = `
+    <div class="ux-finale-title">Our World</div>
+    <div class="ux-finale-actions">
+      <button type="button" class="ux-explore-cta" id="ux-btn-explore-world">
+        <svg class="ux-explore-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="8.6" stroke="currentColor" stroke-width="1.2" stroke-dasharray="3 2.2" />
+          <path d="M12 15.6s-3.2-2.1-3.2-4.2a1.85 1.85 0 0 1 3.2-1.2 1.85 1.85 0 0 1 3.2 1.2c0 2.1-3.2 4.2-3.2 4.2Z" fill="currentColor" fill-opacity="0.28" stroke="currentColor" stroke-width="1.2" />
+        </svg>
+        <span>Explore Our World</span>
+      </button>
+      <button type="button" class="ux-replay-whisper" id="ux-btn-replay-story">
+        Watch Story Again
+      </button>
+    </div>
+  `;
+  rootEl.appendChild(finaleVeil);
+
+  const exploreBtn = finaleVeil.querySelector('#ux-btn-explore-world') as HTMLButtonElement;
+  const replayBtn = finaleVeil.querySelector('#ux-btn-replay-story') as HTMLButtonElement;
+
+  exploreBtn.addEventListener('pointermove', (ev) => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const r = exploreBtn.getBoundingClientRect();
+    const ox = ((ev.clientX - (r.left + r.width * 0.5)) / r.width) * 6.0;
+    const oy = ((ev.clientY - (r.top + r.height * 0.5)) / r.height) * 5.0;
+    exploreBtn.style.transform = `translate3d(${ox.toFixed(2)}px, ${(oy - 1.5).toFixed(2)}px, 0)`;
+  });
+  exploreBtn.addEventListener('pointerleave', () => {
+    exploreBtn.style.transform = '';
+  });
+
+  exploreBtn.addEventListener('click', () => {
+    spawnHeartSparklesFromElement(exploreBtn, 14);
+    finaleVeil.classList.remove('is-visible');
+    callbacks.onClickExploreWorld();
+  });
+
+  replayBtn.addEventListener('click', () => {
+    confessionResolved = false;
+    confessionVeil.classList.remove('is-accepted', 'is-declined', 'is-visible');
+    finaleVeil.classList.remove('is-visible');
+    isFreeExplore = false;
+    rootEl.classList.add('is-cinema-film');
+    coachBar.classList.add('is-hidden');
+    callbacks.onClickReplayStory();
+  });
+
+  // 8. Sculpted Celestial Glass Dock (Top-Right)
   const dockWrap = document.createElement('div');
   dockWrap.className = 'ux-dock-wrapper';
 
@@ -120,14 +312,14 @@ export function createUserExperienceHUD(
         <span class="ux-jewel-label">Capture</span>
       </button>
 
-      <button type="button" class="ux-jewel-btn" id="ux-btn-quality" data-tip="Clarity &amp; Resolution [Q]" aria-expanded="false" aria-controls="ux-quality-popover" aria-label="Select Render Resolution Stage (Shortcut Q)">
+      <button type="button" class="ux-jewel-btn" id="ux-btn-quality" data-tip="Clarity &amp; Resolution [V]" aria-expanded="false" aria-controls="ux-quality-popover" aria-label="Select Render Resolution Stage (Shortcut V)">
         <svg class="ux-jewel-svg" viewBox="0 0 22 22" fill="none" aria-hidden="true">
           <path d="M11 3.2L13.1 8.4L18.5 9.1L14.4 12.7L15.6 18.1L11 15.2L6.4 18.1L7.6 12.7L3.5 9.1L8.9 8.4L11 3.2Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
         </svg>
         <span class="ux-jewel-label">Clarity <em id="ux-quality-roman">${initMetrics.spec.roman}</em></span>
       </button>
 
-      <button type="button" class="ux-jewel-btn" id="ux-btn-reset" data-tip="Return to Pair [R]" aria-label="Smoothly Return Camera to Default View (Shortcut R)">
+      <button type="button" class="ux-jewel-btn ux-explore-only" id="ux-btn-reset" data-tip="Return to Pair [R]" aria-label="Smoothly Return Camera to Pair (Shortcut R)">
         <svg class="ux-jewel-svg" viewBox="0 0 22 22" fill="none" aria-hidden="true">
           <path d="M5.2 11a5.8 5.8 0 1 1 1.55 3.95M5.2 6.8V11h4.2" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
           <circle cx="11" cy="11" r="1.4" fill="currentColor" />
@@ -148,7 +340,7 @@ export function createUserExperienceHUD(
         </svg>
       </button>
 
-      <button type="button" class="ux-jewel-btn" id="ux-btn-guide" data-tip="Navigation Guide [?]" aria-expanded="false" aria-controls="ux-guide-dialog" aria-label="Open Navigation &amp; Gesture Guide (Shortcut ?)">
+      <button type="button" class="ux-jewel-btn ux-explore-only" id="ux-btn-guide" data-tip="Navigation Guide [?]" aria-expanded="false" aria-controls="ux-guide-dialog" aria-label="Open Navigation &amp; Gesture Guide (Shortcut ?)">
         <svg class="ux-jewel-svg" viewBox="0 0 22 22" fill="none" aria-hidden="true">
           <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.25" />
           <path d="M9.3 8.9a1.85 1.85 0 1 1 2.55 1.72c-.58.26-.85.62-.85 1.22M11 14.6h.01" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" />
@@ -193,7 +385,6 @@ export function createUserExperienceHUD(
     dockEl.style.setProperty('--dock-y', `${(ev.clientY - rect.top).toFixed(1)}px`);
   });
 
-  // Subtle magnetic micro-pull on each jewel button
   dockWrap.querySelectorAll<HTMLButtonElement>('.ux-jewel-btn').forEach((btn) => {
     btn.addEventListener('pointermove', (ev) => {
       if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
@@ -207,9 +398,9 @@ export function createUserExperienceHUD(
     });
   });
 
-  // 5. Whisper-Minimal Poetic Gesture Ribbon (auto-dissolves smoothly into pure cinema)
+  // 9. Whisper-Minimal Poetic Gesture Ribbon (hidden during film, appears gently when Free Explore unlocks!)
   const coachBar = document.createElement('aside');
-  coachBar.className = 'ux-gesture-ribbon';
+  coachBar.className = 'ux-gesture-ribbon is-hidden';
   coachBar.setAttribute('aria-label', 'Camera gesture hints');
   coachBar.innerHTML = `
     <div class="ux-ribbon-flow">
@@ -227,20 +418,19 @@ export function createUserExperienceHUD(
   `;
   rootEl.appendChild(coachBar);
 
-  let coachTimeout = window.setTimeout(() => {
-    coachBar.classList.add('is-hidden');
-  }, 12500);
-
+  let coachTimeout = 0;
   coachBar.addEventListener('pointerenter', () => window.clearTimeout(coachTimeout));
   coachBar.addEventListener('pointerleave', () => {
-    coachTimeout = window.setTimeout(() => coachBar.classList.add('is-hidden'), 5000);
+    if (isFreeExplore) {
+      coachTimeout = window.setTimeout(() => coachBar.classList.add('is-hidden'), 5000);
+    }
   });
   (coachBar.querySelector('.ux-coach-dismiss') as HTMLButtonElement).addEventListener('click', () => {
     window.clearTimeout(coachTimeout);
     coachBar.classList.add('is-hidden');
   });
 
-  // 6. Illustrated Romantic Gesture & Accessibility Carte Modal
+  // 10. Illustrated Romantic Gesture Carte Modal (for Free Explore)
   const guideBackdrop = document.createElement('div');
   guideBackdrop.className = 'help-backdrop ux-carte-backdrop';
   guideBackdrop.id = 'ux-guide-dialog';
@@ -282,7 +472,7 @@ export function createUserExperienceHUD(
         <div class="help-row"><span>Fullscreen / Sound</span><kbd>F / M</kbd></div>
       </div>
       <p class="help-footer-tip">
-        Day, dusk, starlight, rain, and flight unfold on their own &mdash; linger anywhere you wish.
+        Our world is yours to roam freely &mdash; linger anywhere you wish.
       </p>
     </div>
   `;
@@ -347,6 +537,7 @@ export function createUserExperienceHUD(
 
   let guideOpen = false;
   const setGuideOpen = (open: boolean) => {
+    if (open && !isFreeExplore) return;
     guideOpen = open;
     if (guideOpen) setQualityOpen(false);
     guideBackdrop.classList.toggle('visible', guideOpen);
@@ -355,7 +546,7 @@ export function createUserExperienceHUD(
     if (guideOpen) {
       coachBar.classList.add('is-hidden');
       guideCloseBtn.focus();
-    } else {
+    } else if (isFreeExplore) {
       guideBtn.focus();
     }
   };
@@ -372,6 +563,7 @@ export function createUserExperienceHUD(
   });
 
   const handleResetView = () => {
+    if (!isFreeExplore) return;
     spawnHeartSparklesFromElement(resetBtn, 5);
     callbacks.onResetView();
     showToast('Returned gently to center view');
@@ -384,7 +576,7 @@ export function createUserExperienceHUD(
     soundBtn.classList.toggle('is-sound-on', !muted);
     soundBtn.classList.toggle('is-muted', muted);
     soundText.textContent = muted ? 'Quiet' : 'Sound';
-    showToast(muted ? 'Ambient thunder hushed' : 'Ambient sound awakened');
+    showToast(muted ? 'Ambient sound hushed' : 'Ambient sound awakened');
   };
   soundBtn.addEventListener('click', handleToggleSound);
 
@@ -416,7 +608,7 @@ export function createUserExperienceHUD(
       }
       return;
     }
-    if (e.key === '?' || (e.code === 'Slash' && e.shiftKey)) {
+    if ((e.key === '?' || (e.code === 'Slash' && e.shiftKey)) && isFreeExplore) {
       e.preventDefault();
       setGuideOpen(!guideOpen);
     } else if (e.code === 'KeyP' && !e.metaKey && !e.ctrlKey) {
@@ -426,7 +618,7 @@ export function createUserExperienceHUD(
     } else if (e.code === 'KeyF' && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       handleToggleFullscreen();
-    } else if (e.code === 'KeyR' && !e.metaKey && !e.ctrlKey) {
+    } else if (e.code === 'KeyR' && !e.metaKey && !e.ctrlKey && isFreeExplore) {
       e.preventDefault();
       handleResetView();
     } else if (e.code === 'KeyM' && !e.metaKey && !e.ctrlKey) {
@@ -441,5 +633,31 @@ export function createUserExperienceHUD(
   return {
     showToast,
     triggerShutterFlash,
+
+    showConfessionPrompt() {
+      confessionResolved = false;
+      confessionVeil.classList.remove('is-accepted', 'is-declined');
+      confessionVeil.classList.add('is-visible');
+    },
+
+    setDeclineEclipseProgress(fade01: number) {
+      eclipseCurtain.style.opacity = String(Math.max(0, Math.min(1, fade01)));
+    },
+
+    showCompletionInvitation() {
+      finaleVeil.classList.add('is-visible');
+    },
+
+    unlockFreeExploreHUD() {
+      isFreeExplore = true;
+      rootEl.classList.remove('is-cinema-film');
+      finaleVeil.classList.remove('is-visible');
+      coachBar.classList.remove('is-hidden');
+      window.clearTimeout(coachTimeout);
+      coachTimeout = window.setTimeout(() => {
+        coachBar.classList.add('is-hidden');
+      }, 13000);
+      showToast('Our World is now yours to explore freely');
+    },
   };
 }
