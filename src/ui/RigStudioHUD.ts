@@ -22,6 +22,12 @@ import {
 } from '../export/GlbAssetExporter';
 import { WEATHER_PRESETS, WeatherPresetId } from '../world/NordicAtmosphere';
 import { DEFAULT_OCEAN_PARAMS, OceanWaveParams } from '../world/NorthSeaOcean';
+import {
+  AppliedQualityMetrics,
+  QUALITY_STAGES,
+  QualityStageId,
+  RenderQualityController,
+} from '../world/RenderQualityManager';
 
 export type ActiveDragonId = 'light-fury' | 'toothless';
 
@@ -90,6 +96,7 @@ export const CAMERA_BOOKMARKS: CameraBookmark[] = [
 ];
 
 export interface RigStudioHUDCallbacks {
+  quality: RenderQualityController;
   onSelectCameraBookmark: (bookmark: CameraBookmark) => void;
   onSelectWeatherPreset: (presetId: WeatherPresetId) => void;
   onSunElevationChange: (elevDeg: number) => void;
@@ -171,21 +178,24 @@ export function createRigStudioHUD(
   };
 
   // Editorial Masthead + Studio Utility Bar
+  const initQM = callbacks.quality.getMetrics();
   const header = document.createElement('div');
   header.className = 'hud-header';
   header.innerHTML = `
     <div class="brand-card hud-collapsible">
-      <div class="brand-eyebrow">Northern Archipelago &middot; 62&deg;N</div>
+      <div class="brand-eyebrow">Night Fury &#9825; Light Fury &middot; 62&deg;N</div>
       <div class="brand-title-row">
         <span class="brand-dot"></span>
-        <span class="brand-title">Night Fury <em>&amp;</em> Light Fury</span>
+        <span class="brand-title">Our <em>World</em></span>
       </div>
-      <div class="brand-subtitle">Where Dusk Meets the Open Tide</div>
+      <div class="brand-subtitle">Sanctuary &amp; Atelier &middot; ${totalBones} Bones</div>
     </div>
     <div class="telemetry-row">
       <div class="telemetry-pill hud-collapsible" id="tel-fps"><strong>60</strong> FPS</div>
       <div class="telemetry-pill hud-collapsible" id="tel-lod"><strong>LOD0</strong> &middot; 0 tris</div>
-      <div class="telemetry-pill hud-collapsible"><strong>${totalBones}</strong> Bones</div>
+      <button class="telemetry-pill hud-collapsible is-active" id="btn-studio-quality" title="Cycle 5-Stage Render Resolution (I Whisper → V Masterpiece SSAA)">
+        Clarity <strong id="tel-quality-roman">${initQM.spec.roman}</strong> &middot; <span id="tel-quality-res">${initQM.renderWidth}&times;${initQM.renderHeight}</span>
+      </button>
       <button class="telemetry-pill hud-collapsible is-active" id="btn-cursor-gaze" title="Dragons Curiously Track Pointer When Perched [C]">
         Cursor Gaze <span class="kbd-hint">C</span>
       </button>
@@ -210,6 +220,9 @@ export function createRigStudioHUD(
 
   const fpsEl = header.querySelector('#tel-fps') as HTMLElement;
   const lodEl = header.querySelector('#tel-lod') as HTMLElement;
+  const studioQualityBtn = header.querySelector('#btn-studio-quality') as HTMLButtonElement;
+  const telQualityRoman = header.querySelector('#tel-quality-roman') as HTMLElement;
+  const telQualityRes = header.querySelector('#tel-quality-res') as HTMLElement;
   const gazeBtn = header.querySelector('#btn-cursor-gaze') as HTMLButtonElement;
   const lightningTopBtn = header.querySelector('#btn-lightning-top') as HTMLButtonElement;
   const photoBtn = header.querySelector('#btn-photo') as HTMLButtonElement;
@@ -1325,9 +1338,55 @@ export function createRigStudioHUD(
   const lodLabel = document.createElement('div');
   lodLabel.className = 'control-label-line';
   lodLabel.style.marginTop = '11px';
-  lodLabel.innerHTML = `<span>Mesh Level-of-Detail</span><span class="control-val" id="lod-mode-label">LOD0 Hero</span>`;
+  lodLabel.innerHTML = `<span>Render Resolution (5 Stages)</span><span class="control-val" id="res-stage-label">${initQM.spec.label} (${initQM.renderWidth}&times;${initQM.renderHeight})</span>`;
   secWorld.appendChild(lodLabel);
-  const lodModeSpan = lodLabel.querySelector('#lod-mode-label') as HTMLElement;
+  const resStageSpan = lodLabel.querySelector('#res-stage-label') as HTMLElement;
+
+  const resSegRow = document.createElement('div');
+  resSegRow.className = 'segmented-row';
+  const resButtons: HTMLButtonElement[] = [];
+
+  const syncStudioQualityUI = (m: AppliedQualityMetrics) => {
+    telQualityRoman.textContent = m.spec.roman;
+    telQualityRes.textContent = `${m.renderWidth}×${m.renderHeight}`;
+    resStageSpan.textContent = `${m.spec.label} (${m.renderWidth}×${m.renderHeight})`;
+    resButtons.forEach((rb) => {
+      const st = Number(rb.dataset.stage) as QualityStageId;
+      rb.classList.toggle('active', st === m.stage);
+    });
+  };
+
+  QUALITY_STAGES.forEach((st) => {
+    const b = document.createElement('button');
+    b.className = `seg-btn${st.stage === initQM.stage ? ' active' : ''}`;
+    b.dataset.stage = String(st.stage);
+    b.title = `Stage ${st.roman} · ${st.label} — ${st.subtitle}`;
+    b.textContent = st.roman;
+    b.addEventListener('click', () => {
+      const applied = callbacks.quality.setStage(st.stage);
+      syncStudioQualityUI(applied);
+      showToast(`Resolution Stage ${applied.spec.roman} · ${applied.spec.label} (${applied.renderWidth}×${applied.renderHeight})`);
+    });
+    resButtons.push(b);
+    resSegRow.appendChild(b);
+  });
+  secWorld.appendChild(resSegRow);
+
+  studioQualityBtn.addEventListener('click', () => {
+    const cur = callbacks.quality.getCurrentStage();
+    const next = ((cur % 5) + 1) as QualityStageId;
+    const applied = callbacks.quality.setStage(next);
+    syncStudioQualityUI(applied);
+    showToast(`Resolution Stage ${applied.spec.roman} · ${applied.spec.label} (${applied.renderWidth}×${applied.renderHeight})`);
+  });
+  callbacks.quality.onChange(syncStudioQualityUI);
+
+  const meshLodLabel = document.createElement('div');
+  meshLodLabel.className = 'control-label-line';
+  meshLodLabel.style.marginTop = '11px';
+  meshLodLabel.innerHTML = `<span>Mesh Level-of-Detail</span><span class="control-val" id="lod-mode-label">LOD0 Hero</span>`;
+  secWorld.appendChild(meshLodLabel);
+  const lodModeSpan = meshLodLabel.querySelector('#lod-mode-label') as HTMLElement;
 
   const segRow = document.createElement('div');
   segRow.className = 'segmented-row';

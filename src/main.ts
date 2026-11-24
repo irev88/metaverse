@@ -19,6 +19,7 @@ import {
   TOOTHLESS_PERCH_POSE,
 } from './world/NordicCliffWorld';
 import { createLivingWorldDirector, LivingWorldDirector } from './world/LivingWorldDirector';
+import { createRenderQualityManager } from './world/RenderQualityManager';
 import { createLoadingScreenController } from './ui/LoadingScreen';
 import { CAMERA_BOOKMARKS, CameraBookmark, createRigStudioHUD } from './ui/RigStudioHUD';
 import { createUserExperienceHUD, UserExperienceHUDController } from './ui/UserExperienceHUD';
@@ -36,29 +37,7 @@ function resolveAppMode(): AppInterfaceMode {
 async function bootstrap(): Promise<void> {
   const appMode = resolveAppMode();
   const isUserMode = appMode === 'user';
-
-  if (isUserMode) {
-    document.title = 'Where Dusk Meets the Open Tide — Interactive 3D World';
-    const topMeta = document.querySelector('.lc-top-meta');
-    if (topMeta) {
-      topMeta.innerHTML = `
-        <span class="lc-live-coord">
-          <span class="lc-live-dot"></span>
-          INTERACTIVE 3D LIVING WORLD
-        </span>
-      `;
-      (topMeta as HTMLElement).style.justifyContent = 'center';
-    }
-    const eyebrowEl = document.querySelector('.lc-eyebrow');
-    if (eyebrowEl) eyebrowEl.textContent = 'INTERACTIVE 3D SANCTUARY';
-    const bottomMeta = document.querySelector('.lc-bottom-meta');
-    if (bottomMeta) {
-      bottomMeta.innerHTML = `
-        <span>DRAG TO ROTATE &middot; RIGHT-DRAG TO PAN &middot; SCROLL TO ZOOM</span>
-        <span>WASD / ARROWS TO MOVE &middot; DOUBLE-CLICK TO GLIDE CLOSER</span>
-      `;
-    }
-  }
+  document.title = 'Our World';
 
   const loadingScreen = createLoadingScreenController();
   const canvasContainer = document.getElementById('canvas-container')!;
@@ -194,8 +173,15 @@ async function bootstrap(): Promise<void> {
   lightFuryAsset.rootGroup.updateMatrixWorld(true);
   const lightFuryController = new LightFuryRigController(lightFuryAsset);
 
-  // 4. Synchronized Courtship Duet & Solo Flight Choreographer
-  await loadingScreen.advanceTo(94, 'Compiling shaders & calibrating twin courtship flight splines…');
+  // 4. Synchronized Courtship Duet & Solo Flight Choreographer + 5-Stage Resolution Engine
+  await loadingScreen.advanceTo(94);
+  const qualityController = createRenderQualityManager(
+    renderer,
+    scene,
+    composer,
+    bloomPass,
+    atmosphere.sunLight
+  );
   const flightChoreographer = new ToothlessFlightChoreographer(
     toothlessAsset,
     toothlessController,
@@ -233,6 +219,7 @@ async function bootstrap(): Promise<void> {
       flightChoreographer
     );
     userHud = createUserExperienceHUD(hudRoot, {
+      quality: qualityController,
       onCaptureSnapshot() {
         snapshotPending = true;
       },
@@ -257,6 +244,7 @@ async function bootstrap(): Promise<void> {
       lightFuryController,
       flightChoreographer,
       {
+        quality: qualityController,
         initialWeatherPreset,
         onSelectCameraBookmark(bm: CameraBookmark) {
           activeBookmark = bm;
@@ -457,9 +445,7 @@ async function bootstrap(): Promise<void> {
     const h = window.innerHeight;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(w, h);
-    composer.setSize(w, h);
-    bloomPass.resolution.set(w, h);
+    qualityController.handleResize(w, h);
   });
 
   // Warm-up render behind the twilight curtain so the reveal is 60 FPS butter-smooth!
@@ -655,12 +641,12 @@ async function bootstrap(): Promise<void> {
         const link = document.createElement('a');
         const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
         link.download = isUserMode
-          ? `twin-furies-sanctuary-${stamp}.png`
-          : `twin-furies-atelier-${stamp}.png`;
+          ? `our-world-${stamp}.png`
+          : `our-world-studio-${stamp}.png`;
         link.href = dataUrl;
         link.click();
         triggerShutter();
-        showToastMsg('Saved HD Snapshot (.PNG)');
+        showToastMsg('Memory Captured (.PNG)');
       } catch {
         showToastMsg('Snapshot unavailable on this device');
       }

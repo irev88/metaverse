@@ -120,46 +120,47 @@ export function generateToothlessScalePBRMaps(resolution = 1024): ScalePBRMaps {
       // Secondary finer granular micro-tubercles inside crevices and fine skin zones
       const micro = samplePeriodicVoronoi(u, v, fineCells, fineCells, 409, 1.0);
 
-      // Domed polygonal scale crown with subtle imbrication (slight directional tilt)
-      const macroCrown = smoothstep(0.015, 0.24, macro.edgeDist);
-      const microCrown = smoothstep(0.02, 0.28, micro.edgeDist);
+      // Domed polygonal scale crown with cushioned bevels (avoids harsh grazing mirror facets in crevices)
+      const macroCrown = smoothstep(0.034, 0.27, macro.edgeDist);
+      const microCrown = smoothstep(0.03, 0.29, micro.edgeDist);
 
       // Fine keratin micro-striae & battle micro-scratches across scale crowns
       const scratchWave =
         Math.sin((u * 135 + v * 47 + macro.cellTone * 6.28) * Math.PI * 2) *
         Math.sin((u * 29 - v * 113 + macro.cellTone * 3.14) * Math.PI * 2);
-      const microScratch = scratchWave > 0.86 ? -0.055 * (scratchWave - 0.86) * 7.0 : 0.0;
+      const microScratch = scratchWave > 0.86 ? -0.045 * (scratchWave - 0.86) * 7.0 : 0.0;
 
-      const imbrication = Math.max(-0.08, Math.min(0.08, macro.cellAngle * 0.11)) * macroCrown;
+      const imbrication = Math.max(-0.055, Math.min(0.055, macro.cellAngle * 0.08)) * macroCrown;
       const h =
-        macroCrown * (0.76 + 0.14 * macro.cellTone) +
-        microCrown * 0.22 * (1.0 - macroCrown * 0.55) +
+        macroCrown * (0.72 + 0.12 * macro.cellTone) +
+        microCrown * 0.18 * (1.0 - macroCrown * 0.55) +
         imbrication +
         microScratch * macroCrown;
 
       heightField[idx] = Math.max(0, Math.min(1, h));
 
-      // Freshly-shed-snake satin sheen on crowns (~0.29-0.38), dry matte crevices (~0.84)
+      // Composed satin sheen on crowns (~0.40-0.48), deeply matte non-reflective crevices (~0.90-0.95)
       const creaseFactor = 1.0 - macroCrown;
       const baseRough =
-        0.30 +
+        0.39 +
         0.09 * (1.0 - macro.cellTone) +
         creaseFactor * 0.52 +
-        (1.0 - microCrown) * 0.08 -
-        microScratch * 0.4;
-      roughField[idx] = Math.max(0.18, Math.min(0.95, baseRough));
+        (1.0 - microCrown) * 0.06 -
+        microScratch * 0.3;
+      roughField[idx] = Math.max(0.28, Math.min(0.96, baseRough));
 
       // Deep interstitial ambient occlusion between scales
-      const ao = 0.24 + 0.76 * smoothstep(0.0, 0.16, macro.edgeDist) * (0.85 + 0.15 * microCrown);
-      aoField[idx] = Math.max(0.15, Math.min(1.0, ao));
+      const ao = 0.18 + 0.82 * smoothstep(0.015, 0.20, macro.edgeDist) * (0.86 + 0.14 * microCrown);
+      aoField[idx] = Math.max(0.14, Math.min(1.0, ao));
 
       // Subtle per-scale charcoal/obsidian tonal variation
       toneField[idx] = macro.cellTone * 0.7 + micro.cellTone * 0.3;
 
-      // Per-scale thin-film interference thickness variation (drives teal-blue-violet iridescence)
+      // Thin-film interference strictly on raised scale crowns — zero iridescent rim inside crevices!
+      const crownMask = macroCrown * macroCrown;
       iridField[idx] = Math.max(
         0,
-        Math.min(1, 0.32 + 0.58 * macro.cellTone * macroCrown + 0.1 * microCrown)
+        Math.min(1, 0.24 * crownMask + 0.62 * macro.cellTone * crownMask + 0.08 * microCrown * macroCrown)
       );
     }
   }
@@ -188,7 +189,7 @@ export function generateToothlessScalePBRMaps(resolution = 1024): ScalePBRMaps {
   const aoImg = aoCtx.createImageData(size, size);
   const iridImg = iridCtx.createImageData(size, size);
 
-  const normalStrength = 3.6;
+  const normalStrength = 2.05;
 
   for (let y = 0; y < size; y++) {
     const ym1 = (y - 1 + size) % size;

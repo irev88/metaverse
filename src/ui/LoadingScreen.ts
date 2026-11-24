@@ -1,10 +1,11 @@
 export interface LoadingScreenController {
-  advanceTo: (targetPct: number, stageCaption: string) => Promise<void>;
+  advanceTo: (targetPct: number, stageCaption?: string) => Promise<void>;
   completeAndDissolve: (hudRoot: HTMLElement) => Promise<void>;
 }
 
 declare global {
   interface Window {
+    __bloomLoadingComplete?: () => void;
     __stopLoadingAmbient?: () => void;
   }
 }
@@ -19,86 +20,59 @@ function nextPaint(): Promise<void> {
 
 export function createLoadingScreenController(): LoadingScreenController {
   const curtain = document.getElementById('loading-curtain');
-  const fillEl = document.getElementById('lc-progress-fill');
-  const stageEl = document.getElementById('lc-stage-text');
-  const pctEl = document.getElementById('lc-pct-text');
-  const pillEls = Array.from(document.querySelectorAll<HTMLElement>('#lc-stage-pills .lc-stage-pill'));
+  const leftArc = document.getElementById('lc-heart-left') as SVGPathElement | null;
+  const rightArc = document.getElementById('lc-heart-right') as SVGPathElement | null;
 
-  let goalPct = 4;
-  let displayedPct = 2;
+  let goalPct = 8;
+  let displayedPct = 6;
   let tickerRaf = 0;
 
-  const syncStagePills = (pct: number) => {
-    // 4 stages: [0..38], [38..62], [62..86], [86..100]
-    const activeIdx = pct >= 100 ? 4 : pct >= 84 ? 3 : pct >= 60 ? 2 : pct >= 36 ? 1 : 0;
-    pillEls.forEach((el, idx) => {
-      el.classList.toggle('is-done', idx < activeIdx);
-      el.classList.toggle('is-active', idx === activeIdx);
-    });
+  const syncHeartArcs = (pct: number) => {
+    const clamped = Math.max(0, Math.min(100, pct));
+    const dashOffset = (100 - clamped).toFixed(2);
+    if (leftArc) leftArc.style.strokeDashoffset = dashOffset;
+    if (rightArc) rightArc.style.strokeDashoffset = dashOffset;
   };
 
   const stepCounter = () => {
     const diff = goalPct - displayedPct;
-    if (Math.abs(diff) > 0.15) {
-      displayedPct += diff * 0.24;
+    if (Math.abs(diff) > 0.12) {
+      displayedPct += diff * 0.22;
     } else {
       displayedPct = goalPct;
     }
-    if (fillEl) {
-      fillEl.style.width = `${displayedPct.toFixed(1)}%`;
-    }
-    if (pctEl) {
-      pctEl.textContent = `${String(Math.round(displayedPct)).padStart(2, '0')}%`;
-    }
-    syncStagePills(displayedPct);
+    syncHeartArcs(displayedPct);
     if (displayedPct < 99.9 || goalPct < 100) {
       tickerRaf = requestAnimationFrame(stepCounter);
     }
   };
   tickerRaf = requestAnimationFrame(stepCounter);
 
-  const setCaptionSmooth = (caption?: string) => {
-    if (!caption || !stageEl || stageEl.textContent === caption) return;
-    stageEl.classList.add('is-switching');
-    window.setTimeout(() => {
-      stageEl.textContent = caption;
-      stageEl.classList.remove('is-switching');
-    }, 95);
-  };
-
-  const renderProgress = (pct: number, caption?: string) => {
-    goalPct = Math.max(goalPct, Math.min(100, pct));
-    if (fillEl) {
-      fillEl.style.width = `${goalPct.toFixed(1)}%`;
-    }
-    syncStagePills(goalPct);
-    setCaptionSmooth(caption);
-  };
-
-  renderProgress(6, 'Preparing WebGL2 twilight canvas…');
+  syncHeartArcs(8);
 
   return {
-    async advanceTo(targetPct: number, stageCaption: string): Promise<void> {
-      renderProgress(targetPct, stageCaption);
+    async advanceTo(targetPct: number): Promise<void> {
+      goalPct = Math.max(goalPct, Math.min(100, targetPct));
       await nextPaint();
     },
 
     async completeAndDissolve(hudRoot: HTMLElement): Promise<void> {
       goalPct = 100;
       displayedPct = 100;
-      if (fillEl) fillEl.style.width = '100%';
-      if (pctEl) pctEl.textContent = '100%';
-      syncStagePills(100);
-      setCaptionSmooth('The horizon is ready.');
+      syncHeartArcs(100);
+      if (curtain) {
+        curtain.classList.add('is-completing');
+      }
+      window.__bloomLoadingComplete?.();
       await nextPaint();
-      await new Promise((r) => setTimeout(r, 320));
+      await new Promise((r) => setTimeout(r, 380));
       if (curtain) {
         curtain.classList.add('is-dissolving');
         setTimeout(() => {
           if (tickerRaf) cancelAnimationFrame(tickerRaf);
           window.__stopLoadingAmbient?.();
           curtain.remove();
-        }, 1280);
+        }, 1320);
       }
       hudRoot.classList.remove('hud-entering');
     },

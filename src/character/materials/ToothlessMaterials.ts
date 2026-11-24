@@ -128,8 +128,9 @@ function injectHybridDragonShader(
               }
             }
           }
-          float border = clamp((d2 - d1) / 0.32, 0.0, 1.0);
-          return smoothstep(0.0, 0.48, border) * (1.0 - 0.26 * d1 * d1);
+          float border = clamp((d2 - d1) / 0.34, 0.0, 1.0);
+          // Cushioned osteoderm dome profile — avoids steep vertical edge walls that catch harsh sky/sun glare
+          return smoothstep(0.08, 0.64, border) * (1.0 - 0.18 * d1 * d1);
         }
 
         // Evaluates organically dithered, vague multi-tier scale blending (zero sharp boundary lines!)
@@ -159,16 +160,16 @@ function injectHybridDragonShader(
 
         #ifdef USE_MAP
           vec4 fineAlbedo = texture2D(map, vMapUv * 2.85);
-          diffuseColor.rgb = mix(fineAlbedo.rgb * 0.94, diffuseColor.rgb * 1.08, macroWeight);
+          diffuseColor.rgb = mix(fineAlbedo.rgb * 0.94, diffuseColor.rgb * 1.02, macroWeight);
         #endif
 
         if (vAnatomyData.x > 0.18 && !${isWingMembrane ? 'true' : 'false'}) {
           vec2 scute = evalBlendedScuteHierarchy(vObjPos, vAnatomyData.x);
           if (scute.y > 0.005) {
-            // Subtle, natural obsidian-slate tonal modulation so small & large scales merge seamlessly!
-            vec3 plateCrown = diffuseColor.rgb * 1.22 + vec3(0.009, 0.011, 0.015);
-            vec3 plateGroove = diffuseColor.rgb * 0.52;
-            diffuseColor.rgb = mix(diffuseColor.rgb, mix(plateGroove, plateCrown, scute.x), scute.y * 0.68);
+            // Subtle, natural obsidian-slate tonal modulation so individual scales & crevices read clearly without harsh contrast!
+            vec3 plateCrown = diffuseColor.rgb * 1.14 + vec3(0.006, 0.008, 0.011);
+            vec3 plateGroove = diffuseColor.rgb * 0.46;
+            diffuseColor.rgb = mix(diffuseColor.rgb, mix(plateGroove, plateCrown, scute.x), scute.y * 0.64);
           }
         }
 
@@ -192,16 +193,20 @@ function injectHybridDragonShader(
         float macroRWeight = smoothstep(0.08, 0.96, vAnatomyData.x + rScaleDither);
         float scarRWeight = clamp(vAnatomyData.y, 0.0, 1.0);
         #ifdef USE_ROUGHNESSMAP
+          float macroMapRough = texture2D(roughnessMap, vRoughnessMapUv).g;
           float fineRough = texture2D(roughnessMap, vRoughnessMapUv * 2.85).g;
-          roughnessFactor = mix(fineRough * 1.04, roughnessFactor * 0.88, macroRWeight);
+          // Preserve matte crevice roughness from the 2D scale map while calming crown gloss in dense scale zones!
+          roughnessFactor = mix(fineRough * 1.04, max(macroMapRough, 0.44), macroRWeight);
         #endif
         if (vAnatomyData.x > 0.18 && !${isWingMembrane ? 'true' : 'false'}) {
           vec2 scuteR = evalBlendedScuteHierarchy(vObjPos, vAnatomyData.x);
           if (scuteR.y > 0.005) {
-            roughnessFactor = mix(roughnessFactor, mix(0.66, 0.30, scuteR.x), scuteR.y * 0.62);
+            float scuteCrevice = 1.0 - smoothstep(0.12, 0.72, scuteR.x);
+            float targetScuteRough = mix(0.46, 0.92, scuteCrevice);
+            roughnessFactor = mix(roughnessFactor, max(roughnessFactor * 0.92, targetScuteRough), scuteR.y * 0.72);
           }
         }
-        roughnessFactor = mix(roughnessFactor, 0.44, scarRWeight * 0.75);
+        roughnessFactor = mix(roughnessFactor, 0.48, scarRWeight * 0.75);
         roughnessFactor = mix(roughnessFactor, 0.072, uLightningCloak * 0.88);
         roughnessFactor = clamp(roughnessFactor, 0.068, 0.96);`
       )
@@ -230,17 +235,18 @@ function injectHybridDragonShader(
           vec2 scuteN = (vAnatomyData.x > 0.18 && !${isWingMembrane ? 'true' : 'false'})
             ? evalBlendedScuteHierarchy(vObjPos, vAnatomyData.x)
             : vec2(0.5, 0.0);
+          // Cushioned low-relief scale normals in dense face & lower-leg regions so gaps don't catch bright grazing glare!
           vec3 blendedMapN = normalize(mix(
-            vec3(mapNFine.xy * 0.90, max(mapNFine.z, 0.15)),
-            vec3(mapNMacro.xy * 1.28, max(mapNMacro.z, 0.15)),
+            vec3(mapNFine.xy * 0.82, max(mapNFine.z, 0.25)),
+            vec3(mapNMacro.xy * 0.66, max(mapNMacro.z, 0.35)),
             mScaleW
           ));
           blendedMapN.xy *= (1.0 - scarW * 0.72);
-          blendedMapN.xy *= normalScale * (1.0 - scuteN.y * 0.38);
+          blendedMapN.xy *= normalScale * (1.0 - scuteN.y * 0.46);
           vec3 tbnN = tbn * blendedMapN;
           normal = dot(tbnN, tbnN) > 1e-8 ? normalize(tbnN) : normal;
           if (scuteN.y > 0.005 && !${isWingMembrane ? 'true' : 'false'}) {
-            float plateBumpH = scuteN.x * scuteN.y * 0.013 * (1.0 - scarW * 0.8);
+            float plateBumpH = scuteN.x * scuteN.y * 0.0042 * (1.0 - scarW * 0.8);
             vec3 dPdx = dFdx( -vViewPosition );
             vec3 dPdy = dFdy( -vViewPosition );
             vec3 r1 = cross( dPdy, normal );
@@ -248,12 +254,52 @@ function injectHybridDragonShader(
             float det = dot( dPdx, r1 );
             float signDet = det < 0.0 ? -1.0 : 1.0;
             vec3 surfGrad = signDet * ( dFdx( plateBumpH ) * r1 + dFdy( plateBumpH ) * r2 );
+            // Soft slope limiter so inter-scale borders never tilt into bright mirror-like grazing edges!
+            float maxGrad = 0.26 * abs( det ) + 1e-6;
+            float gradLen = length( surfGrad );
+            if ( gradLen > maxGrad ) {
+              surfGrad *= maxGrad / gradLen;
+            }
             vec3 pertPlate = abs( det ) * normal - surfGrad;
             normal = dot( pertPlate, pertPlate ) > 1e-12 ? normalize( pertPlate ) : normal;
           }
         #elif defined( USE_BUMPMAP )
           normal = perturbNormalArb( - vViewPosition, normal, dHdxy_fwd(), faceDirection );
         #endif`
+      )
+      .replace(
+        '#include <aomap_fragment>',
+        `#include <aomap_fragment>
+        // Physically grounded Inter-Scale Cavity Specular Occlusion:
+        // Keeps dense face & lower-leg scales and their interstitial gaps subtly visible via soft texture & gentle crown sheen,
+        // while suppressing distracting bright/glowing light reflections from inside the narrow gaps between scales!
+        if (!${isWingMembrane ? 'true' : 'false'}) {
+          float aoScaleZone = smoothstep(0.08, 0.96, vAnatomyData.x);
+          float uvGap = 0.0;
+          #ifdef USE_AOMAP
+            float aoMacroSample = texture2D(aoMap, vAoMapUv).r;
+            float aoFineSample = texture2D(aoMap, vAoMapUv * 2.85).r;
+            uvGap = 1.0 - smoothstep(0.22, 0.86, mix(aoFineSample, aoMacroSample, aoScaleZone));
+          #endif
+          vec2 scuteOcc = vAnatomyData.x > 0.18 ? evalBlendedScuteHierarchy(vObjPos, vAnatomyData.x) : vec2(1.0, 0.0);
+          float voronoiGap = (1.0 - smoothstep(0.14, 0.74, scuteOcc.x)) * scuteOcc.y;
+          float combinedGap = clamp(max(uvGap * (0.45 + 0.55 * aoScaleZone), voronoiGap), 0.0, 1.0);
+          float denseScaleCalm = mix(1.0, 0.68, aoScaleZone) * (1.0 - uLightningCloak * 0.65);
+          float gapSpecOcclusion = mix(1.0, 0.14, combinedGap * (0.55 + 0.45 * aoScaleZone)) * denseScaleCalm;
+          float gapDiffuseOcclusion = mix(1.0, 0.58, combinedGap * aoScaleZone);
+
+          reflectedLight.directSpecular *= gapSpecOcclusion;
+          reflectedLight.indirectSpecular *= gapSpecOcclusion;
+          reflectedLight.directDiffuse *= gapDiffuseOcclusion;
+          #ifdef USE_CLEARCOAT
+            clearcoatSpecularDirect *= gapSpecOcclusion * mix(1.0, 0.55, aoScaleZone);
+            clearcoatSpecularIndirect *= gapSpecOcclusion * mix(1.0, 0.55, aoScaleZone);
+          #endif
+          #ifdef USE_SHEEN
+            sheenSpecularDirect *= mix(1.0, 0.25, combinedGap);
+            sheenSpecularIndirect *= mix(1.0, 0.25, combinedGap);
+          #endif
+        }`
       )
       .replace(
         '#include <emissivemap_fragment>',
@@ -326,24 +372,24 @@ export function createToothlessMaterialSet(): ToothlessMaterialSet {
     color: new THREE.Color(0xffffff),
     map: maps.albedoMap,
     normalMap: maps.normalMap,
-    normalScale: new THREE.Vector2(1.28, 1.28),
+    normalScale: new THREE.Vector2(0.88, 0.88),
     roughnessMap: maps.roughnessMap,
-    roughness: 0.88,
+    roughness: 0.90,
     aoMap: maps.aoMap,
-    aoMapIntensity: 0.88,
-    metalness: 0.05,
-    // Framestore 2025 "freshly-shed snake" blue-teal-violet thin-film iridescence
-    iridescence: 0.62,
-    iridescenceIOR: 1.40,
+    aoMapIntensity: 0.92,
+    metalness: 0.04,
+    // Subtle "freshly-shed snake" blue-teal-violet thin-film iridescence on scale crowns
+    iridescence: 0.46,
+    iridescenceIOR: 1.38,
     iridescenceThicknessRange: [260, 470],
     iridescenceThicknessMap: maps.iridescenceThicknessMap,
-    // Crisp satin keratin clearcoat + grazing midnight-slate sheen for muscular readability
-    clearcoat: 0.34,
-    clearcoatRoughness: 0.30,
-    sheen: 0.44,
-    sheenRoughness: 0.48,
-    sheenColor: new THREE.Color(0x213f59),
-    envMapIntensity: 1.48,
+    // Composed satin keratin clearcoat + soft midnight-slate sheen without gap glare
+    clearcoat: 0.22,
+    clearcoatRoughness: 0.38,
+    sheen: 0.34,
+    sheenRoughness: 0.54,
+    sheenColor: new THREE.Color(0x1d354b),
+    envMapIntensity: 1.24,
   });
   injectHybridDragonShader(skinMaterial, uniforms, false);
 

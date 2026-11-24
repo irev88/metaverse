@@ -8,20 +8,20 @@
 @import '@fontsource/plus-jakarta-sans/600.css';
 
 :root {
-  --glass-bg: linear-gradient(165deg, rgba(14, 19, 31, 0.76) 0%, rgba(9, 13, 22, 0.84) 100%);
-  --glass-surface-soft: rgba(255, 248, 244, 0.038);
-  --glass-surface-hover: rgba(236, 214, 206, 0.092);
-  --glass-border: rgba(226, 212, 206, 0.14);
-  --glass-border-strong: rgba(236, 204, 190, 0.38);
+  --glass-bg: linear-gradient(165deg, rgba(19, 15, 30, 0.74) 0%, rgba(11, 10, 22, 0.84) 100%);
+  --glass-surface-soft: rgba(255, 244, 248, 0.044);
+  --glass-surface-hover: rgba(244, 206, 220, 0.11);
+  --glass-border: rgba(242, 214, 224, 0.16);
+  --glass-border-strong: rgba(245, 202, 218, 0.44);
 
-  --accent-champagne: #ebd0b7;
-  --accent-rose: #e7b5c6;
-  --accent-moonstone: #adc8e8;
-  --accent-seafoam: #9fd8c8;
+  --accent-champagne: #f5d8c2;
+  --accent-rose: #f2b5cc;
+  --accent-moonstone: #c2d4f8;
+  --accent-seafoam: #a8dfd0;
 
-  --text-primary: #f4f0eb;
-  --text-secondary: #c9c4be;
-  --text-muted: #8f99ab;
+  --text-primary: #faf5f7;
+  --text-secondary: #d8ccd4;
+  --text-muted: #9d94ad;
 
   --font-serif: 'Cormorant Garamond', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -1451,24 +1451,28 @@ input[type='range']::-moz-range-thumb {
   transition: opacity 0.28s var(--ease-out-expo), visibility 0.28s ease;
 }
 
-.help-backdrop.open {
+.help-backdrop.open,
+.help-backdrop.visible {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
 }
 
 .help-modal {
-  width: min(540px, 94vw);
-  background: linear-gradient(165deg, rgba(16, 22, 36, 0.94) 0%, rgba(10, 14, 24, 0.96) 100%);
-  border: 1px solid rgba(235, 208, 183, 0.28);
-  border-radius: 18px;
-  padding: 22px 24px 20px;
-  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.68);
-  transform: translateY(10px) scale(0.98);
-  transition: transform 0.28s var(--ease-out-expo);
+  width: min(560px, 94vw);
+  background: linear-gradient(165deg, rgba(20, 15, 32, 0.94) 0%, rgba(11, 10, 22, 0.97) 100%);
+  backdrop-filter: blur(26px) saturate(145%);
+  -webkit-backdrop-filter: blur(26px) saturate(145%);
+  border: 1px solid rgba(242, 181, 204, 0.30);
+  border-radius: 22px;
+  padding: 24px 26px 22px;
+  box-shadow: 0 32px 84px rgba(3, 2, 10, 0.72), inset 0 1px 0 rgba(255, 240, 246, 0.10);
+  transform: translateY(12px) scale(0.98);
+  transition: transform 0.34s var(--ease-out-expo);
 }
 
-.help-backdrop.open .help-modal {
+.help-backdrop.open .help-modal,
+.help-backdrop.visible .help-modal {
   transform: translateY(0) scale(1);
 }
 
@@ -1646,204 +1650,647 @@ input[type='range']::-moz-range-thumb {
 }
 
 /* ==========================================================================
-   USER INTERFACE (PURE LIVING-CINEMA VIEWER MODE & ACCESSIBILITY)
+   ROMANTIC HIGH-END DIGITAL-ARTWORK VIEWER EXPERIENCE ("OUR WORLD")
    ========================================================================== */
 #hud-root.ux-viewer-mode {
   pointer-events: none;
 }
 
-.ux-utility-bar {
+/* 1. Museum Passe-Partout Filigree Frame & Warm Twilight Vignette */
+.ux-artwork-frame {
   position: fixed;
-  top: max(16px, env(safe-area-inset-top, 16px));
-  right: max(16px, env(safe-area-inset-right, 16px));
-  z-index: 20;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 86% 84% at 50% 50%,
+    transparent 64%,
+    rgba(14, 9, 22, 0.34) 100%
+  );
+}
+
+.ux-artwork-frame::after {
+  content: '';
+  position: absolute;
+  inset: 13px;
+  border-radius: 18px;
+  border: 1px solid rgba(245, 216, 226, 0.085);
+  box-shadow: inset 0 0 38px rgba(242, 181, 204, 0.035);
+}
+
+.ux-frame-corner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-color: rgba(245, 208, 222, 0.28);
+  border-style: solid;
+  opacity: 0.78;
+}
+
+.ux-fc-tl {
+  top: 12px;
+  left: 12px;
+  border-width: 1px 0 0 1px;
+  border-top-left-radius: 16px;
+}
+
+.ux-fc-tr {
+  top: 12px;
+  right: 12px;
+  border-width: 1px 1px 0 0;
+  border-top-right-radius: 16px;
+}
+
+.ux-fc-bl {
+  bottom: 12px;
+  left: 12px;
+  border-width: 0 0 1px 1px;
+  border-bottom-left-radius: 16px;
+}
+
+.ux-fc-br {
+  bottom: 12px;
+  right: 12px;
+  border-width: 0 1px 1px 0;
+  border-bottom-right-radius: 16px;
+}
+
+/* 2. Floating Heart Sparkles FX Layer */
+.ux-fx-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ux-micro-heart {
+  position: fixed;
+  font-size: 13px;
+  line-height: 1;
+  color: #f6bdd2;
+  text-shadow: 0 0 10px rgba(246, 189, 210, 0.72);
+  transform: translate(-50%, -50%) scale(var(--hs, 0.9));
+  animation: uxHeartFloat 1.05s var(--ease-out-expo) forwards;
+}
+
+@keyframes uxHeartFloat {
+  0% {
+    opacity: 0.95;
+    transform: translate(-50%, -50%) scale(0.4) rotate(0deg);
+  }
+  28% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--hx, 0px)), calc(-50% + var(--hy, -48px)))
+      scale(var(--hs, 1))
+      rotate(var(--hr, 12deg));
+  }
+}
+
+/* Poetic Toast Enhancement */
+.ux-poetic-toast {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
+  border-color: rgba(245, 198, 216, 0.34);
+  background: linear-gradient(155deg, rgba(21, 15, 33, 0.86) 0%, rgba(12, 10, 23, 0.92) 100%);
+  box-shadow: 0 18px 46px rgba(4, 2, 12, 0.56), 0 0 24px rgba(242, 181, 204, 0.12);
+}
+
+.ux-toast-glyph {
+  color: var(--accent-rose);
+  font-size: 13px;
+}
+
+/* 3. Sculpted Celestial Glass Dock with Cursor-Reactive Rose-Gold Illumination */
+.ux-dock-wrapper {
+  position: fixed;
+  top: max(22px, env(safe-area-inset-top, 22px));
+  right: max(24px, env(safe-area-inset-right, 24px));
+  z-index: 22;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   pointer-events: auto;
 }
 
-.ux-pill-btn {
+.ux-celestial-dock {
+  --dock-x: 50%;
+  --dock-y: 50%;
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  min-height: 36px;
-  padding: 7px 13px;
+  gap: 5px;
+  padding: 5px;
   border-radius: 999px;
-  border: 1px solid rgba(235, 218, 208, 0.22);
-  background: rgba(10, 14, 24, 0.68);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  color: rgba(245, 241, 236, 0.94);
+  background:
+    radial-gradient(
+      140px circle at var(--dock-x) var(--dock-y),
+      rgba(246, 196, 216, 0.16),
+      transparent 72%
+    ),
+    linear-gradient(165deg, rgba(18, 14, 29, 0.66) 0%, rgba(10, 9, 20, 0.78) 100%);
+  backdrop-filter: blur(22px) saturate(155%);
+  -webkit-backdrop-filter: blur(22px) saturate(155%);
+  border: 1px solid rgba(245, 212, 224, 0.22);
+  box-shadow:
+    0 18px 44px rgba(3, 2, 11, 0.48),
+    inset 0 1px 0 rgba(255, 244, 248, 0.12);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.ux-celestial-dock:hover {
+  border-color: rgba(246, 198, 216, 0.36);
+  box-shadow:
+    0 22px 52px rgba(3, 2, 11, 0.56),
+    0 0 28px rgba(242, 181, 204, 0.10),
+    inset 0 1px 0 rgba(255, 244, 248, 0.18);
+}
+
+.ux-jewel-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6.5px;
+  min-height: 35px;
+  min-width: 35px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(250, 243, 246, 0.90);
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
   letter-spacing: 0.03em;
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
   transition:
-    background 0.2s ease,
-    border-color 0.2s ease,
-    transform 0.18s ease,
-    color 0.2s ease;
+    background 0.24s var(--ease-out-expo),
+    border-color 0.24s var(--ease-out-expo),
+    color 0.22s ease,
+    box-shadow 0.24s var(--ease-out-expo),
+    transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
-.ux-pill-btn:hover {
-  background: rgba(24, 32, 50, 0.84);
-  border-color: rgba(235, 208, 183, 0.48);
+.ux-jewel-btn:not(:has(.ux-jewel-label)) {
+  padding: 6px 8.5px;
+}
+
+.ux-jewel-btn:hover {
+  background: rgba(246, 202, 220, 0.12);
+  border-color: rgba(246, 202, 220, 0.30);
   color: #ffffff;
-  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(242, 181, 204, 0.12);
 }
 
-.ux-pill-btn:active {
-  transform: translateY(0);
+.ux-jewel-btn.is-active {
+  background: linear-gradient(135deg, rgba(242, 181, 204, 0.22), rgba(194, 212, 248, 0.18));
+  border-color: rgba(245, 204, 220, 0.52);
+  color: #fff9fb;
+  box-shadow: 0 6px 20px rgba(242, 181, 204, 0.18);
 }
 
-.ux-pill-btn:focus-visible,
+.ux-jewel-btn.is-muted {
+  color: rgba(212, 200, 210, 0.64);
+}
+
+.ux-jewel-btn:focus-visible,
+.ux-stage-gem:focus-visible,
 .ux-coach-dismiss:focus-visible,
 .drawer-collapse-btn:focus-visible {
-  outline: 2px solid var(--accent-champagne);
+  outline: 2px solid var(--accent-rose);
   outline-offset: 2px;
 }
 
-.ux-pill-btn.is-active {
-  border-color: rgba(235, 208, 183, 0.62);
-  background: rgba(34, 42, 64, 0.88);
+.ux-jewel-svg {
+  width: 16.5px;
+  height: 16.5px;
+  flex-shrink: 0;
+  transition: transform 0.34s var(--ease-out-expo), filter 0.3s ease;
+}
+
+.ux-jewel-btn:hover .ux-jewel-svg {
+  transform: scale(1.09);
+  filter: drop-shadow(0 0 6px rgba(245, 200, 218, 0.55));
+}
+
+.ux-jewel-label em {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--accent-champagne);
+  margin-left: 2px;
+}
+
+/* Soft Poetic Hover Tooltip */
+.ux-jewel-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translate3d(-50%, -4px, 0);
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(14, 11, 24, 0.92);
+  border: 1px solid rgba(245, 204, 220, 0.26);
+  color: #f9eff4;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  transition: opacity 0.2s ease, transform 0.22s var(--ease-out-expo), visibility 0.2s ease;
+}
+
+.ux-jewel-btn[data-tip]:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translate3d(-50%, 0, 0);
+}
+
+.ux-jewel-btn.is-active[data-tip]::after {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Animated Harmonic Sound Equalizer Bars */
+.ux-sound-bars {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+}
+
+.ux-sound-bars i {
+  display: block;
+  width: 2px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  transition: height 0.25s ease, opacity 0.25s ease;
+}
+
+.ux-jewel-btn.is-sound-on .ux-sound-bars i:nth-child(1) {
+  animation: uxWaveBar 1.35s ease-in-out infinite 0s;
+}
+.ux-jewel-btn.is-sound-on .ux-sound-bars i:nth-child(2) {
+  animation: uxWaveBar 1.15s ease-in-out infinite 0.22s;
+}
+.ux-jewel-btn.is-sound-on .ux-sound-bars i:nth-child(3) {
+  animation: uxWaveBar 1.45s ease-in-out infinite 0.42s;
+}
+.ux-jewel-btn.is-sound-on .ux-sound-bars i:nth-child(4) {
+  animation: uxWaveBar 1.25s ease-in-out infinite 0.14s;
+}
+
+.ux-jewel-btn.is-muted .ux-sound-bars i {
+  animation: none;
+  height: 3px;
+  opacity: 0.55;
+}
+
+@keyframes uxWaveBar {
+  0%, 100% { height: 4px; opacity: 0.72; }
+  50% { height: 12px; opacity: 1; }
+}
+
+/* 4. 5-Stage Resolution & Visual Quality Crystal Popover */
+.ux-quality-popover {
+  margin-top: 10px;
+  width: min(312px, 90vw);
+  padding: 14px;
+  border-radius: 20px;
+  background: linear-gradient(165deg, rgba(19, 14, 31, 0.90) 0%, rgba(10, 9, 21, 0.95) 100%);
+  backdrop-filter: blur(26px) saturate(160%);
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  border: 1px solid rgba(245, 206, 222, 0.28);
+  box-shadow:
+    0 24px 60px rgba(3, 2, 11, 0.65),
+    0 0 32px rgba(242, 181, 204, 0.10),
+    inset 0 1px 0 rgba(255, 244, 248, 0.12);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate3d(0, -8px, 0) scale(0.97);
+  transform-origin: top right;
+  transition:
+    opacity 0.26s var(--ease-out-expo),
+    transform 0.28s var(--ease-out-expo),
+    visibility 0.26s ease;
+}
+
+.ux-quality-popover.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+.ux-qp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid rgba(245, 212, 224, 0.12);
+}
+
+.ux-qp-title {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 16.5px;
+  color: #fcf6f8;
+}
+
+.ux-qp-readout {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
   color: var(--accent-champagne);
 }
 
-.ux-pill-btn.is-muted {
-  color: rgba(201, 196, 190, 0.72);
+.ux-qp-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 
-.ux-pill-icon {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-  opacity: 0.92;
+.ux-stage-gem {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 11px;
+  border-radius: 13px;
+  border: 1px solid rgba(245, 212, 224, 0.10);
+  background: rgba(255, 245, 249, 0.03);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.22s var(--ease-out-expo),
+    border-color 0.22s var(--ease-out-expo),
+    transform 0.2s var(--ease-out-expo);
 }
 
-.ux-nav-coach {
+.ux-stage-gem:hover {
+  background: rgba(245, 200, 218, 0.10);
+  border-color: rgba(245, 200, 218, 0.28);
+  transform: translateX(2px);
+}
+
+.ux-stage-gem.is-active {
+  background: linear-gradient(130deg, rgba(242, 181, 204, 0.20) 0%, rgba(194, 212, 248, 0.16) 100%);
+  border-color: rgba(245, 202, 218, 0.50);
+  box-shadow: 0 6px 18px rgba(242, 181, 204, 0.12);
+}
+
+.ux-gem-roman {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--accent-champagne);
+  text-align: center;
+}
+
+.ux-gem-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ux-gem-meta strong {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: #fcf7f9;
+  letter-spacing: 0.02em;
+}
+
+.ux-gem-meta small {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.ux-gem-heart {
+  font-size: 12px;
+  color: rgba(242, 181, 204, 0.25);
+  transition: color 0.22s ease, transform 0.24s var(--ease-out-expo), text-shadow 0.22s ease;
+}
+
+.ux-stage-gem.is-active .ux-gem-heart {
+  color: var(--accent-rose);
+  transform: scale(1.22);
+  text-shadow: 0 0 10px rgba(242, 181, 204, 0.7);
+}
+
+/* 5. Whisper-Minimal Poetic Silk Gesture Ribbon */
+.ux-gesture-ribbon {
   position: fixed;
   left: 50%;
-  bottom: max(20px, env(safe-area-inset-bottom, 20px));
+  bottom: max(24px, env(safe-area-inset-bottom, 24px));
   transform: translate3d(-50%, 0, 0);
   z-index: 18;
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   max-width: min(92vw, 760px);
-  padding: 9px 14px 9px 18px;
+  padding: 9px 14px 9px 20px;
   border-radius: 999px;
-  border: 1px solid rgba(235, 218, 208, 0.20);
-  background: rgba(9, 13, 23, 0.72);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.38);
+  border: 1px solid rgba(245, 212, 224, 0.20);
+  background: linear-gradient(165deg, rgba(17, 13, 28, 0.64) 0%, rgba(10, 9, 20, 0.74) 100%);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: 0 14px 36px rgba(3, 2, 11, 0.42);
   pointer-events: auto;
   transition:
-    opacity 0.55s var(--ease-out-expo),
-    transform 0.55s var(--ease-out-expo),
-    visibility 0.55s ease;
+    opacity 0.65s var(--ease-out-expo),
+    transform 0.65s var(--ease-out-expo),
+    visibility 0.65s ease;
 }
 
-.ux-nav-coach.is-hidden {
+.ux-gesture-ribbon.is-hidden {
   opacity: 0;
-  transform: translate3d(-50%, 14px, 0);
+  transform: translate3d(-50%, 16px, 0);
   visibility: hidden;
   pointer-events: none;
 }
 
-.ux-coach-items {
+.ux-ribbon-flow {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  gap: 8px 12px;
+  gap: 7px 11px;
 }
 
-.ux-coach-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.ux-ribbon-pair {
+  font-family: var(--font-sans);
   font-size: 11.5px;
-  color: rgba(244, 240, 235, 0.92);
+  color: rgba(245, 238, 242, 0.88);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
-.ux-coach-key {
-  font-weight: 600;
-  font-size: 11px;
+.ux-ribbon-pair em {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--accent-champagne);
-  background: rgba(235, 208, 183, 0.11);
-  border: 1px solid rgba(235, 208, 183, 0.26);
-  border-radius: 6px;
-  padding: 2px 7px;
-  white-space: nowrap;
+  margin-right: 4px;
 }
 
-.ux-coach-desc {
-  color: rgba(218, 214, 210, 0.88);
-  white-space: nowrap;
-}
-
-.ux-coach-sep {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: rgba(235, 208, 183, 0.34);
+.ux-ribbon-heart {
+  font-size: 10px;
+  color: rgba(242, 181, 204, 0.55);
 }
 
 .ux-coach-dismiss {
-  width: 24px;
-  height: 24px;
+  width: 23px;
+  height: 23px;
   border-radius: 50%;
-  border: 1px solid rgba(235, 218, 208, 0.18);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(244, 240, 235, 0.82);
-  font-size: 15px;
+  border: 1px solid rgba(245, 212, 224, 0.20);
+  background: rgba(255, 245, 249, 0.05);
+  color: rgba(248, 240, 244, 0.80);
+  font-size: 14px;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.18s ease, color 0.18s ease;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
 .ux-coach-dismiss:hover {
-  background: rgba(235, 208, 183, 0.16);
+  background: rgba(242, 181, 204, 0.18);
+  border-color: rgba(242, 181, 204, 0.42);
   color: #ffffff;
 }
 
+/* 6. Illustrated Romantic Gesture Carte Modal */
+.ux-gesture-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ux-gcard {
+  padding: 12px 13px;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 212, 224, 0.13);
+  background: rgba(255, 245, 249, 0.035);
+}
+
+.ux-gcard-title {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 16.5px;
+  color: #fdf7fa;
+}
+
+.ux-gcard-keys {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent-champagne);
+  margin: 2px 0 5px;
+}
+
+.ux-gcard p {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.help-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 2px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(245, 212, 224, 0.08);
+}
+
+.help-row kbd {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-champagne);
+  background: rgba(245, 216, 194, 0.10);
+  border: 1px solid rgba(245, 216, 194, 0.28);
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+
 @media (max-width: 760px) {
-  .ux-utility-bar {
+  .ux-artwork-frame::after {
+    inset: 7px;
+    border-radius: 12px;
+  }
+  .ux-fc-tl, .ux-fc-tr { top: 6px; }
+  .ux-fc-bl, .ux-fc-br { bottom: 6px; }
+  .ux-fc-tl, .ux-fc-bl { left: 6px; }
+  .ux-fc-tr, .ux-fc-br { right: 6px; }
+
+  .ux-dock-wrapper {
     top: 12px;
     right: 12px;
     left: 12px;
-    justify-content: flex-end;
-    gap: 6px;
   }
-  .ux-pill-btn {
-    padding: 6px 10px;
-    font-size: 11.5px;
+  .ux-celestial-dock {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
-  .ux-nav-coach {
-    border-radius: 18px;
+  .ux-celestial-dock::-webkit-scrollbar {
+    display: none;
+  }
+  .ux-jewel-btn {
+    padding: 5px 9.5px;
+    font-size: 11px;
+  }
+  .ux-jewel-btn[data-tip]::after {
+    display: none;
+  }
+  .ux-gesture-ribbon {
+    border-radius: 20px;
     padding: 10px 12px;
     bottom: 12px;
   }
-  .ux-coach-sep {
+  .ux-ribbon-heart {
     display: none;
+  }
+  .ux-gesture-cards {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ux-pill-btn,
-  .ux-nav-coach,
+  .ux-jewel-btn,
+  .ux-quality-popover,
+  .ux-gesture-ribbon,
+  .ux-sound-bars i,
   #loading-curtain {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }
 }
+
 

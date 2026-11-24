@@ -3,23 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#070a12" />
+    <meta name="theme-color" content="#090712" />
     <meta
       name="description"
-      content="Interactive WebGL2 3D showcase of Night Fury (Toothless) & Light Fury poised above a Faroese basalt archipelago — featuring 228 skeletal bones, Hidden World bioluminescence, optical mirror cloak, and synchronized flight choreography."
+      content="Our World — an interactive 3D digital sanctuary of sky, sea, and companionship."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Where Dusk Meets the Open Tide — Night Fury & Light Fury 3D Atelier" />
+    <meta property="og:title" content="Our World" />
     <meta
       property="og:description"
-      content="Explore an interactive realtime WebGL2 archipelago with Toothless & Light Fury: sculpt poses, trigger Hidden World bioluminescence & mirror cloak, soar across North Sea swells, or free-fly through coastal sea-arches."
+      content="Explore Our World — an interactive realtime 3D sanctuary where dusk, stars, tide, and flight unfold together."
     />
     <link
       rel="icon"
       type="image/svg+xml"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none'%3E%3Crect width='64' height='64' rx='16' fill='%23090e1a'/%3E%3Ccircle cx='32' cy='32' r='24' stroke='%23ebd0b7' stroke-opacity='0.45' stroke-width='1' stroke-dasharray='2 3'/%3E%3Cpath d='M12 36C19 18 39 13 52 26' stroke='%23f2d5c4' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M52 30C45 48 25 53 12 40' stroke='%23bfd6f2' stroke-width='2.2' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='32' r='2.6' fill='%23f5e2ce'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none'%3E%3Crect width='64' height='64' rx='18' fill='%230b0814'/%3E%3Cpath d='M32 50C32 50 13 37.6 13 24.2C13 17.8 18 13 24 13C27.8 13 30.6 15 32 17.8C33.4 15 36.2 13 40 13C46 13 51 17.8 51 24.2C51 37.6 32 50 32 50Z' stroke='%23f3c8d8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='32' cy='29' r='2.4' fill='%23fae3d6'/%3E%3C/svg%3E"
     />
-    <title>Where Dusk Meets the Open Tide — Twin Furies 3D Atelier</title>
+    <title>Our World</title>
     <style>
       html, body {
         margin: 0;
@@ -27,8 +27,8 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #060912;
-        color: #f4f0eb;
+        background: #080610;
+        color: #f7f1f3;
       }
       #loading-curtain {
         position: fixed;
@@ -36,24 +36,27 @@
         z-index: 9999;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
+        justify-content: center;
         align-items: center;
         overflow: hidden;
-        padding: clamp(20px, 4.2vh, 46px) clamp(18px, 4.8vw, 60px);
+        cursor: pointer;
         background:
-          radial-gradient(ellipse 96% 56% at 50% 92%, rgba(235, 172, 146, 0.20) 0%, rgba(168, 148, 198, 0.10) 42%, transparent 76%),
-          radial-gradient(ellipse 80% 52% at 50% 14%, rgba(110, 162, 224, 0.14) 0%, transparent 72%),
-          linear-gradient(180deg, #050811 0%, #0a1222 50%, #141d30 82%, #1d2133 100%);
+          radial-gradient(ellipse 84% 58% at 50% 54%, rgba(238, 174, 198, 0.14) 0%, rgba(154, 178, 232, 0.08) 42%, transparent 74%),
+          radial-gradient(ellipse 90% 52% at 50% 96%, rgba(236, 182, 162, 0.13) 0%, transparent 72%),
+          linear-gradient(180deg, #07050f 0%, #100c1d 52%, #1a1228 100%);
         transition:
-          opacity 1.15s cubic-bezier(0.22, 1, 0.36, 1),
-          transform 1.25s cubic-bezier(0.22, 1, 0.36, 1),
-          filter 1.15s cubic-bezier(0.22, 1, 0.36, 1),
-          visibility 1.2s ease;
+          opacity 1.25s cubic-bezier(0.22, 1, 0.36, 1),
+          transform 1.35s cubic-bezier(0.22, 1, 0.36, 1),
+          filter 1.25s cubic-bezier(0.22, 1, 0.36, 1),
+          visibility 1.3s ease;
+      }
+      #loading-curtain.is-completing .lc-heart-stage {
+        transform: scale(1.06);
       }
       #loading-curtain.is-dissolving {
         opacity: 0;
-        transform: scale(1.035);
-        filter: blur(10px);
+        transform: scale(1.045);
+        filter: blur(14px);
         visibility: hidden;
         pointer-events: none;
       }
@@ -65,170 +68,215 @@
         pointer-events: none;
         z-index: 0;
       }
-      .lc-aurora-glow {
+      .lc-aurora-silk {
         position: absolute;
-        inset: -18% -10% auto -10%;
-        height: 62%;
+        inset: -20% -15%;
         pointer-events: none;
         z-index: 0;
         background:
-          radial-gradient(ellipse 52% 38% at 32% 36%, rgba(118, 186, 236, 0.13), transparent 72%),
-          radial-gradient(ellipse 48% 36% at 68% 42%, rgba(236, 178, 196, 0.12), transparent 72%);
-        filter: blur(26px);
-        animation: lcAuroraBreathe 9s ease-in-out infinite alternate;
+          radial-gradient(ellipse 46% 36% at 36% 42%, rgba(242, 178, 204, 0.13), transparent 72%),
+          radial-gradient(ellipse 44% 36% at 64% 54%, rgba(164, 198, 246, 0.12), transparent 72%);
+        filter: blur(34px);
+        animation: lcSilkFloat 8.5s ease-in-out infinite alternate;
       }
-      @keyframes lcAuroraBreathe {
-        0% { transform: translate3d(-2%, -1%, 0) scale(0.98); opacity: 0.72; }
-        100% { transform: translate3d(2%, 2%, 0) scale(1.05); opacity: 1; }
+      @keyframes lcSilkFloat {
+        0% { transform: translate3d(-2%, -1.5%, 0) scale(0.97); opacity: 0.78; }
+        100% { transform: translate3d(2%, 1.5%, 0) scale(1.05); opacity: 1; }
+      }
+      .lc-heart-stage {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 22px;
+        perspective: 700px;
+        transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .lc-sculpture-wrap {
+        position: relative;
+        width: clamp(148px, 21vmin, 192px);
+        height: clamp(148px, 21vmin, 192px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transform: rotateX(var(--lc-tilt-x, 0deg)) rotateY(var(--lc-tilt-y, 0deg));
+        transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .lc-sculpture-wrap:hover {
+        filter: drop-shadow(0 0 22px rgba(245, 196, 214, 0.28));
+      }
+      .lc-heart-halo {
+        position: absolute;
+        inset: -18px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(245, 194, 212, 0.22) 0%, rgba(176, 206, 248, 0.10) 48%, transparent 72%);
+        filter: blur(12px);
+        animation: lcHeartbeatHalo 3.2s ease-in-out infinite;
+      }
+      @keyframes lcHeartbeatHalo {
+        0%, 100% { transform: scale(0.94); opacity: 0.68; }
+        28% { transform: scale(1.06); opacity: 0.96; }
+        46% { transform: scale(0.98); opacity: 0.80; }
+        64% { transform: scale(1.09); opacity: 1; }
+      }
+      .lc-heart-svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+      .lc-nested-outer {
+        transform-origin: 100px 100px;
+        animation: lcNestedPulse 3.2s ease-in-out infinite;
+      }
+      .lc-nested-mid {
+        transform-origin: 100px 102px;
+        animation: lcNestedPulse 3.2s ease-in-out 0.18s infinite;
+      }
+      .lc-nested-inner {
+        transform-origin: 100px 104px;
+        animation: lcNestedPulse 3.2s ease-in-out 0.34s infinite;
+      }
+      @keyframes lcNestedPulse {
+        0%, 100% { transform: scale(0.985); opacity: 0.56; }
+        32% { transform: scale(1.03); opacity: 0.90; }
+        52% { transform: scale(0.995); opacity: 0.72; }
+        70% { transform: scale(1.045); opacity: 0.98; }
+      }
+      .lc-orbit-ring {
+        transform-origin: 100px 100px;
+        animation: lcSpinSlow 26s linear infinite;
+      }
+      @keyframes lcSpinSlow {
+        to { transform: rotate(360deg); }
+      }
+      .lc-minimal-title {
+        margin: 0;
+        font-family: 'Cormorant Garamond', 'Iowan Old Style', Georgia, serif;
+        font-weight: 400;
+        font-style: italic;
+        font-size: clamp(24px, 3.1vw, 34px);
+        letter-spacing: 0.14em;
+        color: rgba(250, 236, 240, 0.92);
+        text-shadow: 0 4px 26px rgba(244, 186, 208, 0.28);
+        animation: lcTitleBreathe 4.2s ease-in-out infinite alternate;
+      }
+      @keyframes lcTitleBreathe {
+        0% { opacity: 0.76; letter-spacing: 0.13em; }
+        100% { opacity: 0.98; letter-spacing: 0.16em; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/index-D8hBH3OG.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BYfs9YwW.css">
+    <script type="module" crossorigin src="./assets/index-DOxQs2S4.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-JhD9XAVB.css">
   </head>
   <body>
-    <div id="loading-curtain" role="status" aria-live="polite">
+    <div id="loading-curtain" role="status" aria-label="Loading Our World">
       <canvas id="lc-ambient-canvas" aria-hidden="true"></canvas>
-      <div class="lc-aurora-glow" aria-hidden="true"></div>
+      <div class="lc-aurora-silk" aria-hidden="true"></div>
 
-      <div class="lc-top-meta">
-        <span class="lc-live-coord">
-          <span class="lc-live-dot"></span>
-          NORTH SEA ARCHIPELAGO &middot; 62&deg;14&prime;N 07&deg;11&prime;W
-        </span>
-        <span class="lc-meta-sep"></span>
-        <span>228-BONE WEBGL2 REALTIME ATELIER</span>
-      </div>
-
-      <div class="lc-centerpiece">
-        <div class="lc-emblem-wrap" aria-hidden="true">
-          <div class="lc-emblem-halo"></div>
-          <svg class="lc-emblem" viewBox="0 0 160 160" fill="none">
+      <div class="lc-heart-stage" id="lc-heart-stage">
+        <div class="lc-sculpture-wrap" id="lc-sculpture-wrap">
+          <div class="lc-heart-halo"></div>
+          <svg class="lc-heart-svg" viewBox="0 0 200 200" fill="none" aria-hidden="true">
             <defs>
-              <linearGradient id="twilightRing" x1="16" y1="16" x2="144" y2="144" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stop-color="#f0d2bc" stop-opacity="0.72" />
-                <stop offset="50%" stop-color="#9ec4ee" stop-opacity="0.28" />
-                <stop offset="100%" stop-color="#ecc0d0" stop-opacity="0.72" />
+              <linearGradient id="lcRoseArc" x1="100" y1="164" x2="100" y2="42" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#f7d8c8" />
+                <stop offset="52%" stop-color="#f3b6cd" />
+                <stop offset="100%" stop-color="#ffeaf2" />
               </linearGradient>
-              <linearGradient id="wingArcWarm" x1="26" y1="90" x2="134" y2="62" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stop-color="#7ec8f8" stop-opacity="0.0" />
-                <stop offset="48%" stop-color="#9fd8f8" stop-opacity="0.78" />
-                <stop offset="100%" stop-color="#f7e4d2" stop-opacity="0.98" />
+              <linearGradient id="lcMoonArc" x1="100" y1="164" x2="100" y2="42" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#f7d8c8" />
+                <stop offset="52%" stop-color="#b8d4fa" />
+                <stop offset="100%" stop-color="#eef5ff" />
               </linearGradient>
-              <linearGradient id="wingArcCool" x1="134" y1="70" x2="26" y2="98" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stop-color="#f2c4d8" stop-opacity="0.0" />
-                <stop offset="52%" stop-color="#f2cede" stop-opacity="0.82" />
-                <stop offset="100%" stop-color="#d4e6fc" stop-opacity="0.98" />
-              </linearGradient>
-              <radialGradient id="coreStarGlow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stop-color="#fff6ec" stop-opacity="1" />
-                <stop offset="45%" stop-color="#f2d5be" stop-opacity="0.65" />
-                <stop offset="100%" stop-color="#adc8e8" stop-opacity="0" />
+              <radialGradient id="lcCenterSpark" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#fff7f9" stop-opacity="1" />
+                <stop offset="46%" stop-color="#f5bfd2" stop-opacity="0.62" />
+                <stop offset="100%" stop-color="#b8d4fa" stop-opacity="0" />
               </radialGradient>
             </defs>
 
-            <!-- Outer slow-rotating nautical astrolabe ring -->
-            <g class="lc-ring-outer">
-              <circle cx="80" cy="80" r="70" stroke="url(#twilightRing)" stroke-width="0.75" stroke-opacity="0.48" />
-              <circle cx="80" cy="80" r="64" stroke="url(#twilightRing)" stroke-width="0.75" stroke-dasharray="1.5 4.5" opacity="0.62" />
-              <path d="M80 6 V13 M80 147 V154 M6 80 H13 M147 80 H154" stroke="#ebd0b7" stroke-opacity="0.55" stroke-width="1" stroke-linecap="round" />
+            <!-- Whisper-fine celestial orbit ring with twin miniature hearts -->
+            <g class="lc-orbit-ring">
+              <circle cx="100" cy="100" r="84" stroke="#f3cad8" stroke-opacity="0.16" stroke-width="0.75" stroke-dasharray="2 6" />
+              <path d="M100 19.5C100 19.5 95.5 16.2 95.5 13.3C95.5 11.7 96.8 10.5 98.3 10.5C99.2 10.5 99.7 11 100 11.7C100.3 11 100.8 10.5 101.7 10.5C103.2 10.5 104.5 11.7 104.5 13.3C104.5 16.2 100 19.5 100 19.5Z" fill="#f5c4d6" fill-opacity="0.78" />
+              <path d="M100 189.5C100 189.5 95.5 186.2 95.5 183.3C95.5 181.7 96.8 180.5 98.3 180.5C99.2 180.5 99.7 181 100 181.7C100.3 181 100.8 180.5 101.7 180.5C103.2 180.5 104.5 181.7 104.5 183.3C104.5 186.2 100 189.5 100 189.5Z" fill="#bfd8fa" fill-opacity="0.78" />
             </g>
 
-            <!-- Inner counter-rotating celestial compass ring -->
-            <g class="lc-ring-inner">
-              <circle cx="80" cy="80" r="49" stroke="#bfd6f2" stroke-opacity="0.22" stroke-width="0.7" stroke-dasharray="6 5" />
-              <polygon points="80,25 82.2,31 77.8,31" fill="#ebd0b7" fill-opacity="0.65" />
-              <polygon points="80,135 82.2,129 77.8,129" fill="#adc8e8" fill-opacity="0.55" />
-            </g>
+            <!-- Base ghost heart track -->
+            <path
+              d="M100 160 C100 160 36 120 36 74 C36 52 53 38 72 38 C85 38 95 46 100 56 C105 46 115 38 128 38 C147 38 164 52 164 74 C164 120 100 160 100 160 Z"
+              stroke="#f2cedb"
+              stroke-opacity="0.16"
+              stroke-width="1.2"
+            />
 
-            <!-- Synchronized Twin Dragon Glide Trails & Silhouettes -->
-            <g class="lc-duet-orbit">
-              <path
-                class="lc-glide-arc lc-glide-nf"
-                d="M28 88 C42 44, 96 32, 130 64"
-                stroke="url(#wingArcWarm)"
-                stroke-width="1.85"
-                stroke-linecap="round"
-              />
-              <!-- Night Fury (Toothless) crisp stylized glider silhouette at arc head -->
-              <path
-                class="lc-dragon-glyph lc-glyph-nf"
-                d="M129 63 L120 55 L123 62 L115 65 L124 65 L127 72 L128 65 L135 66 Z"
-                fill="#f6e3cf"
-              />
+            <!-- Nested breathing filigree hearts -->
+            <path
+              class="lc-nested-mid"
+              d="M100 140 C100 140 54 111 54 78 C54 62 66 52 80 52 C89 52 96 58 100 65 C104 58 111 52 120 52 C134 52 146 62 146 78 C146 111 100 140 100 140 Z"
+              stroke="#f4cad9"
+              stroke-opacity="0.24"
+              stroke-width="0.9"
+            />
+            <path
+              class="lc-nested-inner"
+              d="M100 121 C100 121 72 103 72 83 C72 73 79 67 88 67 C94 67 98 71 100 75 C102 71 106 67 112 67 C121 67 128 73 128 83 C128 103 100 121 100 121 Z"
+              fill="#f6cad8"
+              fill-opacity="0.07"
+              stroke="#d6e5fc"
+              stroke-opacity="0.32"
+              stroke-width="0.85"
+            />
 
-              <path
-                class="lc-glide-arc lc-glide-lf"
-                d="M132 72 C118 116, 64 128, 30 96"
-                stroke="url(#wingArcCool)"
-                stroke-width="1.85"
-                stroke-linecap="round"
-              />
-              <!-- Light Fury crisp stylized glider silhouette at counter-arc head -->
-              <path
-                class="lc-dragon-glyph lc-glyph-lf"
-                d="M31 97 L40 105 L37 98 L45 95 L36 95 L33 88 L32 95 L25 94 Z"
-                fill="#e2eeff"
-              />
-            </g>
+            <!-- Left & Right Progress Ribbons (Light Fury Blush-Rose & Night Fury Moonlit-Blue) -->
+            <path
+              id="lc-heart-left"
+              pathLength="100"
+              d="M100 160 C100 160 36 120 36 74 C36 52 53 38 72 38 C85 38 95 46 100 56"
+              stroke="url(#lcRoseArc)"
+              stroke-width="2.35"
+              stroke-linecap="round"
+              stroke-dasharray="100"
+              stroke-dashoffset="94"
+            />
+            <path
+              id="lc-heart-right"
+              pathLength="100"
+              d="M100 160 C100 160 164 120 164 74 C164 52 147 38 128 38 C115 38 105 46 100 56"
+              stroke="url(#lcMoonArc)"
+              stroke-width="2.35"
+              stroke-linecap="round"
+              stroke-dasharray="100"
+              stroke-dashoffset="94"
+            />
 
-            <!-- Pulsing Horizon Convergence Star -->
-            <circle class="lc-core-aura" cx="80" cy="80" r="13" fill="url(#coreStarGlow)" />
-            <path d="M80 71 L81.8 78.2 L89 80 L81.8 81.8 L80 89 L78.2 81.8 L71 80 L78.2 78.2 Z" fill="#fff4e8" opacity="0.92" />
+            <!-- Luminous heart-core star -->
+            <circle cx="100" cy="96" r="14" fill="url(#lcCenterSpark)" class="lc-nested-outer" />
+            <path
+              class="lc-nested-inner"
+              d="M100 103 C100 103 91 97 91 90.8 C91 87.8 93.4 85.8 96 85.8 C97.9 85.8 99.3 87 100 88.4 C100.7 87 102.1 85.8 104 85.8 C106.6 85.8 109 87.8 109 90.8 C109 97 100 103 100 103 Z"
+              fill="#fff3f7"
+            />
           </svg>
         </div>
 
-        <p class="lc-eyebrow">NIGHT FURY &amp; LIGHT FURY &middot; INTERACTIVE SANCTUARY</p>
-        <h1 class="lc-title">Where Dusk Meets <em>the Open Tide</em></h1>
-        <p class="lc-epigraph">
-          Two silhouettes poised above rain-kissed basalt cliffs, crashing northern surf, and plunging sea-cove cascades&mdash;a study in anatomy, luminescence, and flight.
-        </p>
-
-        <div class="lc-stage-pills" id="lc-stage-pills" aria-hidden="true">
-          <div class="lc-stage-pill is-active" data-step="0">
-            <span class="lc-pill-dot"></span>
-            <span>Archipelago &amp; Tide</span>
-          </div>
-          <div class="lc-stage-pill" data-step="1">
-            <span class="lc-pill-dot"></span>
-            <span>Night Fury Rig</span>
-          </div>
-          <div class="lc-stage-pill" data-step="2">
-            <span class="lc-pill-dot"></span>
-            <span>Light Fury Cloak</span>
-          </div>
-          <div class="lc-stage-pill" data-step="3">
-            <span class="lc-pill-dot"></span>
-            <span>Flight &amp; Shaders</span>
-          </div>
-        </div>
-
-        <div class="lc-progress-block">
-          <div class="lc-progress-track">
-            <div class="lc-progress-fill" id="lc-progress-fill">
-              <span class="lc-progress-comet"></span>
-            </div>
-          </div>
-          <div class="lc-progress-meta">
-            <span class="lc-stage-text" id="lc-stage-text">Awakening coastal twilight&hellip;</span>
-            <span class="lc-pct-text" id="lc-pct-text">00%</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="lc-bottom-meta">
-        <span>DRAG TO ORBIT &middot; WASD TO ROAM &middot; DOUBLE-CLICK TO FOCUS</span>
-        <span>SPACE &mdash; COURTSHIP FLIGHT &middot; ? &mdash; CONTROLS GUIDE</span>
+        <h1 class="lc-minimal-title">Our World</h1>
       </div>
     </div>
 
     <script>
       (function () {
+        var curtain = document.getElementById('loading-curtain');
+        var wrap = document.getElementById('lc-sculpture-wrap');
         var canvas = document.getElementById('lc-ambient-canvas');
-        if (!canvas || !canvas.getContext) return;
+        if (!canvas || !canvas.getContext || !curtain) return;
         var ctx = canvas.getContext('2d');
         if (!ctx) return;
+
         var dpr = Math.min(window.devicePixelRatio || 1, 2);
         var w = 0, h = 0, rafId = 0, start = performance.now();
+        var pointer = { x: 0.5, y: 0.5, active: false, lastSpawn: 0 };
 
         function resize() {
           w = window.innerWidth;
@@ -240,70 +288,179 @@
         resize();
         window.addEventListener('resize', resize);
 
-        var embers = [];
-        for (var i = 0; i < 46; i++) {
-          embers.push({
+        function drawHeart(cx, cy, size, rot, color, alpha) {
+          if (alpha <= 0.004) return;
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(rot);
+          ctx.scale(size, size);
+          ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(0, 0.55);
+          ctx.bezierCurveTo(-0.95, -0.1, -0.95, -0.82, -0.44, -0.82);
+          ctx.bezierCurveTo(-0.18, -0.82, -0.04, -0.62, 0, -0.46);
+          ctx.bezierCurveTo(0.04, -0.62, 0.18, -0.82, 0.44, -0.82);
+          ctx.bezierCurveTo(0.95, -0.82, 0.95, -0.1, 0, 0.55);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        var palette = ['#f6bfd3', '#fbe1d4', '#c5dcfa', '#f3acc6'];
+        var floaters = [];
+        for (var i = 0; i < 34; i++) {
+          floaters.push({
             x: Math.random(),
             y: Math.random(),
-            r: 0.8 + Math.random() * 2.1,
-            vx: (Math.random() - 0.35) * 0.018,
-            vy: -0.012 - Math.random() * 0.026,
-            phase: Math.random() * 6.28,
-            warm: Math.random() > 0.45
+            size: 3.4 + Math.random() * 6.2,
+            vy: 0.016 + Math.random() * 0.028,
+            swayAmp: 0.012 + Math.random() * 0.022,
+            phase: Math.random() * 6.283,
+            color: palette[i % palette.length],
+            isHeart: i % 3 !== 2
           });
         }
 
+        var bursts = [];
+        var ripples = [];
+
+        function spawnHeartBurst(px, py, count) {
+          ripples.push({ x: px, y: py, r: 6, alpha: 0.55 });
+          for (var k = 0; k < count; k++) {
+            var ang = -1.57 + (Math.random() - 0.5) * 2.5;
+            var spd = 28 + Math.random() * 68;
+            bursts.push({
+              x: px,
+              y: py,
+              vx: Math.cos(ang) * spd,
+              vy: Math.sin(ang) * spd - 22,
+              size: 4.5 + Math.random() * 6.5,
+              rot: (Math.random() - 0.5) * 0.65,
+              life: 0,
+              maxLife: 1.15 + Math.random() * 0.65,
+              color: palette[k % palette.length]
+            });
+          }
+        }
+
+        function onMove(ev) {
+          if (!w || !h) return;
+          pointer.x = ev.clientX / w;
+          pointer.y = ev.clientY / h;
+          pointer.active = true;
+          if (wrap) {
+            var tx = (0.5 - pointer.y) * 14;
+            var ty = (pointer.x - 0.5) * 16;
+            wrap.style.setProperty('--lc-tilt-x', tx.toFixed(2) + 'deg');
+            wrap.style.setProperty('--lc-tilt-y', ty.toFixed(2) + 'deg');
+          }
+          var now = performance.now();
+          if (now - pointer.lastSpawn > 52 && bursts.length < 72) {
+            pointer.lastSpawn = now;
+            bursts.push({
+              x: ev.clientX + (Math.random() - 0.5) * 12,
+              y: ev.clientY + (Math.random() - 0.5) * 12,
+              vx: (Math.random() - 0.5) * 20,
+              vy: -18 - Math.random() * 26,
+              size: 3.4 + Math.random() * 4.2,
+              rot: (Math.random() - 0.5) * 0.5,
+              life: 0,
+              maxLife: 0.95 + Math.random() * 0.45,
+              color: palette[(Math.random() * palette.length) | 0]
+            });
+          }
+        }
+
+        function onTap(ev) {
+          spawnHeartBurst(ev.clientX, ev.clientY, 10);
+        }
+
+        curtain.addEventListener('pointermove', onMove, { passive: true });
+        curtain.addEventListener('pointerdown', onTap, { passive: true });
+
+        var prevNow = start;
         function frame(now) {
-          var curtain = document.getElementById('loading-curtain');
-          if (!curtain) {
+          if (!document.getElementById('loading-curtain')) {
             window.removeEventListener('resize', resize);
             return;
           }
+          var dt = Math.min(0.05, (now - prevNow) * 0.001);
+          prevNow = now;
           var t = (now - start) * 0.001;
           ctx.clearRect(0, 0, w, h);
 
-          // 1. Rising bioluminescent & sunlit sea-spray embers
-          for (var i = 0; i < embers.length; i++) {
-            var em = embers[i];
-            var ex = ((em.x + t * em.vx + Math.sin(t * 0.7 + em.phase) * 0.018) % 1 + 1) % 1 * w;
-            var ey = ((em.y + t * em.vy) % 1 + 1) % 1 * h;
-            var pulse = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2.1 + em.phase));
-            ctx.fillStyle = em.warm
-              ? 'rgba(244, 214, 186,' + (0.28 * pulse).toFixed(3) + ')'
-              : 'rgba(168, 208, 248,' + (0.26 * pulse).toFixed(3) + ')';
-            ctx.beginPath();
-            ctx.arc(ex, ey, em.r, 0, 6.283);
-            ctx.fill();
+          // 1. Ambient drifting romantic micro-hearts & stardust
+          for (var i = 0; i < floaters.length; i++) {
+            var fl = floaters[i];
+            var fx = ((fl.x + Math.sin(t * 0.85 + fl.phase) * fl.swayAmp) % 1 + 1) % 1 * w;
+            var fy = ((fl.y - t * fl.vy) % 1 + 1) % 1 * h;
+            if (pointer.active) {
+              var dx = pointer.x * w - fx;
+              var dy = pointer.y * h - fy;
+              var dist = Math.sqrt(dx * dx + dy * dy);
+              if (dist < 160 && dist > 1) {
+                var pull = (1 - dist / 160) * 10;
+                fx += (dx / dist) * pull;
+                fy += (dy / dist) * pull;
+              }
+            }
+            var pulse = 0.25 + 0.45 * (0.5 + 0.5 * Math.sin(t * 1.9 + fl.phase));
+            if (fl.isHeart) {
+              drawHeart(fx, fy, fl.size, Math.sin(t * 1.1 + fl.phase) * 0.28, fl.color, pulse * 0.55);
+            } else {
+              ctx.save();
+              ctx.globalAlpha = pulse * 0.5;
+              ctx.fillStyle = fl.color;
+              ctx.beginPath();
+              ctx.arc(fx, fy, fl.size * 0.26, 0, 6.283);
+              ctx.fill();
+              ctx.restore();
+            }
           }
 
-          // 3. Three gentle rolling North Sea horizon wave silhouettes at bottom
-          for (var layer = 0; layer < 3; layer++) {
-            var baseH = h - (22 + layer * 16);
-            var amp = 6 + layer * 3.5;
-            var spd = (0.65 - layer * 0.16) * (layer % 2 === 0 ? 1 : -1);
-            ctx.beginPath();
-            ctx.moveTo(0, h);
-            for (var x = 0; x <= w + 24; x += 24) {
-              var wy =
-                baseH +
-                Math.sin(x * 0.0065 + t * spd + layer * 1.7) * amp +
-                Math.cos(x * 0.013 - t * spd * 0.7) * (amp * 0.42);
-              ctx.lineTo(x, wy);
+          // 2. Expanding silk ripples on tap/click
+          for (var r = ripples.length - 1; r >= 0; r--) {
+            var rp = ripples[r];
+            rp.r += dt * 115;
+            rp.alpha -= dt * 0.62;
+            if (rp.alpha <= 0.01) {
+              ripples.splice(r, 1);
+              continue;
             }
-            ctx.lineTo(w, h);
-            ctx.closePath();
-            ctx.fillStyle =
-              layer === 0
-                ? 'rgba(138, 178, 218, 0.045)'
-                : layer === 1
-                ? 'rgba(226, 186, 178, 0.038)'
-                : 'rgba(8, 13, 24, 0.42)';
-            ctx.fill();
+            ctx.save();
+            ctx.globalAlpha = rp.alpha;
+            ctx.strokeStyle = '#f5c6d8';
+            ctx.lineWidth = 1.15;
+            ctx.beginPath();
+            ctx.arc(rp.x, rp.y, rp.r, 0, 6.283);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // 3. Interactive cursor & tap heart-blooms
+          for (var b = bursts.length - 1; b >= 0; b--) {
+            var p = bursts[b];
+            p.life += dt;
+            if (p.life >= p.maxLife) {
+              bursts.splice(b, 1);
+              continue;
+            }
+            p.x += p.vx * dt + Math.sin(t * 4.5 + b) * 12 * dt;
+            p.y += p.vy * dt;
+            p.vy -= 14 * dt;
+            var u = p.life / p.maxLife;
+            var fade = Math.sin(u * Math.PI);
+            drawHeart(p.x, p.y, p.size * (0.75 + 0.35 * fade), p.rot + u * 0.4, p.color, fade * 0.85);
           }
 
           rafId = requestAnimationFrame(frame);
         }
         rafId = requestAnimationFrame(frame);
+
+        window.__bloomLoadingComplete = function () {
+          if (w && h) spawnHeartBurst(w * 0.5, h * 0.46, 16);
+        };
         window.__stopLoadingAmbient = function () {
           if (rafId) cancelAnimationFrame(rafId);
           window.removeEventListener('resize', resize);
