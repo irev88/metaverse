@@ -1644,3 +1644,206 @@ input[type='range']::-moz-range-thumb {
     margin-bottom: 14px;
   }
 }
+
+/* ==========================================================================
+   USER INTERFACE (PURE LIVING-CINEMA VIEWER MODE & ACCESSIBILITY)
+   ========================================================================== */
+#hud-root.ux-viewer-mode {
+  pointer-events: none;
+}
+
+.ux-utility-bar {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top, 16px));
+  right: max(16px, env(safe-area-inset-right, 16px));
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.ux-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(235, 218, 208, 0.22);
+  background: rgba(10, 14, 24, 0.68);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  color: rgba(245, 241, 236, 0.94);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.18s ease,
+    color 0.2s ease;
+}
+
+.ux-pill-btn:hover {
+  background: rgba(24, 32, 50, 0.84);
+  border-color: rgba(235, 208, 183, 0.48);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.ux-pill-btn:active {
+  transform: translateY(0);
+}
+
+.ux-pill-btn:focus-visible,
+.ux-coach-dismiss:focus-visible,
+.drawer-collapse-btn:focus-visible {
+  outline: 2px solid var(--accent-champagne);
+  outline-offset: 2px;
+}
+
+.ux-pill-btn.is-active {
+  border-color: rgba(235, 208, 183, 0.62);
+  background: rgba(34, 42, 64, 0.88);
+  color: var(--accent-champagne);
+}
+
+.ux-pill-btn.is-muted {
+  color: rgba(201, 196, 190, 0.72);
+}
+
+.ux-pill-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  opacity: 0.92;
+}
+
+.ux-nav-coach {
+  position: fixed;
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom, 20px));
+  transform: translate3d(-50%, 0, 0);
+  z-index: 18;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(92vw, 760px);
+  padding: 9px 14px 9px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(235, 218, 208, 0.20);
+  background: rgba(9, 13, 23, 0.72);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.38);
+  pointer-events: auto;
+  transition:
+    opacity 0.55s var(--ease-out-expo),
+    transform 0.55s var(--ease-out-expo),
+    visibility 0.55s ease;
+}
+
+.ux-nav-coach.is-hidden {
+  opacity: 0;
+  transform: translate3d(-50%, 14px, 0);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.ux-coach-items {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.ux-coach-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: rgba(244, 240, 235, 0.92);
+}
+
+.ux-coach-key {
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--accent-champagne);
+  background: rgba(235, 208, 183, 0.11);
+  border: 1px solid rgba(235, 208, 183, 0.26);
+  border-radius: 6px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.ux-coach-desc {
+  color: rgba(218, 214, 210, 0.88);
+  white-space: nowrap;
+}
+
+.ux-coach-sep {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(235, 208, 183, 0.34);
+}
+
+.ux-coach-dismiss {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(235, 218, 208, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(244, 240, 235, 0.82);
+  font-size: 15px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.ux-coach-dismiss:hover {
+  background: rgba(235, 208, 183, 0.16);
+  color: #ffffff;
+}
+
+@media (max-width: 760px) {
+  .ux-utility-bar {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .ux-pill-btn {
+    padding: 6px 10px;
+    font-size: 11.5px;
+  }
+  .ux-nav-coach {
+    border-radius: 18px;
+    padding: 10px 12px;
+    bottom: 12px;
+  }
+  .ux-coach-sep {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ux-pill-btn,
+  .ux-nav-coach,
+  #loading-curtain {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+

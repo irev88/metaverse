@@ -284,6 +284,17 @@ export interface NordicAtmosphereController {
     renderer: THREE.WebGLRenderer,
     scene: THREE.Scene
   ) => void;
+  blendPresets: (
+    fromId: WeatherPresetId,
+    toId: WeatherPresetId,
+    alpha: number,
+    renderer: THREE.WebGLRenderer,
+    scene: THREE.Scene,
+    sunElevOffsetDeg?: number,
+    sunAzimOffsetDeg?: number
+  ) => void;
+  setAudioMuted: (muted: boolean) => void;
+  isAudioMuted: () => boolean;
   setMistDensity: (density: number, scene: THREE.Scene) => void;
   setRainIntensity: (intensity: number) => void;
   setWindStrength: (strength: number) => void;
@@ -502,6 +513,7 @@ const SKY_FRAGMENT_SHADER = /* glsl */ `
 class ProceduralThunderAudio {
   private ctx: AudioContext | null = null;
   private unlocked = false;
+  public muted = false;
 
   constructor() {
     if (typeof window === 'undefined') return;
@@ -516,7 +528,7 @@ class ProceduralThunderAudio {
   }
 
   playStrike(distMeters: number, azimuthPan: number, strength = 1.0): void {
-    if (typeof window === 'undefined' || !this.unlocked) return;
+    if (typeof window === 'undefined' || !this.unlocked || this.muted) return;
     try {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return;
@@ -969,6 +981,110 @@ export function createNordicAtmosphere(
 
       updateSunVector(cfg.sunElevationDeg, cfg.sunAzimuthDeg);
       bakeEnvironment(targetScene);
+    },
+
+    blendPresets: (() => {
+      const colA = new THREE.Color();
+      const colB = new THREE.Color();
+      const fogSun = new THREE.Color();
+      let lastEnvBakeStamp = -10;
+      let wasSettled = false;
+
+      const lerpHex = (target: THREE.Color, hexA: number, hexB: number, t: number) => {
+        colA.setHex(hexA);
+        colB.setHex(hexB);
+        target.copy(colA).lerp(colB, t);
+      };
+
+      const lerpAzim = (aDeg: number, bDeg: number, t: number) => {
+        let diff = ((bDeg - aDeg + 540) % 360) - 180;
+        if (diff < -180) diff += 360;
+        return aDeg + diff * t;
+      };
+
+      return (
+        fromId: WeatherPresetId,
+        toId: WeatherPresetId,
+        alpha: number,
+        glRenderer: THREE.WebGLRenderer,
+        targetScene: THREE.Scene,
+        sunElevOffsetDeg = 0,
+        sunAzimOffsetDeg = 0
+      ) => {
+        const t = THREE.MathUtils.clamp(alpha, 0, 1);
+        const a = WEATHER_PRESETS[fromId];
+        const b = WEATHER_PRESETS[toId];
+        controller.activePreset = t < 0.5 ? fromId : toId;
+
+        lerpHex(sharedUniforms.uZenithColor.value, a.zenithColor, b.zenithColor, t);
+        lerpHex(sharedUniforms.uHorizonSunColor.value, a.horizonSunColor, b.horizonSunColor, t);
+        lerpHex(sharedUniforms.uHorizonAntiColor.value, a.horizonAntiSunColor, b.horizonAntiSunColor, t);
+        lerpHex(sharedUniforms.uMieColor.value, a.mieHaloColor, b.mieHaloColor, t);
+        sharedUniforms.uMieStrength.value = THREE.MathUtils.lerp(a.mieStrength, b.mieStrength, t);
+        sharedUniforms.uMieExponent.value = THREE.MathUtils.lerp(a.mieExponent, b.mieExponent, t);
+
+        lerpHex(sharedUniforms.uCloudDarkColor.value, a.cloudDarkColor, b.cloudDarkColor, t);
+        lerpHex(sharedUniforms.uCloudLitColor.value, a.cloudLitColor, b.cloudLitColor, t);
+        sharedUniforms.uCloudCoverage.value = THREE.MathUtils.lerp(a.cloudCoverage, b.cloudCoverage, t);
+
+        const mist = THREE.MathUtils.lerp(a.mistDensity, b.mistDensity, t);
+        sharedUniforms.uMistDensity.value = mist;
+        sharedUniforms.uRainIntensity.value = THREE.MathUtils.lerp(a.rainIntensity, b.rainIntensity, t);
+        sharedUniforms.uWindStrength.value = THREE.MathUtils.lerp(a.windStrength, b.windStrength, t);
+
+        const nextBoltFreq = THREE.MathUtils.lerp(a.lightningFrequency, b.lightningFrequency, t);
+        if (nextBoltFreq > 0.12 && lightningFreq <= 0.12 && nextAutoStrikeIn > 2.2) {
+          nextAutoStrikeIn = 1.4;
+        }
+        lightningFreq = nextBoltFreq;
+
+        sharedUniforms.uNightFactor.value = THREE.MathUtils.lerp(a.nightFactor, b.nightFactor, t);
+        sharedUniforms.uAuroraIntensity.value = THREE.MathUtils.lerp(a.auroraIntensity, b.auroraIntensity, t);
+        lerpHex(sharedUniforms.uWaterDeepColor.value, a.waterDeepColor, b.waterDeepColor, t);
+        lerpHex(sharedUniforms.uWaterShallowColor.value, a.waterShallowColor, b.waterShallowColor, t);
+        sharedUniforms.uGlitterIntensity.value = THREE.MathUtils.lerp(a.glitterIntensity, b.glitterIntensity, t);
+
+        lerpHex(sunColor, a.sunLightColor, b.sunLightColor, t);
+        sharedUniforms.uSunColor.value.copy(sunColor);
+        sunLight.color.copy(sunColor);
+        sunLight.intensity = THREE.MathUtils.lerp(a.sunLightIntensity, b.sunLightIntensity, t);
+
+        lerpHex(rimLight.color, a.rimLightColor, b.rimLightColor, t);
+        rimLight.intensity = THREE.MathUtils.lerp(a.rimLightIntensity, b.rimLightIntensity, t);
+
+        lerpHex(hemiLight.color, a.hemiSkyColor, b.hemiSkyColor, t);
+        lerpHex(hemiLight.groundColor, a.hemiGroundColor, b.hemiGroundColor, t);
+        hemiLight.intensity = THREE.MathUtils.lerp(a.hemiIntensity, b.hemiIntensity, t);
+
+        lerpHex(fogSun, a.horizonSunColor, b.horizonSunColor, t);
+        fog.color.copy(sharedUniforms.uHorizonAntiColor.value).lerp(fogSun, 0.35);
+        fog.density = mist;
+
+        glRenderer.toneMappingExposure = THREE.MathUtils.lerp(a.exposure, b.exposure, t);
+
+        const elev = THREE.MathUtils.lerp(a.sunElevationDeg, b.sunElevationDeg, t) + sunElevOffsetDeg;
+        const azim = lerpAzim(a.sunAzimuthDeg, b.sunAzimuthDeg, t) + sunAzimOffsetDeg;
+        currentAzimuthDeg = azim;
+        updateSunVector(elev, azim);
+
+        const nowSec = typeof performance !== 'undefined' ? performance.now() * 0.001 : lastTimeSec;
+        const isSettled = (t <= 0.001 || t >= 0.999) && Math.abs(sunElevOffsetDeg) < 0.05;
+        if (nowSec - lastEnvBakeStamp > 0.45 || (isSettled && !wasSettled)) {
+          lastEnvBakeStamp = nowSec;
+          wasSettled = isSettled;
+          bakeEnvironment(targetScene);
+        } else if (!isSettled) {
+          wasSettled = false;
+        }
+      };
+    })(),
+
+    setAudioMuted(muted: boolean) {
+      thunderAudio.muted = muted;
+    },
+
+    isAudioMuted() {
+      return thunderAudio.muted;
     },
 
     setMistDensity(density: number, _targetScene: THREE.Scene) {

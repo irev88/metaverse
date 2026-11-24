@@ -1145,10 +1145,10 @@ export function createRigStudioHUD(
 
     let pairedSea: { idx: number; desc: string; params: OceanWaveParams } | null = null;
     if (wp.id === 'stormy-squall') {
-      pairedSea = { idx: 3, desc: 'Rogue Storm', params: { waveAmplitude: 2.65, waveSpeed: 1.88, seaChoppiness: 0.96 } };
+      pairedSea = { idx: 3, desc: 'Rogue Storm', params: { waveAmplitude: 1.65, waveSpeed: 1.68, seaChoppiness: 0.92 } };
       callbacks.onTriggerLightningStrike();
     } else if (wp.id === 'starlit-night' || wp.id === 'dawn-dusk') {
-      pairedSea = { idx: 0, desc: 'Calm Fjord', params: { waveAmplitude: 0.42, waveSpeed: 0.78, seaChoppiness: 0.28 } };
+      pairedSea = { idx: 0, desc: 'Calm Fjord', params: { waveAmplitude: 0.30, waveSpeed: 0.72, seaChoppiness: 0.24 } };
     } else {
       pairedSea = { idx: 1, desc: 'Nordic Swell', params: { ...DEFAULT_OCEAN_PARAMS } };
     }
@@ -1249,10 +1249,10 @@ export function createRigStudioHUD(
   const seaSegRow = document.createElement('div');
   seaSegRow.className = 'segmented-row';
   const seaPresets: Array<{ label: string; desc: string; params: OceanWaveParams }> = [
-    { label: 'Quiet', desc: 'Glassy Fjord', params: { waveAmplitude: 0.16, waveSpeed: 0.52, seaChoppiness: 0.08 } },
+    { label: 'Quiet', desc: 'Glassy Fjord', params: { waveAmplitude: 0.14, waveSpeed: 0.52, seaChoppiness: 0.08 } },
     { label: 'Swell', desc: 'Nordic Swell', params: { ...DEFAULT_OCEAN_PARAMS } },
-    { label: 'Rough', desc: 'Crossed Sea', params: { waveAmplitude: 1.88, waveSpeed: 1.48, seaChoppiness: 0.84 } },
-    { label: 'Storm', desc: 'Rogue Storm', params: { waveAmplitude: 2.75, waveSpeed: 1.96, seaChoppiness: 1.00 } },
+    { label: 'Rough', desc: 'Crossed Sea', params: { waveAmplitude: 1.18, waveSpeed: 1.38, seaChoppiness: 0.80 } },
+    { label: 'Storm', desc: 'Rogue Storm', params: { waveAmplitude: 1.72, waveSpeed: 1.75, seaChoppiness: 0.96 } },
   ];
 
   function addOceanSlider(

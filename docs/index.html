@@ -82,8 +82,8 @@
         100% { transform: translate3d(2%, 2%, 0) scale(1.05); opacity: 1; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/index-Lr4gTbzs.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-K_JxWz4C.css">
+    <script type="module" crossorigin src="./assets/index-D_RC79tV.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BYfs9YwW.css">
   </head>
   <body>
     <div id="loading-curtain" role="status" aria-live="polite">
@@ -253,17 +253,6 @@
           });
         }
 
-        var rain = [];
-        for (var j = 0; j < 44; j++) {
-          rain.push({
-            x: Math.random(),
-            y: Math.random(),
-            len: 14 + Math.random() * 22,
-            speed: 0.45 + Math.random() * 0.45,
-            alpha: 0.04 + Math.random() * 0.09
-          });
-        }
-
         function frame(now) {
           var curtain = document.getElementById('loading-curtain');
           if (!curtain) {
@@ -273,20 +262,7 @@
           var t = (now - start) * 0.001;
           ctx.clearRect(0, 0, w, h);
 
-          // 1. Soft slanted coastal twilight rain threads
-          ctx.lineWidth = 1;
-          for (var j = 0; j < rain.length; j++) {
-            var rd = rain[j];
-            var rx = ((rd.x + t * rd.speed * 0.14) % 1.15 - 0.075) * w;
-            var ry = ((rd.y + t * rd.speed) % 1.15 - 0.075) * h;
-            ctx.strokeStyle = 'rgba(196, 218, 246,' + rd.alpha.toFixed(3) + ')';
-            ctx.beginPath();
-            ctx.moveTo(rx, ry);
-            ctx.lineTo(rx + rd.len * 0.24, ry + rd.len);
-            ctx.stroke();
-          }
-
-          // 2. Rising bioluminescent & sunlit sea-spray embers
+          // 1. Rising bioluminescent & sunlit sea-spray embers
           for (var i = 0; i < embers.length; i++) {
             var em = embers[i];
             var ex = ((em.x + t * em.vx + Math.sin(t * 0.7 + em.phase) * 0.018) % 1 + 1) % 1 * w;

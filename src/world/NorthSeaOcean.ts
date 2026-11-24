@@ -2,15 +2,15 @@ import * as THREE from 'three';
 import { AtmosphereSharedUniforms, SHARED_SKY_GLSL } from './NordicAtmosphere';
 
 export interface OceanWaveParams {
-  waveAmplitude: number;   // [0.05, 3.20] 0.14=Quiet glassy sea, 1.18=Dramatic swell, 2.75+=Towering storm rogue rollers
+  waveAmplitude: number;   // [0.05, 2.60] 0.14=Quiet glassy sea, 0.68=Nordic swell, 1.78=Storm rollers
   waveSpeed: number;       // [0.15, 2.50] Wave propagation speed multiplier
   seaChoppiness: number;   // [0.00, 1.00] Peakiness, capillary chop & whitecap foam intensity
 }
 
 export const DEFAULT_OCEAN_PARAMS: OceanWaveParams = {
-  waveAmplitude: 1.18,
-  waveSpeed: 1.06,
-  seaChoppiness: 0.56,
+  waveAmplitude: 0.68,
+  waveSpeed: 0.98,
+  seaChoppiness: 0.48,
 };
 
 export interface NorthSeaOceanController {
@@ -99,22 +99,22 @@ const OCEAN_VERT = /* glsl */ `
     float effDist = max(distFromOrigin * 0.85, distFromCam);
 
     // Nyquist-safe per-band damping so short & medium wavelengths fade out cleanly before radial grid spacing coarsens!
-    float farDampGiant = 1.0 - smoothstep(460.0, 1280.0, effDist);
-    float farDampLong = 1.0 - smoothstep(380.0, 1080.0, effDist);
-    float farDampCross = 1.0 - smoothstep(240.0, 680.0, effDist);
-    float farDampChop = 1.0 - smoothstep(115.0, 350.0, effDist);
-    float windBoost = 0.86 + 0.30 * clamp(uWindStrength, 0.0, 1.25);
+    float farDampGiant = 1.0 - smoothstep(420.0, 1180.0, effDist);
+    float farDampLong = 1.0 - smoothstep(320.0, 920.0, effDist);
+    float farDampCross = 1.0 - smoothstep(190.0, 560.0, effDist);
+    float farDampChop = 1.0 - smoothstep(92.0, 275.0, effDist);
+    float windBoost = 0.86 + 0.28 * clamp(uWindStrength, 0.0, 1.25);
     float t = uTime * uWaveSpeed;
 
-    // 1. Irregular Swell Wave-Packet Envelopes + Unpredictable Towering "Rogue / Seventh-Wave" Cells!
-    float swellSetA = ocFbm2(wp.xz * 0.010 - vec2(t * 0.042, t * 0.028));
-    float swellSetB = ocFbm2(wp.xz * 0.021 + vec2(t * 0.033, -t * 0.046) + 19.4);
-    float rogueFieldA = ocFbm2(wp.xz * 0.0068 - vec2(t * 0.055, -t * 0.032) + 41.7);
-    float rogueFieldB = ocFbm2(wp.xz * 0.0135 + vec2(-t * 0.038, t * 0.051) - 23.9);
-    float rogueSurge = smoothstep(0.50, 0.88, rogueFieldA) * smoothstep(0.46, 0.85, rogueFieldB);
+    // 1. Irregular Swell Wave-Packet Envelopes + Finer-Scale "Seventh-Wave" Cells Proportioned to Islands!
+    float swellSetA = ocFbm2(wp.xz * 0.016 - vec2(t * 0.044, t * 0.030));
+    float swellSetB = ocFbm2(wp.xz * 0.032 + vec2(t * 0.035, -t * 0.048) + 19.4);
+    float rogueFieldA = ocFbm2(wp.xz * 0.011 - vec2(t * 0.056, -t * 0.034) + 41.7);
+    float rogueFieldB = ocFbm2(wp.xz * 0.021 + vec2(-t * 0.040, t * 0.052) - 23.9);
+    float rogueSurge = smoothstep(0.52, 0.88, rogueFieldA) * smoothstep(0.48, 0.86, rogueFieldB);
 
-    float groupA = mix(0.36, 1.56, smoothstep(0.16, 0.84, swellSetA)) * (1.0 + 0.72 * rogueSurge) * windBoost;
-    float groupB = mix(0.34, 1.48, smoothstep(0.18, 0.82, swellSetB)) * (1.0 + 0.58 * rogueSurge) * windBoost;
+    float groupA = mix(0.38, 1.42, smoothstep(0.16, 0.84, swellSetA)) * (1.0 + 0.54 * rogueSurge) * windBoost;
+    float groupB = mix(0.36, 1.36, smoothstep(0.18, 0.82, swellSetB)) * (1.0 + 0.44 * rogueSurge) * windBoost;
 
     // 2. Coastal Shoaling & Island Lee-Shadowing around archipelago islands!
     float coastalShelter = 1.0;
@@ -123,56 +123,56 @@ const OCEAN_VERT = /* glsl */ `
       if (sc.z <= 0.1) continue;
       float d = length(wp.xz - sc.xy) - sc.z;
       // Shoaling amplification just outside rocky reefs, gentle damping deep inside coves
-      float shoalAmp = 1.0 + 0.24 * exp(-pow((d - 6.5) / 6.0, 2.0));
-      coastalShelter *= mix(0.70, shoalAmp, smoothstep(-6.0, 16.0, d));
+      float shoalAmp = 1.0 + 0.20 * exp(-pow((d - 5.5) / 5.2, 2.0));
+      coastalShelter *= mix(0.68, shoalAmp, smoothstep(-5.5, 14.0, d));
     }
 
-    // 3. Domain-warped wave coordinates so crests curve, bend, fork & refract naturally!
+    // 3. Domain-warped wave coordinates scaled naturally against archipelago landforms!
     vec2 swellWarp = vec2(
-      ocFbm2(wp.xz * 0.015 + vec2(t * 0.019, -t * 0.014)) - 0.5,
-      ocFbm2(wp.xz * 0.015 + vec2(-t * 0.015, t * 0.022) + 31.7) - 0.5
-    ) * 26.0;
+      ocFbm2(wp.xz * 0.024 + vec2(t * 0.021, -t * 0.015)) - 0.5,
+      ocFbm2(wp.xz * 0.024 + vec2(-t * 0.016, t * 0.024) + 31.7) - 0.5
+    ) * 14.5;
     vec2 chopWarp = vec2(
-      ocNoise2(wp.xz * 0.055 + t * 0.085) - 0.5,
-      ocNoise2(wp.xz * 0.055 - t * 0.075 + 11.3) - 0.5
-    ) * 7.2;
+      ocNoise2(wp.xz * 0.082 + t * 0.092) - 0.5,
+      ocNoise2(wp.xz * 0.082 - t * 0.080 + 11.3) - 0.5
+    ) * 4.2;
 
-    vec2 pGiant = wp.xz + swellWarp * 1.25;
+    vec2 pGiant = wp.xz + swellWarp * 1.20;
     vec2 pPrimary = wp.xz + swellWarp;
     vec2 pCross = wp.xz - swellWarp * 0.78 + chopWarp;
 
     vec3 disp = vec3(0.0);
     vec2 slopeXZ = vec2(0.0);
 
-    float envGiant = farDampGiant * (0.65 + 1.25 * rogueSurge) * coastalShelter * windBoost;
+    float envGiant = farDampGiant * (0.62 + 0.96 * rogueSurge) * coastalShelter * windBoost;
     float envPrimary = farDampLong * groupA * coastalShelter;
     float envCross = farDampCross * groupB * coastalShelter;
-    float envChop = farDampChop * mix(0.55, 1.45, swellSetB) * (0.38 + 0.96 * uChoppiness) * windBoost;
+    float envChop = farDampChop * mix(0.55, 1.40, swellSetB) * (0.38 + 0.92 * uChoppiness) * windBoost;
 
-    // Towering North-Atlantic deep-ocean groundswells & random rogue rollers (76m & 58m wavelengths!)
-    accumTrochoidalWave(pGiant, vec2(0.76, 0.65), 0.14, 76.0, 0.96, t + 2.3, envGiant, disp, slopeXZ);
-    accumTrochoidalWave(pGiant, vec2(-0.62, 0.78), 0.11, 58.0, 1.02, t + 9.7, envGiant * 0.85, disp, slopeXZ);
+    // North-Atlantic groundswells proportioned to the archipelago islands (44m & 34m wavelengths)
+    accumTrochoidalWave(pGiant, vec2(0.76, 0.65), 0.115, 44.0, 0.96, t + 2.3, envGiant, disp, slopeXZ);
+    accumTrochoidalWave(pGiant, vec2(-0.62, 0.78), 0.092, 34.0, 1.02, t + 9.7, envGiant * 0.85, disp, slopeXZ);
 
-    // Primary irregular long swell train
-    accumTrochoidalWave(pPrimary, vec2(0.81, 0.58), 0.19, 46.0, 1.00, t, envPrimary, disp, slopeXZ);
-    accumTrochoidalWave(pPrimary, vec2(0.64, 0.77), 0.15, 29.0, 1.06, t + 4.1, envPrimary * 0.92, disp, slopeXZ);
-    // Crossed fjord-refraction swell train creating towering pyramidal 3D interference peaks!
-    accumTrochoidalWave(pCross, vec2(-0.52, 0.85), 0.165, 24.5, 1.09, t + 1.7, envCross, disp, slopeXZ);
-    accumTrochoidalWave(pCross, vec2(0.28, -0.96), 0.125, 16.2, 1.16, t + 8.3, envCross * 0.90, disp, slopeXZ);
-    // Mid-scale irregular wind-waves & turbulent currents
-    accumTrochoidalWave(wp.xz + chopWarp, vec2(-0.88, -0.47), 0.105, 10.4, 1.24, t, envChop, disp, slopeXZ);
-    accumTrochoidalWave(wp.xz - chopWarp, vec2(0.59, -0.80), 0.085, 6.7, 1.34, t + 2.9, envChop, disp, slopeXZ);
-    accumTrochoidalWave(wp.xz + chopWarp * 0.5, vec2(-0.24, 0.97), 0.062, 4.1, 1.44, t + 5.6, envChop, disp, slopeXZ);
-    accumTrochoidalWave(wp.xz, vec2(0.93, -0.36), 0.048, 2.7, 1.54, t + 3.2, envChop * 0.85, disp, slopeXZ);
+    // Primary irregular swell train (27m & 17.8m wavelengths)
+    accumTrochoidalWave(pPrimary, vec2(0.81, 0.58), 0.145, 27.0, 1.00, t, envPrimary, disp, slopeXZ);
+    accumTrochoidalWave(pPrimary, vec2(0.64, 0.77), 0.118, 17.8, 1.06, t + 4.1, envPrimary * 0.92, disp, slopeXZ);
+    // Crossed fjord-refraction swell train (14.5m & 9.8m wavelengths)
+    accumTrochoidalWave(pCross, vec2(-0.52, 0.85), 0.125, 14.5, 1.09, t + 1.7, envCross, disp, slopeXZ);
+    accumTrochoidalWave(pCross, vec2(0.28, -0.96), 0.098, 9.8, 1.16, t + 8.3, envCross * 0.90, disp, slopeXZ);
+    // Finer wind-waves & coastal currents (6.6m .. 1.85m wavelengths)
+    accumTrochoidalWave(wp.xz + chopWarp, vec2(-0.88, -0.47), 0.092, 6.6, 1.24, t, envChop, disp, slopeXZ);
+    accumTrochoidalWave(wp.xz - chopWarp, vec2(0.59, -0.80), 0.076, 4.3, 1.34, t + 2.9, envChop, disp, slopeXZ);
+    accumTrochoidalWave(wp.xz + chopWarp * 0.5, vec2(-0.24, 0.97), 0.056, 2.75, 1.44, t + 5.6, envChop, disp, slopeXZ);
+    accumTrochoidalWave(wp.xz, vec2(0.93, -0.36), 0.044, 1.85, 1.54, t + 3.2, envChop * 0.85, disp, slopeXZ);
 
-    // Random rogue heave & deep trough drawdown (clamped safely below hero cliff rim!)
-    float currentUndulation = ((swellSetA - 0.5) * 0.65 + rogueSurge * 0.95) * uWaveAmp * farDampLong;
-    disp.y = clamp(disp.y + currentUndulation, -7.8, 7.6);
+    // Subtle group heave & trough drawdown (proportioned cleanly below shoreline cliffs!)
+    float currentUndulation = ((swellSetA - 0.5) * 0.38 + rogueSurge * 0.55) * uWaveAmp * farDampLong;
+    disp.y = clamp(disp.y + currentUndulation, -4.8, 4.6);
 
     wp.xyz += disp;
     vMacroNormal = normalize(vec3(-slopeXZ.x, 1.0, -slopeXZ.y));
     vWaveHeight = disp.y;
-    vCrestFactor = clamp((disp.y / max(0.26, 1.45 * uWaveAmp)) * 0.5 + 0.5, 0.0, 1.0);
+    vCrestFactor = clamp((disp.y / max(0.20, 1.08 * uWaveAmp)) * 0.5 + 0.5, 0.0, 1.0);
     vGroupEnergy = clamp(0.5 * (groupA + groupB) - 0.35, 0.0, 1.0);
     vRogueFactor = clamp(rogueSurge * 1.35, 0.0, 1.0);
     vWorldPos = wp.xyz;
@@ -202,22 +202,22 @@ const OCEAN_FRAG = /* glsl */ `
 
   float waterMicroDetail(vec2 p, float distScale) {
     float t = uTime * uWaveSpeed;
-    float chop = (0.26 + 1.18 * uChoppiness) * (0.85 + 0.35 * clamp(uWindStrength, 0.0, 1.25));
-    float amp = (0.22 + 0.76 * clamp(uWaveAmp, 0.05, 2.8)) * distScale;
+    float chop = (0.26 + 1.12 * uChoppiness) * (0.85 + 0.32 * clamp(uWindStrength, 0.0, 1.25));
+    float amp = (0.18 + 0.58 * clamp(uWaveAmp, 0.05, 2.6)) * distScale;
 
     vec2 flow = vec2(
-      skyFbm(p * 0.045 + vec2(t * 0.03, -t * 0.02)) - 0.5,
-      skyFbm(p * 0.045 - vec2(t * 0.02, t * 0.03) + 7.7) - 0.5
-    ) * 4.5;
+      skyFbm(p * 0.068 + vec2(t * 0.03, -t * 0.02)) - 0.5,
+      skyFbm(p * 0.068 - vec2(t * 0.02, t * 0.03) + 7.7) - 0.5
+    ) * 3.0;
     vec2 pw = p + flow;
 
     float h = 0.0;
-    h += sin(dot(pw, vec2(0.32, 0.21)) - t * 1.55) * 0.22;
-    h += sin(dot(pw, vec2(-0.26, 0.37)) - t * 2.05) * 0.17;
-    h += sin(dot(pw, vec2(0.51, -0.44)) - t * 2.65) * 0.12 * chop;
-    h += (skyFbm(pw * 0.44 + vec2(t * 0.36, -t * 0.24)) - 0.5) * 0.40 * chop;
-    h += (skyNoise2(pw * 2.35 - vec2(t * 0.92, t * 0.68)) - 0.5) * 0.12 * chop;
-    h += (skyNoise2(pw * 6.40 + vec2(t * 1.42, -t * 1.05)) - 0.5) * 0.036 * chop * distScale;
+    h += sin(dot(pw, vec2(0.48, 0.31)) - t * 1.65) * 0.20;
+    h += sin(dot(pw, vec2(-0.38, 0.54)) - t * 2.15) * 0.15;
+    h += sin(dot(pw, vec2(0.74, -0.64)) - t * 2.75) * 0.11 * chop;
+    h += (skyFbm(pw * 0.62 + vec2(t * 0.38, -t * 0.25)) - 0.5) * 0.36 * chop;
+    h += (skyNoise2(pw * 2.90 - vec2(t * 0.95, t * 0.70)) - 0.5) * 0.11 * chop;
+    h += (skyNoise2(pw * 7.40 + vec2(t * 1.45, -t * 1.08)) - 0.5) * 0.032 * chop * distScale;
     return h * amp;
   }
 
@@ -250,8 +250,8 @@ const OCEAN_FRAG = /* glsl */ `
     float effectiveCos = mix(localCos, macroCos, smoothstep(130.0, 520.0, dist));
     float fresnel = 0.028 + 0.972 * pow(max(1.0 - effectiveCos, 1e-5), 4.8);
 
-    float foamLace = skyFbm(p * 0.88 + vec2(uTime * 0.20 * uWaveSpeed, -uTime * 0.14 * uWaveSpeed));
-    float spumeCells = skyNoise2(p * 3.1 - vec2(uTime * 0.42 * uWaveSpeed, 0.0));
+    float foamLace = skyFbm(p * 1.18 + vec2(uTime * 0.22 * uWaveSpeed, -uTime * 0.15 * uWaveSpeed));
+    float spumeCells = skyNoise2(p * 3.8 - vec2(uTime * 0.44 * uWaveSpeed, 0.0));
 
     float coastalSurf = 0.0;
     float shoalGlow = 0.0;

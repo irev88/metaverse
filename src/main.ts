@@ -18,10 +18,48 @@ import {
   sampleWorldTerrainHeight,
   TOOTHLESS_PERCH_POSE,
 } from './world/NordicCliffWorld';
+import { createLivingWorldDirector, LivingWorldDirector } from './world/LivingWorldDirector';
 import { createLoadingScreenController } from './ui/LoadingScreen';
 import { CAMERA_BOOKMARKS, CameraBookmark, createRigStudioHUD } from './ui/RigStudioHUD';
+import { createUserExperienceHUD, UserExperienceHUDController } from './ui/UserExperienceHUD';
+
+type AppInterfaceMode = 'developer' | 'user';
+
+function resolveAppMode(): AppInterfaceMode {
+  const winMode = (window as unknown as { __TWIN_FURIES_MODE__?: string }).__TWIN_FURIES_MODE__;
+  if (winMode === 'developer' || winMode === 'user') return winMode;
+  const envMode = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_APP_MODE;
+  if (envMode === 'developer' || envMode === 'user') return envMode;
+  return 'developer';
+}
 
 async function bootstrap(): Promise<void> {
+  const appMode = resolveAppMode();
+  const isUserMode = appMode === 'user';
+
+  if (isUserMode) {
+    document.title = 'Where Dusk Meets the Open Tide — Interactive 3D World';
+    const topMeta = document.querySelector('.lc-top-meta');
+    if (topMeta) {
+      topMeta.innerHTML = `
+        <span class="lc-live-coord">
+          <span class="lc-live-dot"></span>
+          INTERACTIVE 3D LIVING WORLD
+        </span>
+      `;
+      (topMeta as HTMLElement).style.justifyContent = 'center';
+    }
+    const eyebrowEl = document.querySelector('.lc-eyebrow');
+    if (eyebrowEl) eyebrowEl.textContent = 'INTERACTIVE 3D SANCTUARY';
+    const bottomMeta = document.querySelector('.lc-bottom-meta');
+    if (bottomMeta) {
+      bottomMeta.innerHTML = `
+        <span>DRAG TO ROTATE &middot; RIGHT-DRAG TO PAN &middot; SCROLL TO ZOOM</span>
+        <span>WASD / ARROWS TO MOVE &middot; DOUBLE-CLICK TO GLIDE CLOSER</span>
+      `;
+    }
+  }
+
   const loadingScreen = createLoadingScreenController();
   const canvasContainer = document.getElementById('canvas-container')!;
   const hudRoot = document.getElementById('hud-root')!;
@@ -54,12 +92,13 @@ async function bootstrap(): Promise<void> {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.copy(activeBookmark.target);
   controls.enableDamping = true;
-  controls.dampingFactor = 0.065;
-  controls.rotateSpeed = 0.78;
-  controls.panSpeed = 0.85;
-  controls.zoomSpeed = 0.92;
-  controls.minDistance = 0.34;
-  controls.maxDistance = 280.0;
+  controls.dampingFactor = isUserMode ? 0.052 : 0.065;
+  controls.screenSpacePanning = true;
+  controls.rotateSpeed = isUserMode ? 0.68 : 0.78;
+  controls.panSpeed = isUserMode ? 0.80 : 0.85;
+  controls.zoomSpeed = isUserMode ? 0.86 : 0.92;
+  controls.minDistance = 0.45;
+  controls.maxDistance = 320.0;
   controls.maxPolarAngle = Math.PI * 0.56;
   controls.touches = {
     ONE: THREE.TOUCH.ROTATE,
@@ -177,63 +216,106 @@ async function bootstrap(): Promise<void> {
     activeCamTransition = null;
   });
 
-  const hud = createRigStudioHUD(
-    hudRoot,
-    toothlessAsset,
-    toothlessController,
-    lightFuryAsset,
-    lightFuryController,
-    flightChoreographer,
-    {
-      initialWeatherPreset,
-      onSelectCameraBookmark(bm: CameraBookmark) {
-        activeBookmark = bm;
-        activeCamTransition = {
-          goalPos: bm.position.clone(),
-          goalTarget: bm.target.clone(),
-        };
-      },
-      onFlightResetCamera() {
-        activeCamTransition = {
-          goalPos: activeBookmark.position.clone(),
-          goalTarget: activeBookmark.target.clone(),
-        };
-      },
-      onFlightSpeedChange(mult) {
-        flightSpeedMultiplier = mult;
-      },
-      onToggleCursorGaze(enabled) {
-        cursorGazeEnabled = enabled;
-      },
+  let devHud: ReturnType<typeof createRigStudioHUD> | null = null;
+  let userHud: UserExperienceHUDController | null = null;
+  let livingDirector: LivingWorldDirector | null = null;
+
+  if (isUserMode) {
+    livingDirector = createLivingWorldDirector(
+      renderer,
+      scene,
+      atmosphere,
+      cliffWorld.ocean,
+      toothlessAsset,
+      toothlessController,
+      lightFuryAsset,
+      lightFuryController,
+      flightChoreographer
+    );
+    userHud = createUserExperienceHUD(hudRoot, {
       onCaptureSnapshot() {
         snapshotPending = true;
       },
-      onSelectWeatherPreset(presetId) {
-        atmosphere.applyPreset(presetId, renderer, scene);
+      onResetView() {
+        activeCamTransition = {
+          goalPos: CAMERA_BOOKMARKS[0].position.clone(),
+          goalTarget: CAMERA_BOOKMARKS[0].target.clone(),
+        };
       },
-      onSunElevationChange(elevDeg) {
-        atmosphere.setSunElevation(elevDeg, renderer, scene);
+      onToggleAudioMute() {
+        const nextMuted = !atmosphere.isAudioMuted();
+        atmosphere.setAudioMuted(nextMuted);
+        return nextMuted;
       },
-      onMistDensityChange(mist) {
-        atmosphere.setMistDensity(mist, scene);
-      },
-      onRainIntensityChange(rain) {
-        atmosphere.setRainIntensity(rain);
-      },
-      onWindStrengthChange(wind) {
-        atmosphere.setWindStrength(wind);
-      },
-      onLightningFrequencyChange(freq) {
-        atmosphere.setLightningFrequency(freq);
-      },
-      onTriggerLightningStrike() {
-        atmosphere.triggerLightningStrike();
-      },
-      onOceanParamsChange(patch) {
-        cliffWorld.ocean.setOceanParams(patch);
-      },
-    }
-  );
+    });
+  } else {
+    devHud = createRigStudioHUD(
+      hudRoot,
+      toothlessAsset,
+      toothlessController,
+      lightFuryAsset,
+      lightFuryController,
+      flightChoreographer,
+      {
+        initialWeatherPreset,
+        onSelectCameraBookmark(bm: CameraBookmark) {
+          activeBookmark = bm;
+          activeCamTransition = {
+            goalPos: bm.position.clone(),
+            goalTarget: bm.target.clone(),
+          };
+        },
+        onFlightResetCamera() {
+          activeCamTransition = {
+            goalPos: activeBookmark.position.clone(),
+            goalTarget: activeBookmark.target.clone(),
+          };
+        },
+        onFlightSpeedChange(mult) {
+          flightSpeedMultiplier = mult;
+        },
+        onToggleCursorGaze(enabled) {
+          cursorGazeEnabled = enabled;
+        },
+        onCaptureSnapshot() {
+          snapshotPending = true;
+        },
+        onSelectWeatherPreset(presetId) {
+          atmosphere.applyPreset(presetId, renderer, scene);
+        },
+        onSunElevationChange(elevDeg) {
+          atmosphere.setSunElevation(elevDeg, renderer, scene);
+        },
+        onMistDensityChange(mist) {
+          atmosphere.setMistDensity(mist, scene);
+        },
+        onRainIntensityChange(rain) {
+          atmosphere.setRainIntensity(rain);
+        },
+        onWindStrengthChange(wind) {
+          atmosphere.setWindStrength(wind);
+        },
+        onLightningFrequencyChange(freq) {
+          atmosphere.setLightningFrequency(freq);
+        },
+        onTriggerLightningStrike() {
+          atmosphere.triggerLightningStrike();
+        },
+        onOceanParamsChange(patch) {
+          cliffWorld.ocean.setOceanParams(patch);
+        },
+      }
+    );
+  }
+
+  const showToastMsg = (msg: string) => {
+    if (devHud) devHud.showToast(msg);
+    else if (userHud) userHud.showToast(msg);
+  };
+  const triggerShutter = () => {
+    if (devHud) devHud.triggerShutterFlash();
+    else if (userHud) userHud.triggerShutterFlash();
+  };
 
   // ============================================================================
   // INTERACTIVE WASD + Q/E + SHIFT FREE-ROAM CAMERA EXPLORER
@@ -263,7 +345,7 @@ async function bootstrap(): Promise<void> {
   const ndcPointer = new THREE.Vector2();
 
   renderer.domElement.addEventListener('dblclick', (ev) => {
-    if (flightChoreographer.isPlaying) return;
+    if (flightChoreographer.isPlaying && !isUserMode) return;
     const rect = renderer.domElement.getBoundingClientRect();
     ndcPointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     ndcPointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
@@ -325,12 +407,16 @@ async function bootstrap(): Promise<void> {
     const nextPos = hitPt.clone().addScaledVector(viewDir, idealDist);
     nextPos.y = Math.max(nextPos.y, sampleWorldTerrainHeight(nextPos.x, nextPos.z) + 1.2, -9.2);
 
-    hud.clearActiveCameraBookmark();
+    if (devHud) {
+      devHud.clearActiveCameraBookmark();
+    }
     activeCamTransition = {
       goalPos: nextPos,
       goalTarget: hitPt,
     };
-    hud.showToast(`Focused on ${focusName}`);
+    if (devHud) {
+      devHud.showToast(`Focused on ${focusName}`);
+    }
   });
 
   // ============================================================================
@@ -395,6 +481,10 @@ async function bootstrap(): Promise<void> {
     const dt = Math.min(clock.getDelta(), 0.05);
     const elapsed = clock.elapsedTime;
 
+    if (livingDirector) {
+      livingDirector.update(dt, elapsed);
+    }
+
     const flightActiveBefore = flightChoreographer.isPlaying;
     const flightStep = flightChoreographer.update(
       dt * flightSpeedMultiplier,
@@ -402,25 +492,34 @@ async function bootstrap(): Promise<void> {
       controls.target
     );
 
-    controls.maxPolarAngle = flightStep.isAirborne ? Math.PI * 0.84 : Math.PI * 0.56;
+    controls.maxPolarAngle = flightStep.isAirborne || isUserMode ? Math.PI * 0.78 : Math.PI * 0.56;
 
-    if (wasFlightPlaying && !flightChoreographer.isPlaying) {
+    if (isUserMode) {
+      // Smoothly adapt rotate, pan & zoom speeds to viewing distance for effortless accessibility!
+      const viewDist = camera.position.distanceTo(controls.target);
+      const closeT = THREE.MathUtils.clamp((viewDist - 1.5) / 28.0, 0, 1);
+      controls.rotateSpeed = THREE.MathUtils.lerp(0.46, 0.72, closeT);
+      controls.panSpeed = THREE.MathUtils.lerp(0.54, 1.02, closeT);
+      controls.zoomSpeed = THREE.MathUtils.lerp(0.68, 0.96, closeT);
+    }
+
+    if (wasFlightPlaying && !flightChoreographer.isPlaying && devHud) {
       activeCamTransition = {
         goalPos: activeBookmark.position.clone(),
         goalTarget: activeBookmark.target.clone(),
       };
-      hud.updateFlightUI();
-      hud.syncControlsFromRig();
+      devHud.updateFlightUI();
+      devHud.syncControlsFromRig();
     }
     wasFlightPlaying = flightChoreographer.isPlaying;
 
-    if (flightActiveBefore) {
-      hud.updateFlightUI();
+    if (flightActiveBefore && devHud) {
+      devHud.updateFlightUI();
     }
 
     // Apply WASD / Arrow / Q / E Free-Roam Camera Velocity
     roamDesired.set(0, 0, 0);
-    if (!flightChoreographer.isPlaying || !flightChoreographer.followCamera) {
+    if (!flightChoreographer.isPlaying || !flightChoreographer.followCamera || isUserMode) {
       const moveFwd =
         (pressedKeys.has('KeyW') || pressedKeys.has('ArrowUp') ? 1 : 0) -
         (pressedKeys.has('KeyS') || pressedKeys.has('ArrowDown') ? 1 : 0);
@@ -441,20 +540,20 @@ async function bootstrap(): Promise<void> {
         if (roamDesired.lengthSq() > 1e-5) roamDesired.normalize();
 
         const orbitDist = camera.position.distanceTo(controls.target);
-        const baseSpeed = THREE.MathUtils.clamp(orbitDist * 0.85, 6.5, 34.0);
+        const baseSpeed = THREE.MathUtils.clamp(orbitDist * 0.78, 5.5, 30.0);
         const sprintMult =
-          pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight') ? 2.4 : 1.0;
+          pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight') ? 2.2 : 1.0;
         roamDesired.multiplyScalar(baseSpeed * sprintMult);
       }
     }
-    roamVelocity.lerp(roamDesired, 1.0 - Math.exp(-9.0 * dt));
+    roamVelocity.lerp(roamDesired, 1.0 - Math.exp(-8.5 * dt));
     if (roamVelocity.lengthSq() > 1e-4) {
       camera.position.addScaledVector(roamVelocity, dt);
       controls.target.addScaledVector(roamVelocity, dt);
     }
 
-    if (activeCamTransition && !flightChoreographer.isPlaying) {
-      const alpha = 1.0 - Math.exp(-5.5 * dt);
+    if (activeCamTransition && (!flightChoreographer.isPlaying || isUserMode)) {
+      const alpha = 1.0 - Math.exp(-5.0 * dt);
       camera.position.lerp(activeCamTransition.goalPos, alpha);
       controls.target.lerp(activeCamTransition.goalTarget, alpha);
       if (
@@ -540,7 +639,9 @@ async function bootstrap(): Promise<void> {
     if (fpsAccum >= 0.4) {
       const instFps = fpsFrames / fpsAccum;
       smoothedFps = smoothedFps * 0.65 + instFps * 0.35;
-      hud.updateTelemetry(smoothedFps, currentLOD);
+      if (devHud) {
+        devHud.updateTelemetry(smoothedFps, currentLOD);
+      }
       fpsAccum = 0;
       fpsFrames = 0;
     }
@@ -553,13 +654,15 @@ async function bootstrap(): Promise<void> {
         const dataUrl = renderer.domElement.toDataURL('image/png');
         const link = document.createElement('a');
         const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-        link.download = `twin-furies-atelier-${stamp}.png`;
+        link.download = isUserMode
+          ? `twin-furies-sanctuary-${stamp}.png`
+          : `twin-furies-atelier-${stamp}.png`;
         link.href = dataUrl;
         link.click();
-        hud.triggerShutterFlash();
-        hud.showToast('Saved UI-Free HD Snapshot (.PNG)');
+        triggerShutter();
+        showToastMsg('Saved HD Snapshot (.PNG)');
       } catch {
-        hud.showToast('Snapshot unavailable on this device');
+        showToastMsg('Snapshot unavailable on this device');
       }
     }
   }

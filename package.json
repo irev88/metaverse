@@ -5,8 +5,12 @@
   "description": "Photorealistic, fully rigged web-native 3D model of Toothless (The Hidden World x Live-Action Hybrid) in Three.js WebGL2",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 5173",
+    "dev": "VITE_APP_MODE=developer vite --host 0.0.0.0 --port 5173",
+    "dev:user": "VITE_APP_MODE=user vite --host 0.0.0.0 --port 5174",
     "build": "tsc --noEmit && vite build",
+    "build:user": "VITE_APP_MODE=user npm run build",
+    "build:dev": "VITE_APP_MODE=developer npm run build",
+    "sync:docs": "tsc --noEmit && VITE_APP_MODE=user vite build --outDir dist-user && VITE_APP_MODE=developer vite build --outDir dist-dev && rm -rf docs/assets docs/dev && cp -r dist-user/* docs/ && mkdir -p docs/dev && cp -r dist-dev/* docs/dev/ && touch docs/.nojekyll",
     "preview": "vite preview --host 0.0.0.0 --port 4173"
   },
   "dependencies": {
