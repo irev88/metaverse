@@ -28,6 +28,10 @@ import {
   QualityStageId,
   RenderQualityController,
 } from '../world/RenderQualityManager';
+import {
+  clearAllSanctuaryLocks,
+  fetchGlobalSanctuarySealed,
+} from './SanctuaryGatekeeper';
 
 export type ActiveDragonId = 'light-fury' | 'toothless';
 
@@ -208,6 +212,9 @@ export function createRigStudioHUD(
       <button class="telemetry-pill hud-collapsible" id="btn-fullscreen" title="Toggle Immersive Fullscreen [F]">
         Fullscreen <span class="kbd-hint">F</span>
       </button>
+      <button class="telemetry-pill hud-collapsible" id="btn-owner-gate" title="Owner Control: View &amp; Unlock Global User Website Gate if 'No' Was Chosen">
+        User Site: <strong id="tel-gate-status">Open</strong>
+      </button>
       <button class="telemetry-pill hud-collapsible" id="btn-help" title="Navigation &amp; Keyboard Shortcuts [?]">
         Controls <span class="kbd-hint">?</span>
       </button>
@@ -227,8 +234,34 @@ export function createRigStudioHUD(
   const lightningTopBtn = header.querySelector('#btn-lightning-top') as HTMLButtonElement;
   const photoBtn = header.querySelector('#btn-photo') as HTMLButtonElement;
   const fullscreenBtn = header.querySelector('#btn-fullscreen') as HTMLButtonElement;
+  const ownerGateBtn = header.querySelector('#btn-owner-gate') as HTMLButtonElement;
+  const telGateStatus = header.querySelector('#tel-gate-status') as HTMLElement;
   const helpBtn = header.querySelector('#btn-help') as HTMLButtonElement;
   const toggleBtn = header.querySelector('#btn-toggle-hud') as HTMLButtonElement;
+
+  const refreshOwnerGateBadge = async () => {
+    const sealed = await fetchGlobalSanctuarySealed(2400);
+    if (sealed === true) {
+      telGateStatus.textContent = 'SEALED · Unlock';
+      ownerGateBtn.classList.add('is-active');
+      ownerGateBtn.style.borderColor = 'rgba(255, 132, 168, 0.72)';
+    } else {
+      telGateStatus.textContent = 'Open';
+      ownerGateBtn.classList.remove('is-active');
+      ownerGateBtn.style.borderColor = '';
+    }
+  };
+  void refreshOwnerGateBadge();
+  window.setInterval(() => {
+    void refreshOwnerGateBadge();
+  }, 10000);
+
+  ownerGateBtn.addEventListener('click', async () => {
+    telGateStatus.textContent = 'Unlocking…';
+    await clearAllSanctuaryLocks();
+    await refreshOwnerGateBadge();
+    showToast('✓ User Website Globally Unlocked for All Visitors');
+  });
 
   const fireManualLightning = () => {
     callbacks.onTriggerLightningStrike();

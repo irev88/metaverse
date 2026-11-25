@@ -30,6 +30,8 @@ import { CAMERA_BOOKMARKS, CameraBookmark, createRigStudioHUD } from './ui/RigSt
 import {
   checkSanctuarySealedOnBoot,
   executePermanentSanctuaryShutdown,
+  fetchGlobalSanctuarySealed,
+  persistSanctuarySeal,
 } from './ui/SanctuaryGatekeeper';
 import { createUserExperienceHUD, UserExperienceHUDController } from './ui/UserExperienceHUD';
 
@@ -308,6 +310,8 @@ async function bootstrap(): Promise<void> {
         storyDirector?.chooseYes();
       },
       onConfessionChooseNo() {
+        // Seal globally on Supabase immediately so even closing the tab cannot bypass the lock!
+        void persistSanctuarySeal();
         storyDirector?.chooseNo();
       },
       onClickExploreWorld() {
@@ -320,6 +324,34 @@ async function bootstrap(): Promise<void> {
         storyDirector?.replayStory();
       },
     });
+
+    // Live cross-visitor guard: if ANY visitor seals the site globally with "No", shut down open sessions too!
+    const globalSealWatch = window.setInterval(async () => {
+      if (renderLoopHalted) {
+        window.clearInterval(globalSealWatch);
+        return;
+      }
+      // Allow the active 12s farewell animation to finish naturally on the tab that clicked "No"
+      const curMode = storyDirector?.getMode();
+      if (curMode === 'declined-playing' || curMode === 'declined-finished') return;
+
+      const remoteSealed = await fetchGlobalSanctuarySealed(2200);
+      if (remoteSealed === true && !renderLoopHalted) {
+        window.clearInterval(globalSealWatch);
+        renderLoopHalted = true;
+        if (rafHandle) cancelAnimationFrame(rafHandle);
+        void executePermanentSanctuaryShutdown({
+          stopRenderLoop: () => {
+            renderLoopHalted = true;
+            if (rafHandle) cancelAnimationFrame(rafHandle);
+          },
+          muteAudio: () => atmosphere.setAudioMuted(true),
+          scene,
+          renderer,
+          composer,
+        });
+      }
+    }, 8000);
   } else {
     devHud = createRigStudioHUD(
       hudRoot,
@@ -667,6 +699,9 @@ async function bootstrap(): Promise<void> {
 
     toothlessController.update(dt);
     lightFuryController.update(dt);
+    if (storyDirector) {
+      storyDirector.applyBiomechanicalPostPass(dt);
+    }
 
     // Subtle Interactive Pointer Gaze-Tracking when Perched & Close (only when camera is unlocked!)
     const nowSec = performance.now() * 0.001;

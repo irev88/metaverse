@@ -339,6 +339,42 @@ export const SHARED_SKY_GLSL = /* glsl */ `
     return fract(p.x * p.y);
   }
 
+  vec3 starHash33(vec3 p3) {
+    p3 = fract(p3 * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yxz + 33.33);
+    return fract((p3.xxy + p3.yxx) * p3.zyx);
+  }
+
+  vec3 evalStarLayer3D(vec3 dir, float scale, float densityThresh, float radiusMax, float timeSec) {
+    vec3 p = dir * scale;
+    vec3 cell = floor(p);
+    vec3 local = fract(p) - 0.5;
+    vec3 rnd = starHash33(cell);
+    if (rnd.x < densityThresh) return vec3(0.0);
+
+    // Random 3D sub-cell offset so stars never align on lattice lines or regular intervals!
+    vec3 jitter = (starHash33(cell + vec3(19.19, 47.73, 83.41)) - 0.5) * 0.76;
+    float d = length(local - jitter);
+    float magNorm = clamp((rnd.x - densityThresh) / max(1e-4, 1.0 - densityThresh), 0.0, 1.0);
+    float coreR = mix(radiusMax * 0.45, radiusMax, magNorm);
+    float core = smoothstep(coreR, coreR * 0.08, d);
+    float airyHalo = smoothstep(coreR * 2.6, 0.0, d) * 0.22 * magNorm;
+
+    float twinkleSpd = 1.1 + rnd.y * 2.6;
+    float twinkle = 0.76 + 0.24 * sin(timeSec * twinkleSpd + rnd.z * 62.83);
+
+    // Realistic stellar Planck color temperatures (cool O/B blue-white -> pure A white -> warm K/M gold-peach)
+    vec3 coolStar = vec3(0.72, 0.85, 1.0);
+    vec3 pureStar = vec3(0.97, 0.98, 1.0);
+    vec3 warmStar = vec3(1.0, 0.86, 0.72);
+    vec3 tint = rnd.y < 0.45
+      ? mix(coolStar, pureStar, rnd.y / 0.45)
+      : mix(pureStar, warmStar, (rnd.y - 0.45) / 0.55);
+
+    float lum = (core + airyHalo) * mix(0.32, 1.55, pow(magNorm, 1.45)) * twinkle;
+    return tint * lum;
+  }
+
   float skyNoise2(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
@@ -391,21 +427,43 @@ export const SHARED_SKY_GLSL = /* glsl */ `
     float mieCore = pow(max(sunDot, 1e-5), max(uMieExponent, 1.0));
     sky += uMieColor * mieCore * uMieStrength * (0.36 + 0.64 * pow(max(1.0 - elev, 1e-5), 1.55));
 
-    // Crisp Starfield + Multi-Curtain Emerald & Violet Aurora Borealis
+    // Crisp Aperiodic 3D Multi-Magnitude Starfield + Milky Way Band + Boreal Aurora
     if (includeStarsAndDisc && uNightFactor > 0.01 && dir.y > 0.02) {
-      float horizonFade = smoothstep(0.02, 0.24, dir.y);
-      vec2 starUv = dir.xz / (dir.y + 0.35) * 145.0;
-      vec2 starCell = floor(starUv);
-      vec2 starFrac = fract(starUv) - 0.5;
-      float sSeed = skyHash21(starCell);
-      if (sSeed > 0.962) {
-        vec2 jitter = vec2(skyHash21(starCell + 7.1), skyHash21(starCell + 13.7)) - 0.5;
-        float dStar = length(starFrac - jitter * 0.65);
-        float twinkle = 0.70 + 0.30 * sin(timeSec * (1.8 + sSeed * 3.2) + sSeed * 40.0);
-        float starBright = smoothstep(0.09, 0.008, dStar) * twinkle * smoothstep(0.962, 0.999, sSeed);
-        vec3 starTint = mix(vec3(0.76, 0.88, 1.0), vec3(1.0, 0.90, 0.80), skyHash21(starCell + 3.3));
-        sky += starTint * starBright * 1.55 * uNightFactor * horizonFade * (1.0 - uCloudCoverage * 0.85);
-      }
+      float horizonFade = smoothstep(0.02, 0.22, dir.y);
+      float clearSkyMask = 1.0 - uCloudCoverage * 0.85;
+
+      // Subtle diagonal galactic Milky Way band modulating cluster richness organically across the sky
+      float galacticPlane = dir.x * 0.58 + dir.y * 0.52 - dir.z * 0.63;
+      float galacticWarp = (skyFbm(dir.xz * 2.4 + vec2(3.1, -1.7)) - 0.5) * 0.28;
+      float milkyBand = exp(-pow((galacticPlane - 0.18 + galacticWarp) / 0.30, 2.0));
+      float clusterPatch = skyFbm(dir.xz * 5.2 + dir.y * 2.3);
+      float localRichness = clamp(0.35 + 0.45 * milkyBand + 0.45 * smoothstep(0.35, 0.78, clusterPatch), 0.15, 1.15);
+
+      // Three mutually rotated 3D bases so zero axial grid alignments can ever occur
+      mat3 rotB = mat3(
+         0.6428,  0.4422, -0.6255,
+        -0.5417,  0.8358,  0.0896,
+         0.5417,  0.3258,  0.7750
+      );
+      mat3 rotC = mat3(
+         0.3568, -0.8090,  0.4670,
+         0.8626,  0.4545,  0.2225,
+        -0.3587,  0.3728,  0.8558
+      );
+
+      // Layer 1: Sparse bright hero navigation stars
+      vec3 starsL1 = evalStarLayer3D(dir, 46.0, 0.976, 0.082, timeSec) * 1.35;
+      // Layer 2: Natural constellation clusters modulated by galactic & nebula patch density
+      float threshL2 = mix(0.985, 0.938, clamp(localRichness, 0.0, 1.0));
+      vec3 starsL2 = evalStarLayer3D(rotB * dir, 108.0, threshL2, 0.088, timeSec * 0.85) * 0.95;
+      // Layer 3: Delicate faint deep-space stardust
+      float threshL3 = mix(0.982, 0.915, clamp(milkyBand * 0.8 + clusterPatch * 0.4, 0.0, 1.0));
+      vec3 starsL3 = evalStarLayer3D(rotC * dir, 224.0, threshL3, 0.095, timeSec * 0.65) * 0.52;
+
+      // Subtle diffuse Milky Way starlight veil
+      vec3 milkyGlow = vec3(0.42, 0.50, 0.72) * milkyBand * smoothstep(0.30, 0.75, clusterPatch) * 0.055;
+
+      sky += (starsL1 + starsL2 + starsL3 + milkyGlow) * uNightFactor * horizonFade * clearSkyMask;
 
       if (uAuroraIntensity > 0.01) {
         vec2 aurUv = dir.xz / (dir.y + 0.26);

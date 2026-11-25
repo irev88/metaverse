@@ -7,9 +7,86 @@ const IDB_NAME = 'OurWorldSanctuaryGateDB';
 const IDB_STORE = 'sanctuary_state';
 const IDB_RECORD_KEY = 'gate_status';
 
+// Global cross-visitor Sanctuary Gate backed by Supabase PostgREST + Security Definer RPCs
+const SUPABASE_REST_URL = 'https://ivukofmpntghjrtruich.supabase.co/rest/v1';
+const SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2dWtvZm1wbnRnaGpydHJ1aWNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ5NDU2NzksImV4cCI6MjExMDUyMTY3OX0.PtUWaplKRyVdscls3sbjvSAIOf2F59veUlNHVqpNNjQ';
+const OWNER_UNLOCK_SECRET = 'owner-reopen-our-world';
+
 declare global {
   interface Window {
     __REOPEN_OUR_WORLD__?: () => Promise<void>;
+  }
+}
+
+/**
+ * Queries global cross-visitor seal status from Supabase (`true` = sealed for everyone,
+ * `false` = unlocked by owner, `null` = network offline/unreachable -> use local fallback).
+ */
+export async function fetchGlobalSanctuarySealed(timeoutMs = 2600): Promise<boolean | null> {
+  if (typeof fetch === 'undefined') return null;
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctrl ? window.setTimeout(() => ctrl.abort(), timeoutMs) : null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_REST_URL}/our_world_sanctuary_gate?id=eq.global&select=is_sealed`,
+      {
+        method: 'GET',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          'Cache-Control': 'no-cache',
+        },
+        signal: ctrl?.signal,
+      }
+    );
+    if (timer !== null) window.clearTimeout(timer);
+    if (!res.ok) return null;
+    const rows = (await res.json()) as Array<{ is_sealed?: boolean }>;
+    if (Array.isArray(rows) && rows.length > 0 && typeof rows[0].is_sealed === 'boolean') {
+      return rows[0].is_sealed;
+    }
+    return null;
+  } catch {
+    if (timer !== null) window.clearTimeout(timer);
+    return null;
+  }
+}
+
+async function sealGlobalSanctuaryRemote(): Promise<boolean> {
+  if (typeof fetch === 'undefined') return false;
+  try {
+    const res = await fetch(`${SUPABASE_REST_URL}/rpc/seal_our_world_sanctuary`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+      keepalive: true,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function unlockGlobalSanctuaryRemote(): Promise<boolean> {
+  if (typeof fetch === 'undefined') return false;
+  try {
+    const res = await fetch(`${SUPABASE_REST_URL}/rpc/unlock_our_world_sanctuary`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ secret_code: OWNER_UNLOCK_SECRET }),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
@@ -127,20 +204,38 @@ async function writeIdbSealed(sealed: boolean): Promise<void> {
   });
 }
 
-export async function clearAllSanctuaryLocks(): Promise<void> {
+async function clearLocalLocksOnly(): Promise<void> {
   writeLocalSealed(false);
   writeCookieSealed(false);
   await writeIdbSealed(false);
 }
 
-export async function persistSanctuarySeal(): Promise<void> {
+async function persistLocalLocksOnly(): Promise<void> {
   writeLocalSealed(true);
   writeCookieSealed(true);
   await writeIdbSealed(true);
 }
 
+/**
+ * Owner unlock: clears BOTH the global Supabase site-wide lock AND local browser locks!
+ */
+export async function clearAllSanctuaryLocks(): Promise<void> {
+  await Promise.all([unlockGlobalSanctuaryRemote(), clearLocalLocksOnly()]);
+}
+
+/**
+ * Visitor "No" seal: locks BOTH the global Supabase site-wide gate (for whoever accesses the website!)
+ * AND local browser stores!
+ */
+export async function persistSanctuarySeal(): Promise<void> {
+  await Promise.all([sealGlobalSanctuaryRemote(), persistLocalLocksOnly()]);
+}
+
+let hooksInstalled = false;
 function installOwnerUnlockHooks(): void {
-  // Programmatic owner reset hook
+  if (hooksInstalled) return;
+  hooksInstalled = true;
+
   window.__REOPEN_OUR_WORLD__ = async () => {
     await clearAllSanctuaryLocks();
     window.location.replace(window.location.pathname);
@@ -222,7 +317,8 @@ export function renderSealedSanctuaryScreen(): void {
 
 /**
  * Runs at the start of User Interface bootstrap BEFORE WebGL initializes.
- * Returns `true` if the world is sealed and execution must halt immediately.
+ * Checks global Supabase seal first (so "No" locks the website globally for ALL visitors
+ * until the owner unlocks it), with local triple-store fallback if offline.
  */
 export async function checkSanctuarySealedOnBoot(): Promise<boolean> {
   installOwnerUnlockHooks();
@@ -232,12 +328,24 @@ export async function checkSanctuarySealedOnBoot(): Promise<boolean> {
     return false;
   }
 
+  // 1. Check authoritative global Supabase gate first!
+  const remoteSealed = await fetchGlobalSanctuarySealed(2600);
+  if (remoteSealed === true) {
+    await persistLocalLocksOnly();
+    renderSealedSanctuaryScreen();
+    return true;
+  }
+  if (remoteSealed === false) {
+    // Owner unlocked the site globally -> clear any stale local browser lock so visitor can enter!
+    await clearLocalLocksOnly();
+    return false;
+  }
+
+  // 2. Offline / restricted network fallback: check local browser stores
   const syncSealed = readLocalSealed() || readCookieSealed();
   const idbSealed = await readIdbSealed();
-
   if (syncSealed || idbSealed) {
-    // Self-heal all three stores so clearing a single store cannot bypass the lock
-    await persistSanctuarySeal();
+    await persistLocalLocksOnly();
     renderSealedSanctuaryScreen();
     return true;
   }
@@ -246,8 +354,8 @@ export async function checkSanctuarySealedOnBoot(): Promise<boolean> {
 }
 
 /**
- * Permanently shuts down the 3D WebGL world, disposes GPU resources, locks the User Interface,
- * and transitions into the non-interactive Sealed Sanctuary screen.
+ * Permanently shuts down the 3D WebGL world, disposes GPU resources, locks the User Interface
+ * globally across all devices/visitors, and transitions into the Sealed Sanctuary screen.
  */
 export async function executePermanentSanctuaryShutdown(options: {
   stopRenderLoop: () => void;

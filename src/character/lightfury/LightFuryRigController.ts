@@ -540,8 +540,8 @@ export class LightFuryRigController {
     const air = THREE.MathUtils.clamp(s.airborneFactor, 0, 1);
     const idle = this.sampleLivingFelineIdleMicros(timeSec);
 
-    // Gentle feline breathing + soft affectionate purr chest-flutter when squinting happily!
-    const purrFlutter = s.subtleBreathing && s.squint > 0.35 ? Math.sin(timeSec * 24.0) * 0.08 * s.squint : 0;
+    // Gentle feline breathing + slow, calm warm chest swell when squinting happily (zero high-frequency vibration!)
+    const purrFlutter = s.subtleBreathing && s.squint > 0.35 ? Math.sin(timeSec * 2.15) * 0.035 * s.squint : 0;
     const breathWave = s.subtleBreathing
       ? Math.sin(timeSec * 1.68 + 0.9) * 0.8 + Math.sin(timeSec * 3.36 + 0.9) * 0.2 + purrFlutter
       : 0;
