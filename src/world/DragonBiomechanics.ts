@@ -344,6 +344,7 @@ export class DragonBiomechanicalAnimator {
   private prevYaw = 0;
   private velWorldX = 0;
   private velWorldZ = 0;
+  private smoothedAltitude = -1;
   private initialized = false;
 
   public gaitCycle = 0;
@@ -423,7 +424,20 @@ export class DragonBiomechanicalAnimator {
     }
 
     const rootTerrainY = sampleIslandOrWorldTerrainY(rootGroup.position.x, rootGroup.position.z);
-    const altitudeAboveTurf = Math.max(0, rootGroup.position.y - rootTerrainY);
+    const rawAltitude = Math.max(0, rootGroup.position.y - rootTerrainY);
+    // Low-pass the altitude signal before gating the grounded state. Crossing the sheer cliff
+    // lip drops the terrain height by a metre or more within a couple of frames; feeding that
+    // staircase directly into smoothstep(0.06, 0.22) collapses `physicalTurfGate` in 1-2 frames,
+    // which whips `midairAutoTuck` weight and the IK enable/disable switch just as hard —
+    // producing 0.2-0.35m single-frame forelimb jumps during takeoff / cliff-edge transitions.
+    const altTau = 0.26;
+    if (this.smoothedAltitude < 0) {
+      this.smoothedAltitude = rawAltitude;
+    } else if (!isFrozenPause) {
+      const altAlpha = 1.0 - Math.exp(-Math.min(dt, 0.05) / altTau);
+      this.smoothedAltitude += (rawAltitude - this.smoothedAltitude) * altAlpha;
+    }
+    const altitudeAboveTurf = this.smoothedAltitude;
     const physicalTurfGate = 1.0 - smoothstep(0.06, 0.22, altitudeAboveTurf);
     const grounded = (1.0 - air) * physicalTurfGate;
 
@@ -485,7 +499,15 @@ export class DragonBiomechanicalAnimator {
       }
     }
 
-    if (air > 0.35 || altitudeAboveTurf > 0.20) {
+    // Wipe cached foot plants ONLY when a dragon is PHYSICALLY airborne (feet clear of the
+    // turf). The previous `air > 0.35` clause wiped every plant every frame while the visual
+    // liftoff pose ramped up — but the dragon is still standing on the ground then, and the
+    // rest footprint orbits/sweeps as the root yaws toward the launch heading. Each per-frame
+    // re-plant teleported every paw up to ~0.4m (one-frame forelimb/hindlimb jumps of
+    // 0.2-0.35m) exactly when airborneFactor crossed 0.35 (NF t≈72.80, LF t≈73.35).
+    // Physical clearance is the meaningful condition; the IK simply is not driving the limbs
+    // anymore once the dragon is truly off the turf, so stale plants never reach the solver.
+    if (altitudeAboveTurf > 0.30) {
       for (const k of ['FL', 'FR', 'HL', 'HR'] as const) {
         this.footPlants[k].initialized = false;
       }
@@ -1088,6 +1110,14 @@ export class DragonBiomechanicalAnimator {
     let toeCurl = 0;
 
     if (wWalk >= 0.025) {
+      // Gait resumed: if an idle step-glide was still animating this paw mid-arc, adopt the
+      // paw's CURRENT position as the new plant anchor. Otherwise the stance branch would snap
+      // the paw back to the pre-glide anchor (~0.3m one-frame teleport at walk pause/resume
+      // boundaries, e.g. t≈40.73).
+      if (st.idleRepositionTimer >= 0) {
+        st.plantedWx = st.lastFootWx;
+        st.plantedWz = st.lastFootWz;
+      }
       st.idleRepositionTimer = -1;
       const inStance = phase < stanceEnd;
 
@@ -1114,8 +1144,11 @@ export class DragonBiomechanicalAnimator {
         st.wasInStance = true;
       } else {
         if (st.wasInStance) {
-          st.swingStartWx = st.plantedWx;
-          st.swingStartWz = st.plantedWz;
+          // Start the swing from where the paw ACTUALLY is right now — not from the stale
+          // stance anchor. After a walk pause the standing-branch idle glide may have left the
+          // paw mid-arc; resuming the gait from `st.plantedWx` teleported it ~0.2m in one frame.
+          st.swingStartWx = st.lastFootWx;
+          st.swingStartWz = st.lastFootWz;
           st.wasInStance = false;
         }
         const u = clamp((phase - stanceEnd) / (1.0 - stanceEnd), 0, 1);
