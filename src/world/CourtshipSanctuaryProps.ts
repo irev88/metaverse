@@ -174,11 +174,12 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
   group.add(sandMesh);
 
   // ==========================================================================
-  // 2. 560 ORGANIC CIRCULAR FAIRY-RING & WILDFLOWER CLUSTERS
-  //    (Golden-angle phyllotaxis + natural wavy circular lobes — ZERO rectangular clamping!)
+  // 2. 1,240 EXPANDED ORGANIC CIRCULAR FAIRY-RING & WILDFLOWER MEADOW CLUSTERS
+  //    (Golden-angle phyllotaxis + sweeping post-confession meadow bloom across
+  //     the contoured cliff headland — strictly guarded inside solid turf!)
   // ==========================================================================
-  const AMBIENT_FLOWERS = 200;
-  const CELEBRATION_FLOWERS = 360;
+  const AMBIENT_FLOWERS = 220;
+  const CELEBRATION_FLOWERS = 1020;
   const FLOWER_COUNT = AMBIENT_FLOWERS + CELEBRATION_FLOWERS;
 
   const petalParts: THREE.BufferGeometry[] = [];
@@ -187,14 +188,14 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
   petalParts.push(stemGeo);
 
   for (let p = 0; p < 6; p++) {
-    const pGeo = new THREE.ConeGeometry(0.050, 0.112, 4);
+    const pGeo = new THREE.ConeGeometry(0.052, 0.116, 4);
     pGeo.scale(1.0, 0.34, 0.62);
     pGeo.rotateX(Math.PI * 0.36);
-    pGeo.translate(0, 0.025, 0.046);
+    pGeo.translate(0, 0.025, 0.048);
     pGeo.rotateY((p / 6) * Math.PI * 2);
     petalParts.push(pGeo);
   }
-  const coreGeo = new THREE.OctahedronGeometry(0.030, 0);
+  const coreGeo = new THREE.OctahedronGeometry(0.031, 0);
   coreGeo.translate(0, 0.028, 0);
   petalParts.push(coreGeo);
 
@@ -272,39 +273,64 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
 
     // Combine golden-angle spiral with organic angular clustering so flowers form natural meadow tufts
     const baseAngle = i * GOLDEN_ANGLE + (rand() - 0.5) * 0.42;
-    // Wavy natural circular meadow contour (radius varies organically by angle, max ~2.80m so z stays <= +0.95m!)
+    // Wavy natural circular meadow contour (zero straight edges!)
     const organicRimMod =
       1.0 +
-      0.13 * Math.sin(baseAngle * 3.0 + 0.7) +
+      0.14 * Math.sin(baseAngle * 3.0 + 0.7) +
       0.09 * Math.cos(baseAngle * 5.0 - 1.2) +
       0.06 * Math.sin(baseAngle * 7.0 + 2.1);
 
     let r: number;
     if (!isCelebrationOnly) {
-      // Soft circular fairy-ring wreath framing the clearing (r = 1.15m .. 2.72m) with feathered outer fringe
+      // Soft circular fairy-ring wreath framing the clearing (r = 1.15m .. 2.85m)
       const ringBias = rand() < 0.55
-        ? 1.18 + Math.pow(rand(), 0.75) * 0.95
-        : 1.55 + Math.sqrt(idxNorm) * 1.18;
+        ? 1.18 + Math.pow(rand(), 0.75) * 1.02
+        : 1.55 + Math.sqrt(idxNorm) * 1.28;
       r = ringBias * organicRimMod;
     } else {
-      // Lush post-"Yes" celebration blossoms filling the circular glade & outer meadow tufts (r = 0.78m .. 2.85m)
-      r = (0.78 + Math.pow(rand(), 0.68) * 1.98) * organicRimMod;
+      // Expansive post-confession celebration flowerbed sweeping out across a lush 6.2m-radius (~12.4m wide!) wildflower meadow!
+      const radialSpread = rand() < 0.42
+        ? 0.72 + Math.pow(rand(), 0.70) * 2.65
+        : 1.85 + Math.pow(rand(), 0.62) * 3.95;
+      r = radialSpread * organicRimMod;
     }
 
-    const fx = Math.cos(baseAngle) * r * 1.08;
-    const fz = SANCTUARY_CENTER_Z + Math.sin(baseAngle) * r * 0.92;
-    const fy = sampleHeroCliffHeight(fx, fz);
+    // Gently bias northward toward the grassy hillside while keeping every stem safely inside the seaward cliff brink!
+    let rCandidate = r;
+    let fx = 0;
+    let fz = SANCTUARY_CENTER_Z;
+    let fy = 0;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const candX = Math.cos(baseAngle) * rCandidate * 1.12;
+      const sinA = Math.sin(baseAngle);
+      // Seaward (+Z) side tapers naturally before cliff drop; inland (-Z) side rolls lushly up the grassy slope!
+      const zStretch = sinA > 0 ? 0.58 : 1.06;
+      const candZ = SANCTUARY_CENTER_Z + sinA * rCandidate * zStretch;
+      const candY = sampleHeroCliffHeight(candX, candZ);
+      const hDx = sampleHeroCliffHeight(candX + 0.35, candZ) - sampleHeroCliffHeight(candX - 0.35, candZ);
+      const hDz = sampleHeroCliffHeight(candX, candZ + 0.35) - sampleHeroCliffHeight(candX, candZ - 0.35);
+      const localSlope = Math.hypot(hDx, hDz) / 0.70;
+
+      fx = candX;
+      fz = candZ;
+      fy = candY;
+      if (candZ <= 0.58 && candY >= -0.38 && localSlope <= 0.46) {
+        break;
+      }
+      rCandidate *= 0.80;
+    }
+
     const distFromHeart = Math.hypot(fx, fz - SANCTUARY_CENTER_Z);
 
-    // Taper scale slightly near the outermost circular feather so the meadow edge blends seamlessly into grass!
-    const edgeFeather = 1.0 - THREE.MathUtils.smoothstep(r, 2.35, 3.15) * 0.42;
+    // Taper scale slightly near the outermost circular feather so the expanded flowerbed blends seamlessly into grass!
+    const edgeFeather = 1.0 - THREE.MathUtils.smoothstep(distFromHeart, 4.45, 6.65) * 0.44;
 
     flowerSeeds.push({
       x: fx,
       y: fy + 0.052,
       z: fz,
       distFromHeart,
-      scale: (isCelebrationOnly ? 0.88 + rand() * 0.82 : 0.62 + rand() * 0.56) * edgeFeather,
+      scale: (isCelebrationOnly ? 0.94 + rand() * 0.90 : 0.65 + rand() * 0.58) * edgeFeather,
       phase: rand() * Math.PI * 2,
       yaw: rand() * Math.PI * 2,
       isCelebrationOnly,
@@ -641,8 +667,8 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
       domeUniforms.uTime.value = elapsedSec;
       pillarUniforms.uTime.value = elapsedSec;
 
-      const waveRadius = celebrationFlowerWave * 4.2;
-      flowerMat.emissiveIntensity = (0.42 + 0.88 * Math.max(wildflowerBloom, celebrationFlowerWave)) * fadeFactor;
+      const waveRadius = celebrationFlowerWave * 7.4;
+      flowerMat.emissiveIntensity = (0.42 + 0.92 * Math.max(wildflowerBloom, celebrationFlowerWave)) * fadeFactor;
 
       for (let i = 0; i < FLOWER_COUNT; i++) {
         const s = flowerSeeds[i];

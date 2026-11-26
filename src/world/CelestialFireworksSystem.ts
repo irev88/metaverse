@@ -10,7 +10,10 @@ export type FireworkShellKind =
   | 'crossette'
   | 'digit-9'
   | 'digit-2'
-  | 'digit-7';
+  | 'digit-7'
+  | 'letter-I'
+  | 'glyph-heart'
+  | 'letter-U';
 
 interface RisingRocket {
   kind: FireworkShellKind;
@@ -52,15 +55,17 @@ export interface CelestialFireworksController {
   ) => void;
   /** Launches synchronized left-to-right "9"  "2"  "7" pyrotechnic sky-writing triptych! */
   launch927SkyTriptych: (centerSkyTarget: THREE.Vector3) => void;
+  /** Launches synchronized left-to-right "I"  <heart>  "U" pyrotechnic sky-writing triptych! */
+  launchIHeartUSkyTriptych: (centerSkyTarget: THREE.Vector3) => void;
   spawnShootingStar: (start: THREE.Vector3, velocity: THREE.Vector3) => void;
   update: (dt: number, cameraPos: THREE.Vector3, isMuted: boolean) => void;
 }
 
 /**
  * Generates dense 2D glyph points in viewer-facing coordinates (sx in [-1,1] left->right, sy in [-1,1] bottom->top)
- * for crisp pyrotechnic sky-numerals "9", "2", "7".
+ * for crisp pyrotechnic sky-numerals ("9", "2", "7") and romantic sky-writing ("I", <heart>, "U").
  */
-function sampleDigitGlyphPoints(digit: '9' | '2' | '7'): Array<[number, number]> {
+function sampleSkyGlyphPoints(glyph: '9' | '2' | '7' | 'I' | 'HEART' | 'U'): Array<[number, number]> {
   const pts: Array<[number, number]> = [];
   const addSegment = (x0: number, y0: number, x1: number, y1: number, count: number) => {
     for (let i = 0; i <= count; i++) {
@@ -74,14 +79,12 @@ function sampleDigitGlyphPoints(digit: '9' | '2' | '7'): Array<[number, number]>
     for (const p of sampled) pts.push([p.x, p.y]);
   };
 
-  if (digit === '9') {
-    // Upper closed bowl of '9'
+  if (glyph === '9') {
     const loopCount = 92;
     for (let i = 0; i < loopCount; i++) {
       const a = (i / loopCount) * Math.PI * 2;
       pts.push([Math.cos(a) * 0.54, 0.42 + Math.sin(a) * 0.44]);
     }
-    // Sweeping right-hand descender & graceful bottom hook
     addCatmullChain(
       [
         [0.54, 0.48],
@@ -93,8 +96,7 @@ function sampleDigitGlyphPoints(digit: '9' | '2' | '7'): Array<[number, number]>
       ],
       88
     );
-  } else if (digit === '2') {
-    // Graceful swan-arch top & diagonal sweep of '2'
+  } else if (glyph === '2') {
     addCatmullChain(
       [
         [-0.52, 0.48],
@@ -108,13 +110,43 @@ function sampleDigitGlyphPoints(digit: '9' | '2' | '7'): Array<[number, number]>
       ],
       115
     );
-    // Crisp horizontal base bar of '2'
     addSegment(-0.58, -0.90, 0.60, -0.90, 68);
-  } else {
-    // Crisp top serif + top bar + bold diagonal stem of '7'
+  } else if (glyph === '7') {
     addSegment(-0.56, 0.66, -0.56, 0.90, 18);
     addSegment(-0.56, 0.90, 0.58, 0.90, 72);
     addSegment(0.58, 0.90, -0.16, -0.92, 96);
+  } else if (glyph === 'I') {
+    // Bold serif capital 'I': top cap, luminous vertical pillar, bottom cap
+    addSegment(-0.44, 0.88, 0.44, 0.88, 44);
+    addSegment(0.0, 0.88, 0.0, -0.88, 96);
+    addSegment(-0.44, -0.88, 0.44, -0.88, 44);
+  } else if (glyph === 'HEART') {
+    // Crisp sky-sculpted Heart silhouette + inner glowing heart contour at exact matching scale!
+    const outerLoop = 136;
+    for (let i = 0; i < outerLoop; i++) {
+      const t = (i / outerLoop) * Math.PI * 2;
+      const st = Math.sin(t);
+      const hx = (16 * st * st * st) / 17.5;
+      const hy = (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 17.5 + 0.10;
+      pts.push([hx, hy]);
+    }
+    const innerLoop = 68;
+    for (let i = 0; i < innerLoop; i++) {
+      const t = (i / innerLoop) * Math.PI * 2;
+      const st = Math.sin(t);
+      const hx = ((16 * st * st * st) / 17.5) * 0.56;
+      const hy = (((13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 17.5) + 0.10) * 0.56;
+      pts.push([hx, hy]);
+    }
+  } else {
+    // Classic rounded capital 'U': left vertical stem + smooth semicircular bowl + right vertical stem
+    addSegment(-0.54, 0.90, -0.54, -0.34, 58);
+    const arcSamples = 74;
+    for (let i = 0; i <= arcSamples; i++) {
+      const a = Math.PI + (i / arcSamples) * Math.PI;
+      pts.push([Math.cos(a) * 0.54, -0.34 + Math.sin(a) * 0.56]);
+    }
+    addSegment(0.54, -0.34, 0.54, 0.90, 58);
   }
   return pts;
 }
@@ -129,7 +161,7 @@ export function createCelestialFireworksSystem(): CelestialFireworksController {
   let flashIntensity = 0;
   const flashColor = new THREE.Color(0xff4d94);
 
-  const MAX_SPARKS = 5400;
+  const MAX_SPARKS = 7600;
   const positions = new Float32Array(MAX_SPARKS * 3);
   const velocities = new Float32Array(MAX_SPARKS * 3);
   const colors = new Float32Array(MAX_SPARKS * 3);
@@ -379,12 +411,18 @@ export function createCelestialFireworksSystem(): CelestialFireworksController {
     cameraPos: THREE.Vector3,
     isMuted: boolean
   ): void {
-    const isDigit = kind === 'digit-9' || kind === 'digit-2' || kind === 'digit-7';
+    const isGlyph =
+      kind === 'digit-9' ||
+      kind === 'digit-2' ||
+      kind === 'digit-7' ||
+      kind === 'letter-I' ||
+      kind === 'glyph-heart' ||
+      kind === 'letter-U';
     skyFlashLight.position.copy(center);
     flashColor.copy(primary).lerp(secondary, 0.45);
-    flashIntensity = Math.min(40.0, flashIntensity + (isDigit ? 14.0 : 18.0) * scale);
-    triggerBurstHalo(center, flashColor, (isDigit ? 12.0 : 16.0) + 7.2 * scale);
-    playBurstSound(scale, kind === 'heart' || isDigit, isMuted);
+    flashIntensity = Math.min(40.0, flashIntensity + (isGlyph ? 14.0 : 18.0) * scale);
+    triggerBurstHalo(center, flashColor, (isGlyph ? 12.0 : 16.0) + 7.2 * scale);
+    playBurstSound(scale, kind === 'heart' || isGlyph, isMuted);
 
     // Viewer-perpendicular basis: screenRight (+left-to-right on screen) & screenUp (+bottom-to-top on screen)
     const viewFwd = new THREE.Vector3().subVectors(center, cameraPos).normalize();
@@ -392,11 +430,22 @@ export function createCelestialFireworksSystem(): CelestialFireworksController {
     const screenRight = new THREE.Vector3().crossVectors(viewFwd, worldUp).normalize();
     const screenUp = new THREE.Vector3().crossVectors(screenRight, viewFwd).normalize();
 
-    if (isDigit) {
-      // CRISP PYROTECHNIC SKY-NUMERAL ("9", "2", or "7")!
-      const dChar = kind === 'digit-9' ? '9' : kind === 'digit-2' ? '2' : '7';
-      const glyphPts = sampleDigitGlyphPoints(dChar);
-      // High drag (3.2) means terminal displacement = v0 / drag ~ (12.8 * scale) / 3.2 = 4.0 * scale meters!
+    if (isGlyph) {
+      // CRISP PYROTECHNIC SKY-WRITING ("9 2 7" or "I <heart> U")!
+      const gChar =
+        kind === 'digit-9'
+          ? '9'
+          : kind === 'digit-2'
+            ? '2'
+            : kind === 'digit-7'
+              ? '7'
+              : kind === 'letter-I'
+                ? 'I'
+                : kind === 'glyph-heart'
+                  ? 'HEART'
+                  : 'U';
+      const glyphPts = sampleSkyGlyphPoints(gChar);
+      // High drag (3.2) means terminal displacement = v0 / drag ~ (11.8 * scale) / 3.2 = 3.69 * scale meters!
       const expandSpeed = 11.8 * scale;
 
       for (let i = 0; i < glyphPts.length; i++) {
@@ -702,6 +751,30 @@ export function createCelestialFireworksSystem(): CelestialFireworksController {
           primaryColor: new THREE.Color(c1),
           secondaryColor: new THREE.Color(c2),
           scale: 1.32,
+        });
+      }
+    },
+    launchIHeartUSkyTriptych: (centerSkyTarget: THREE.Vector3) => {
+      // Left ("I"), Center (<heart>), Right ("U") strictly ordered left-to-right (-10.2, 0.0, +10.2)!
+      const spacing = 10.2;
+      const specs: Array<[FireworkShellKind, number, number, number, number]> = [
+        ['letter-I', -spacing, 0xff3b8d, 0xffe6a3, 1.30],   // Rose-Gold & Starlight Champagne "I"
+        ['glyph-heart', 0.0, 0xff0a43, 0xff68b8, 1.44],     // Shocking Crimson-Ruby & Hot-Pink Heart
+        ['letter-U', spacing, 0xff3b8d, 0x92ecff, 1.30],    // Rose-Pink & Aurora Cyan "U"
+      ];
+      for (const [kind, dx, c1, c2, sc] of specs) {
+        const target = new THREE.Vector3(centerSkyTarget.x + dx, centerSkyTarget.y, centerSkyTarget.z);
+        const origin = new THREE.Vector3(target.x * 0.45, -2.5, target.z - 4.0);
+        rockets.push({
+          kind,
+          startPos: origin,
+          targetPos: target,
+          currentPos: origin.clone(),
+          elapsed: 0,
+          duration: 1.08,
+          primaryColor: new THREE.Color(c1),
+          secondaryColor: new THREE.Color(c2),
+          scale: sc,
         });
       }
     },
