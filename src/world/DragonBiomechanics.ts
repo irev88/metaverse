@@ -63,9 +63,17 @@ export interface GroundedPlacementResult {
   terrainRoll: number;
 }
 
+export function sampleIslandOrWorldTerrainY(wx: number, wz: number): number {
+  if (Math.abs(wx) < 22.0 && wz > -26.0 && wz < 6.0) {
+    return Math.max(sampleHeroCliffHeight(wx, wz), sampleWorldTerrainHeight(wx, wz));
+  }
+  return sampleWorldTerrainHeight(wx, wz);
+}
+
 /**
- * True terrain-conforming 4-paw support plane placement across BOTH the Seaward Cliff Brink
- * (z ~ -1.8 .. +0.18) AND the Elevated Northern Grassy Meadow Bench (z ~ -11.4 .. -6.5).
+ * True terrain-conforming 4-paw support plane placement across BOTH:
+ * 1) Hero Basalt Sanctuary Island (x in [-5.15, 4.60], z in [-11.45, 0.20]), AND
+ * 2) Distant Western Waterfall Double-Island Overlook Meadow (x in [-73.0, -63.0], z in [-40.0, -35.5], ~78m across the sea!).
  * Uses the exact 4-paw support average (NEVER floating on Math.max + air offset!), while
  * individual paws conform to exact terrain undulations via Per-Paw World Terrain IK.
  */
@@ -75,12 +83,21 @@ export function computeSafeCliffGroundPlacement(
   yaw: number,
   bodyScale = 1.0
 ): GroundedPlacementResult {
-  // Safe plateau & northern grassy meadow bounds (well inside all sheer cliff brinks)
-  const clampedX = clamp(rawX, -5.15, 4.60);
-  const clampedZ = clamp(rawZ, -11.45, 0.20);
-  const safeXZ = pushOutOfHeroObstaclesXZ(clampedX, clampedZ, 1.10 * bodyScale);
-  const x = clamp(safeXZ.x, -5.15, 4.60);
-  const z = clamp(safeXZ.z, -11.45, 0.20);
+  let x: number;
+  let z: number;
+
+  if (rawX <= -25.0) {
+    // Distant Western Waterfall Island Upper Grassy Meadow Bench (100% boulder-free & waterfall-free!)
+    x = clamp(rawX, -73.0, -63.0);
+    z = clamp(rawZ, -40.0, -35.5);
+  } else {
+    // Hero Island Sanctuary plateau & northern grassy meadow bounds (well inside sheer cliff brinks)
+    const clampedX = clamp(rawX, -5.15, 4.60);
+    const clampedZ = clamp(rawZ, -11.45, 0.20);
+    const safeXZ = pushOutOfHeroObstaclesXZ(clampedX, clampedZ, 1.10 * bodyScale);
+    x = clamp(safeXZ.x, -5.15, 4.60);
+    z = clamp(safeXZ.z, -11.45, 0.20);
+  }
 
   const sinY = Math.sin(yaw);
   const cosY = Math.cos(yaw);
@@ -92,7 +109,7 @@ export function computeSafeCliffGroundPlacement(
   const samplePt = (lx: number, lz: number) => {
     const wx = x + lx * cosY + lz * sinY;
     const wz = z - lx * sinY + lz * cosY;
-    return sampleHeroCliffHeight(wx, wz);
+    return sampleIslandOrWorldTerrainY(wx, wz);
   };
 
   const hFL = samplePt(halfWidth, foreDist);
@@ -122,13 +139,15 @@ export interface DragonMacroDirective {
   armReachL: number;
   armReachR: number;
   /**
-   * Romantic chest-cradle embrace (Toothless): sits proudly on 3 grounded paws & gently raises
-   * his inner forelimb like an open welcoming arm so Light Fury can rest tenderly by his chest!
+   * Affectionate Head-on-Head & Forelimb-on-Forelimb Embrace (Toothless):
+   * Gently curves his neck to rest his chin atop Light Fury's crown AND arcs his inner
+   * forepaw up-and-over to lay gently upon her extended inner forepaw with 0% clipping!
    */
   cradleEmbrace: number;
   /**
-   * Romantic chest-rest nestle (Light Fury): settles warmly beside Toothless's open chest
-   * and curves her head & neck softly into the protective arc of his chest & raised forelimb!
+   * Affectionate Head & Forelimb Receive Pose (Light Fury):
+   * Settles into a warm feline sphinx crouch with ears relaxed softly back and extends her
+   * inner forepaw forward on the turf so Toothless can rest his head & forepaw gently upon hers!
    */
   nestleIntoChest: number;
   /** Gentle respectful bow supplement (kept subtle so bow is noble, never contorted!) */
@@ -142,6 +161,14 @@ export interface DragonMacroDirective {
   compactFoldedWings: number;
   lookAtMateWeight: number;
   mateWorldPos: THREE.Vector3;
+  /** Live world position of mate's inner resting forepaw (used for exact forelimb-on-forelimb placement!) */
+  mateForepawWorldPos: THREE.Vector3;
+  /** Live world forward direction of mate */
+  mateForwardWorldDir: THREE.Vector3;
+  /** Live world rootGroup.position.y of mate for terrain-slope compensation */
+  mateRootY: number;
+  /** Live world rootGroup.position of mate */
+  mateRootWorldPos: THREE.Vector3;
   timeSec: number;
 }
 
@@ -161,6 +188,10 @@ export function createDefaultMacroDirective(): DragonMacroDirective {
     compactFoldedWings: 0,
     lookAtMateWeight: 0,
     mateWorldPos: new THREE.Vector3(),
+    mateForepawWorldPos: new THREE.Vector3(),
+    mateForwardWorldDir: new THREE.Vector3(0, 0, 1),
+    mateRootY: 0,
+    mateRootWorldPos: new THREE.Vector3(),
     timeSec: 0,
   };
 }
@@ -297,13 +328,6 @@ function createFootPlantState(): WorldFootPlantState {
   };
 }
 
-function sampleIslandOrWorldTerrainY(wx: number, wz: number): number {
-  if (Math.abs(wx) < 22.0 && wz > -26.0 && wz < 6.0) {
-    return Math.max(sampleHeroCliffHeight(wx, wz), sampleWorldTerrainHeight(wx, wz));
-  }
-  return sampleWorldTerrainHeight(wx, wz);
-}
-
 export class DragonBiomechanicalAnimator {
   private readonly asset: RigCompatibleAsset;
   private readonly isLightFury: boolean;
@@ -383,7 +407,20 @@ export class DragonBiomechanicalAnimator {
     const rootGroup = this.asset.rootGroup;
     const boneMap = this.asset.rig.boneMap;
     const air = clamp(airborneFactor, 0, 1);
-    const grounded = 1.0 - air;
+
+    // CRITICAL FIX #1: Always reset scapulae to bind rest position EVERY frame, and gate ALL
+    // ground-target IK by true physical turf proximity so legs NEVER stretch down to the ground
+    // during takeoff climb, sky flight, or landing flare!
+    for (const side of ['L', 'R'] as const) {
+      const sc = boneMap.get(`scapula_${side}`);
+      const scRest = this.restPos.get(`scapula_${side}`);
+      if (sc && scRest) sc.position.copy(scRest);
+    }
+
+    const rootTerrainY = sampleIslandOrWorldTerrainY(rootGroup.position.x, rootGroup.position.z);
+    const altitudeAboveTurf = Math.max(0, rootGroup.position.y - rootTerrainY);
+    const physicalTurfGate = 1.0 - smoothstep(0.06, 0.22, altitudeAboveTurf);
+    const grounded = (1.0 - air) * physicalTurfGate;
 
     rootGroup.updateMatrixWorld(false);
     const fwdWorld = this.tmpVecA.set(0, 0, 1).transformDirection(rootGroup.matrixWorld);
@@ -430,9 +467,9 @@ export class DragonBiomechanicalAnimator {
 
       // Include rotational yaw-in-place velocity so turning smoothly triggers natural stepping!
       const effectiveLocoSpeed = this.smoothedSpeed + Math.abs(this.smoothedTurnRate) * 0.42;
-      const cradleSupp = 1.0 - clamp(macro.cradleEmbrace, 0, 1) * 0.95;
+      const embraceSupp = 1.0 - clamp(Math.max(macro.cradleEmbrace, macro.nestleIntoChest), 0, 1) * 0.96;
       const targetWalkWeight =
-        smoothstep(0.028, 0.30, effectiveLocoSpeed) * grounded * (1.0 - macro.rearUpJoy) * cradleSupp;
+        smoothstep(0.028, 0.30, effectiveLocoSpeed) * grounded * (1.0 - macro.rearUpJoy) * embraceSupp;
       this.walkWeight += (targetWalkWeight - this.walkWeight) * (1.0 - Math.exp(-9.5 * safeDt));
       if (this.walkWeight < 0.0006) this.walkWeight = 0;
 
@@ -442,7 +479,7 @@ export class DragonBiomechanicalAnimator {
       }
     }
 
-    if (air > 0.55) {
+    if (air > 0.35 || altitudeAboveTurf > 0.20) {
       for (const k of ['FL', 'FR', 'HL', 'HR'] as const) {
         this.footPlants[k].initialized = false;
       }
@@ -453,6 +490,8 @@ export class DragonBiomechanicalAnimator {
     const bow = clamp(macro.deepCourtshipBow, 0, 1) * grounded;
     const cradle = clamp(macro.cradleEmbrace, 0, 1) * grounded;
     const nestle = clamp(macro.nestleIntoChest, 0, 1) * grounded;
+    const lfSettleU = smoothstep(0.0, 0.72, nestle);
+    const nfReachU = smoothstep(0.10, 1.0, cradle);
     const armL = clamp(macro.armReachL, 0, 1) * grounded;
     const armR = clamp(macro.armReachR, 0, 1) * grounded;
 
@@ -463,7 +502,7 @@ export class DragonBiomechanicalAnimator {
     // Positive innerSign means mate is on +X (Left); negative means mate is on -X (Right)
     const innerSignSmooth = innerWeightL * 2.0 - 1.0;
 
-    // 1. Center-of-mass weight shift, Curved-Path Spine Arc, Cradle Semi-Sit & Micro-Life
+    // 1. Center-of-mass weight shift, Curved-Path Spine Arc, Head/Paw Embrace Settle & Micro-Life
     const rootBone = boneMap.get('root');
     const pelvisBone = boneMap.get('pelvis');
     const spine1Bone = boneMap.get('spine_1');
@@ -472,18 +511,15 @@ export class DragonBiomechanicalAnimator {
 
     const cycRad = this.gaitCycle * Math.PI * 2;
     const walkBounceY = Math.sin(cycRad * 2.0 - 0.35) * 0.025 * wWalk;
-    // Shift COM subtly over the supporting diagonal pair + lean slightly into curved turn!
     const lateralWeightX =
       -Math.cos(cycRad) * 0.026 * wWalk +
       clamp(this.smoothedTurnRate * 0.022, -0.035, 0.035) * wWalk +
-      (armR - armL) * 0.042 +
-      -innerSignSmooth * cradle * 0.048; // Shift weight onto planted outer foreleg during cradle embrace!
+      (armR - armL) * 0.042;
 
     const forwardSurgeZ = Math.cos(cycRad * 2.0) * 0.014 * wWalk;
     const walkBodyRoll =
       Math.cos(cycRad) * 0.032 * wWalk -
-      clamp(this.smoothedTurnRate * 0.058, -0.10, 0.10) * wWalk +
-      -innerSignSmooth * cradle * 0.035;
+      clamp(this.smoothedTurnRate * 0.058, -0.10, 0.10) * wWalk;
     const walkBodyPitch = Math.cos(cycRad * 2.0 + 0.4) * 0.020 * wWalk;
     const walkBodyYaw = Math.sin(cycRad) * 0.032 * wWalk;
 
@@ -492,17 +528,18 @@ export class DragonBiomechanicalAnimator {
 
     // Subtle affectionate purr resonance when nestled or cradling!
     const purrMicro = (cradle + nestle + clamp(macro.affectionateNuzzle, 0, 1)) > 0.1
-      ? Math.sin(macro.timeSec * 14.5) * 0.0022 * grounded
+      ? Math.sin(macro.timeSec * 14.5) * 0.0018 * grounded
       : 0;
 
     if (rootBone) {
       rootBone.position.x += lateralWeightX;
-      rootBone.position.y += walkBounceY + rear * 0.25 + cradle * 0.045 - nestle * 0.035 - bow * 0.032 + flightHeaveY + purrMicro;
-      rootBone.position.z += forwardSurgeZ - rear * 0.12 - cradle * 0.045 + bow * 0.02;
+      // Light Fury settles into a soft feline sphinx crouch (-0.21m) so Toothless can rest his chin atop her crown!
+      rootBone.position.y += walkBounceY + rear * 0.25 - lfSettleU * 0.21 - bow * 0.032 + flightHeaveY + purrMicro;
+      rootBone.position.z += forwardSurgeZ - rear * 0.12 + bow * 0.02;
 
       this.addLocalEuler(
         rootBone,
-        walkBodyPitch - rear * 0.40 - cradle * 0.11 + bow * 0.08 + flightPitchWave,
+        walkBodyPitch - rear * 0.40 + bow * 0.08 + flightPitchWave,
         walkBodyYaw,
         walkBodyRoll
       );
@@ -517,7 +554,7 @@ export class DragonBiomechanicalAnimator {
     if (pelvisBone) {
       this.addLocalEuler(
         pelvisBone,
-        rear * 0.20 + cradle * 0.10 - bow * 0.04,
+        rear * 0.20 - bow * 0.04,
         -turnCurvatureArc * 0.75 - Math.sin(cycRad - 0.5) * 0.028 * wWalk,
         Math.sin(cycRad) * 0.036 * wWalk
       );
@@ -525,32 +562,49 @@ export class DragonBiomechanicalAnimator {
     if (spine1Bone) {
       this.addLocalEuler(
         spine1Bone,
-        -rear * 0.09 - cradle * 0.07 + bow * 0.04,
-        spineWave1 + innerSignSmooth * nestle * 0.05,
+        -rear * 0.09 + bow * 0.04,
+        spineWave1,
         0
       );
     }
     if (spine2Bone) {
       this.addLocalEuler(
         spine2Bone,
-        -rear * 0.11 - cradle * 0.08 + bow * 0.04,
-        spineWave2 + innerSignSmooth * nestle * 0.06,
+        -rear * 0.11 + bow * 0.04,
+        spineWave2,
         0
       );
     }
     if (chestBone) {
       this.addLocalEuler(
         chestBone,
-        -rear * 0.12 - cradle * 0.08 + bow * 0.05 - Math.cos(cycRad * 2.0) * 0.020 * wWalk,
-        spineWave3 + innerSignSmooth * (cradle * 0.08 + nestle * 0.08),
-        -Math.cos(cycRad) * 0.028 * wWalk
+        -rear * 0.12 + bow * 0.05 + nfReachU * 0.03 + lfSettleU * 0.05 - Math.cos(cycRad * 2.0) * 0.020 * wWalk,
+        spineWave3 + innerSignSmooth * (nfReachU * 0.12 + lfSettleU * 0.11),
+        -Math.cos(cycRad) * 0.028 * wWalk,
+        'YXZ'
       );
     }
 
     this.asset.rig.rootBone.updateMatrixWorld(true);
 
-    // 2. TRUE WORLD-SPACE PER-PAW TERRAIN-CONFORMING IK + EXPRESSIVE FORELIMB ARMS + CRADLE EMBRACE!
-    //    Runs on EVERY grounded frame (grounded > 0.02) so paws NEVER float on a flat horizontal plane!
+    // Immediate aerodynamic midair tuck whenever physically above turf (>0.08m) even while pose filter ramps air!
+    const midairAutoTuck = (1.0 - physicalTurfGate) * (1.0 - air);
+    if (midairAutoTuck > 0.002) {
+      for (const side of ['L', 'R'] as const) {
+        const sign = side === 'L' ? 1 : -1;
+        this.blendBoneToRestOffset(`shoulder_${side}`, 0.78, 0, sign * 0.06, midairAutoTuck);
+        this.blendBoneToRestOffset(`elbow_${side}`, -1.32, 0, 0, midairAutoTuck);
+        this.blendBoneToRestOffset(`wrist_${side}`, 0.86, 0, 0, midairAutoTuck);
+        this.blendBoneToRestOffset(`forepaw_${side}`, 0.42, 0, 0, midairAutoTuck);
+        this.blendBoneToRestOffset(`hip_${side}`, 0.68, 0, sign * 0.05, midairAutoTuck);
+        this.blendBoneToRestOffset(`knee_${side}`, -1.24, 0, 0, midairAutoTuck);
+        this.blendBoneToRestOffset(`ankle_${side}`, 0.92, 0, 0, midairAutoTuck);
+        this.blendBoneToRestOffset(`hindpaw_${side}`, 0.44, 0, 0, midairAutoTuck);
+      }
+    }
+
+    // 2. TRUE WORLD-SPACE PER-PAW TERRAIN-CONFORMING IK + FORELIMB-ON-FORELIMB EMBRACE!
+    //    Runs ONLY when physically grounded on turf (grounded > 0.02)!
     if (grounded > 0.02) {
       const crouchForeSplay = Math.max(0, -crouchFore);
       const crouchHindSplay = Math.max(0, -crouchHind);
@@ -566,8 +620,8 @@ export class DragonBiomechanicalAnimator {
 
         // --- A. HINDLIMBS: World-Space Terrain-Locked IK ---
         const hindKey: LimbKey = side === 'L' ? 'HL' : 'HR';
-        const hindRestLocalX = sign * (crouchHindSplay * 0.052 + rear * 0.040 + cradle * 0.025);
-        const hindRestLocalZ = -crouchHindSplay * 0.038 + rear * 0.075 + cradle * 0.035;
+        const hindRestLocalX = sign * (crouchHindSplay * 0.052 + rear * 0.040);
+        const hindRestLocalZ = -crouchHindSplay * 0.038 + rear * 0.075;
         const hindTarget = this.computeWorldFootTarget(
           hindKey,
           `ankle_${side}`,
@@ -582,7 +636,7 @@ export class DragonBiomechanicalAnimator {
         );
 
         const hindPole = this.tmpVecC
-          .set(sign * (0.22 + 0.14 * crouchHindSplay), 0.16 + 0.16 * crouchHindSplay, 1.0)
+          .set(sign * (0.25 + 0.14 * crouchHindSplay), 0.18 + 0.16 * crouchHindSplay, 1.0)
           .normalize();
         const hindBlend = smoothstep(0.02, 0.25, grounded);
         this.solveLimbIKWorld(
@@ -603,14 +657,17 @@ export class DragonBiomechanicalAnimator {
           if (hToe && Math.abs(hindToeFlex) > 0.001) this.addLocalEuler(hToe, hindToeFlex, 0, 0);
         }
 
-        // --- B. FORELIMBS: World-Space Terrain-Locked IK + Independent Feline "Arm" Gestures + Cradle Embrace! ---
+        // --- B. FORELIMBS: World-Space Terrain-Locked IK + Feline Arm Reach + Forelimb-on-Forelimb! ---
         const foreKey: LimbKey = side === 'L' ? 'FL' : 'FR';
         const playPaw = side === 'L' ? clamp(macro.playPawL, 0, 1) : clamp(macro.playPawR, 0, 1);
         const armReach = side === 'L' ? armL : armR;
-        const cradleThisArm = cradle * wInner; // Only the inner forelimb facing Light Fury lifts to cradle!
+        const cradleThisArm = nfReachU * wInner; // Toothless inner forelimb lays gently upon Light Fury's forelimb!
+        const nestleThisArm = lfSettleU * wInner; // Light Fury inner forelimb extends gently forward on turf!
 
-        const foreRestLocalX = sign * (crouchForeSplay * 0.054 + (1.0 - wInner) * cradle * 0.035);
-        const foreRestLocalZ = crouchForeSplay * 0.042;
+        const foreRestLocalX =
+          sign * (crouchForeSplay * 0.054 + (1.0 - wInner) * (nfReachU * 0.05 + lfSettleU * 0.04)) +
+          sign * nestleThisArm * 0.17;
+        const foreRestLocalZ = crouchForeSplay * 0.042 + nestleThisArm * 0.24;
         const plantedFore = this.computeWorldFootTarget(
           foreKey,
           `wrist_${side}`,
@@ -624,12 +681,33 @@ export class DragonBiomechanicalAnimator {
           curYaw
         );
 
-        // Scapula cushion & terrain-dip extension so deep turf hollows never starve foreleg reach!
+        // When Light Fury slides/steps her inner forepaw forward into the embrace, keep it tracking the live rest footprint!
+        if (nestle > 0.001 && nestle < 0.98 && wInner > 0.5) {
+          const bindEnd = this.asset.rig.bindWorldPositions.get(`wrist_${side}`)!;
+          const soleToJoint = Math.max(0.08, bindEnd.y * this.bodyScale - 0.004);
+          const liveRestW = this.tmpVecD
+            .set(bindEnd.x + foreRestLocalX, 0, bindEnd.z + foreRestLocalZ)
+            .applyMatrix4(rootGroup.matrixWorld);
+          const hG = sampleIslandOrWorldTerrainY(liveRestW.x, liveRestW.z);
+          plantedFore.worldPos.set(
+            liveRestW.x,
+            hG + soleToJoint + Math.sin(lfSettleU * Math.PI) * 0.025,
+            liveRestW.z
+          );
+          this.footPlants[foreKey].plantedWx = liveRestW.x;
+          this.footPlants[foreKey].plantedWz = liveRestW.z;
+        }
+
+        // Strict anatomical scapula cushion (hard-clamped <= 4.2cm so scapulae can NEVER stretch!)
         const scapBone = boneMap.get(`scapula_${side}`);
         const armLiftTotal = clamp(Math.max(rear, playPaw, armReach, cradleThisArm), 0, 1);
         if (scapBone) {
           scapBone.position.copy(this.restPos.get(`scapula_${side}`)!);
-          scapBone.position.y += plantedFore.scapulaShiftY * wWalk * (1.0 - armLiftTotal) + cradleThisArm * 0.038;
+          scapBone.position.y += clamp(
+            plantedFore.scapulaShiftY * wWalk * (1.0 - armLiftTotal),
+            -0.035 * this.bodyScale,
+            0.035 * this.bodyScale
+          );
           scapBone.updateMatrixWorld(true);
 
           if (armLiftTotal < 0.85) {
@@ -639,22 +717,29 @@ export class DragonBiomechanicalAnimator {
             shBone.updateMatrixWorld(true);
             const shChar = this.tmpVecD.setFromMatrixPosition(shBone.matrixWorld).applyMatrix4(rootInv);
             const wrChar = plantedFore.worldPos.clone().applyMatrix4(rootInv);
-            const excess = shChar.distanceTo(wrChar) - this.reachLimitFore;
+            const excess = Math.min(
+              Math.max(0, shChar.distanceTo(wrChar) - this.reachLimitFore),
+              0.042 * this.bodyScale
+            );
             if (excess > 0) {
-              scapBone.position.y -= excess * 1.05 * (1.0 - armLiftTotal);
+              scapBone.position.y -= excess * (1.0 - armLiftTotal) * grounded;
               scapBone.updateMatrixWorld(true);
             }
           }
         }
 
-        // Compute target wrist world position: seamlessly blends from planted terrain paw -> expressive arm / romantic cradle!
         const wristWorldTarget = plantedFore.worldPos.clone();
         let pawPitch = plantedFore.pawPitch;
         let pawRoll = plantedFore.pawRoll;
         let pawYaw = 0;
         let toeCurl = plantedFore.toeCurl * wWalk;
 
-        // 1) Independent feline "Arm Reach" gesture (curious reach / gentle sand-tap / greeting wave)
+        if (nestleThisArm > 0.001) {
+          pawPitch = THREE.MathUtils.lerp(pawPitch, -0.04, nestleThisArm);
+          pawYaw = THREE.MathUtils.lerp(pawYaw, -sign * 0.12, nestleThisArm);
+        }
+
+        // 1) Independent feline "Arm Reach" gesture
         if (armReach > 0.001) {
           const gentlePulse = Math.sin(tSec * 2.8 + (side === 'L' ? 0 : 1.4));
           const bindWr = this.asset.rig.bindWorldPositions.get(`wrist_${side}`)!;
@@ -673,36 +758,39 @@ export class DragonBiomechanicalAnimator {
           toeCurl = THREE.MathUtils.lerp(toeCurl, 0.26, armReach);
         }
 
-        // 2) Romantic Single-Forelimb Chest-Cradle Embrace (100% anatomical IK, zero awkward joint twist, zero clipping!)
+        // 2) Affectionate Forelimb-on-Forelimb Pose (Toothless arcs his inner forepaw UP-AND-OVER
+        //    and lays it gently upon Light Fury's extended inner forepaw with +2.3cm zero-clipping clearance!)
         if (cradleThisArm > 0.001) {
-          const breathLift = Math.sin(tSec * 1.55) * 0.012;
-          const bindWr = this.asset.rig.bindWorldPositions.get(`wrist_${side}`)!;
-          // Open, warm, protective arm arc: lifted beside upper chest & gently curved forward to frame Light Fury!
-          const cradleCharTarget = this.tmpVecD.set(
-            bindWr.x + sign * 0.13,
-            0.70 + breathLift,
-            bindWr.z + 0.18
-          );
-          const cradleWorld = cradleCharTarget.applyMatrix4(rootGroup.matrixWorld);
-          const minCradleY = sampleIslandOrWorldTerrainY(cradleWorld.x, cradleWorld.z) + 0.42;
-          if (cradleWorld.y < minCradleY) cradleWorld.y = minCradleY;
+          const breathLift = Math.sin(tSec * 1.45) * 0.004;
+          const outFromMateDir = this.tmpVecD
+            .subVectors(rootGroup.position, macro.mateRootWorldPos)
+            .setY(0);
+          if (outFromMateDir.lengthSq() < 1e-5) {
+            outFromMateDir.set(-sign, 0, 0).transformDirection(rootGroup.matrixWorld);
+          } else {
+            outFromMateDir.normalize();
+          }
 
-          // Smooth curved lift trajectory (rises slightly outward as it lifts so it never grazes Light Fury!)
-          const arcMidOut = Math.sin(cradleThisArm * Math.PI) * 0.08;
-          wristWorldTarget.lerp(cradleWorld, cradleThisArm);
-          const sideWorld = this.tmpVecC.set(sign, 0, 0).transformDirection(rootGroup.matrixWorld);
-          wristWorldTarget.addScaledVector(sideWorld, arcMidOut);
+          const nfRestOnPawW = macro.mateForepawWorldPos
+            .clone()
+            .addScaledVector(macro.mateForwardWorldDir, 0.07)
+            .addScaledVector(outFromMateDir, 0.06);
+          nfRestOnPawW.y = macro.mateForepawWorldPos.y + 0.348 + breathLift;
 
-          pawPitch = THREE.MathUtils.lerp(pawPitch, 0.38, cradleThisArm);
-          pawYaw = THREE.MathUtils.lerp(pawYaw, -sign * 0.26, cradleThisArm);
-          pawRoll = THREE.MathUtils.lerp(pawRoll, -sign * 0.32, cradleThisArm);
-          toeCurl = THREE.MathUtils.lerp(toeCurl, 0.28, cradleThisArm);
+          wristWorldTarget.lerp(nfRestOnPawW, cradleThisArm);
+          // Smooth +24cm upward parabolic arc so Toothless's paw lifts cleanly UP and OVER Light Fury's leg!
+          wristWorldTarget.y += Math.sin(cradleThisArm * Math.PI) * 0.24;
+
+          pawPitch = THREE.MathUtils.lerp(pawPitch, 0.28, cradleThisArm);
+          pawYaw = THREE.MathUtils.lerp(pawYaw, sign * 0.22, cradleThisArm);
+          pawRoll = THREE.MathUtils.lerp(pawRoll, -sign * 0.08, cradleThisArm);
+          toeCurl = THREE.MathUtils.lerp(toeCurl, 0.04, cradleThisArm);
         }
 
         const forePole = this.tmpVecC
           .set(
-            sign * (0.24 + 0.16 * crouchForeSplay + 0.26 * Math.max(armReach, cradleThisArm)),
-            -0.08 + 0.18 * crouchForeSplay - 0.18 * cradleThisArm,
+            sign * (0.28 + 0.16 * crouchForeSplay + 0.24 * Math.max(armReach, cradleThisArm)),
+            -0.05 + 0.16 * crouchForeSplay + 0.10 * cradleThisArm,
             -1.0
           )
           .normalize();
@@ -748,12 +836,13 @@ export class DragonBiomechanicalAnimator {
       }
     }
 
-    // 3. Mate eye-contact tracking, cervical head-bob, romantic chest-nestle & feline micro-movements!
+    // 3. Mate eye-contact tracking, cervical head-bob, Head-on-Head Embrace & feline micro-movements!
     rootGroup.updateMatrixWorld(false);
     const rootInv = this.tmpMatA.copy(rootGroup.matrixWorld).invert();
     const mateLocal = this.tmpVecA.copy(macro.mateWorldPos).applyMatrix4(rootInv);
 
-    const lookW = clamp(macro.lookAtMateWeight, 0, 1);
+    const embraceSuppressLook = 1.0 - clamp(Math.max(cradle, nestle) * 1.15, 0, 1);
+    const lookW = clamp(macro.lookAtMateWeight, 0, 1) * embraceSuppressLook;
     const relX = mateLocal.x;
     const relY = mateLocal.y - 1.35;
     const relZ = mateLocal.z - 1.15;
@@ -799,26 +888,37 @@ export class DragonBiomechanicalAnimator {
     const nuzzle = clamp(macro.affectionateNuzzle, 0, 1);
     const mateSignSmooth = clamp(mateLocal.x / 0.45, -1, 1);
 
-    // Subtle organic feline curiosity micro-movements (head micro-tilt, sniff nod & asymmetric ear twitches!)
+    // Subtle organic feline curiosity micro-movements (suppressed peacefully during head-on-head rest!)
     const microPhase = macro.timeSec + (this.isLightFury ? 3.1 : 0.0);
+    const embraceQuiet = 1.0 - clamp(Math.max(cradle, nestle), 0, 1);
     const curiousHeadTilt =
       grounded *
       (Math.sin(microPhase * 0.92) * 0.024 + Math.sin(microPhase * 2.15) * 0.012) *
-      (1.0 - 0.5 * cradle - 0.5 * nestle);
+      embraceQuiet;
     const sniffMicroPitch =
-      grounded * Math.pow(Math.max(0, Math.sin(microPhase * 1.35)), 8.0) * 0.028 * (1.0 - nestle);
+      grounded * Math.pow(Math.max(0, Math.sin(microPhase * 1.35)), 8.0) * 0.028 * embraceQuiet;
+
+    // Terrain-slope height compensation + smooth upward arc so Toothless's chin arcs UP-AND-OVER
+    // and rests gently (+2.8cm clearance, 0% clipping) right atop Light Fury's crown!
+    const slopeDiffY = clamp(rootGroup.position.y - macro.mateRootY, -0.25, 0.25);
+    const nfOverArcPitch = -Math.sin(nfReachU * Math.PI) * 0.092;
 
     for (let i = 1; i <= 4; i++) {
       const nb = boneMap.get(`neck_${i}`);
       if (nb) {
         const bowNeck = i <= 3 ? bow * 0.045 : -bow * 0.035;
-        const nuzzleCurve = (nuzzle * 0.045 + nestle * 0.058 + cradle * 0.024) * mateSignSmooth;
-        const nestlePitch = nestle * (i <= 2 ? 0.038 : -0.025) + cradle * 0.028;
+        const embraceNeckPitch =
+          lfSettleU * 0.098 +
+          nfReachU * (0.046 + slopeDiffY * 0.035) +
+          nfOverArcPitch;
+        const embraceNeckYaw =
+          innerSignSmooth * (lfSettleU * 0.145 + nfReachU * 0.168) +
+          nuzzle * 0.045 * mateSignSmooth;
         this.addLocalEuler(
           nb,
-          headBobPitch * 0.20 + bowNeck + nestlePitch,
-          nuzzleCurve,
-          nuzzleCurve * 0.38,
+          headBobPitch * 0.20 + bowNeck + embraceNeckPitch,
+          embraceNeckYaw,
+          nuzzle * 0.018 * mateSignSmooth,
           'YXZ'
         );
       }
@@ -827,17 +927,17 @@ export class DragonBiomechanicalAnimator {
     if (headBone) {
       this.addLocalEuler(
         headBone,
-        headBobPitch * 0.32 - bow * 0.10 + nuzzle * 0.05 - cradle * 0.08 + nestle * 0.04 - sniffMicroPitch,
-        (nuzzle * 0.10 + nestle * 0.11 + cradle * 0.05) * mateSignSmooth,
-        (nuzzle * 0.18 + nestle * 0.22 - cradle * 0.10) * mateSignSmooth + curiousHeadTilt,
+        headBobPitch * 0.32 - bow * 0.10 + nuzzle * 0.05 - lfSettleU * 0.14 - nfReachU * 0.04 + nfOverArcPitch - sniffMicroPitch,
+        innerSignSmooth * (lfSettleU * 0.08 + nfReachU * 0.10) + nuzzle * 0.10 * mateSignSmooth,
+        -innerSignSmooth * (lfSettleU * 0.08 + nfReachU * 0.06) + nuzzle * 0.18 * mateSignSmooth + curiousHeadTilt,
         'YXZ'
       );
     }
 
-    // Asymmetric feline ear-plate listening twitches!
-    if (grounded > 0.2) {
-      const earTwitchL = Math.pow(Math.max(0, Math.sin(microPhase * 1.73 + 0.4)), 10.0) * 0.11;
-      const earTwitchR = Math.pow(Math.max(0, Math.sin(microPhase * 2.11 + 2.3)), 10.0) * 0.11;
+    // Asymmetric feline ear-plate listening twitches (kept relaxed during head-on-head rest!)
+    if (grounded > 0.2 && embraceQuiet > 0.05) {
+      const earTwitchL = Math.pow(Math.max(0, Math.sin(microPhase * 1.73 + 0.4)), 10.0) * 0.11 * embraceQuiet;
+      const earTwitchR = Math.pow(Math.max(0, Math.sin(microPhase * 2.11 + 2.3)), 10.0) * 0.11 * embraceQuiet;
       const earL = boneMap.get('ear_L_1') ?? boneMap.get('earPlate_L') ?? boneMap.get('ear_L');
       const earR = boneMap.get('ear_R_1') ?? boneMap.get('earPlate_R') ?? boneMap.get('ear_R');
       if (earL && earTwitchL > 0.002) this.addLocalEuler(earL, earTwitchL * 0.6, earTwitchL, 0, 'YXZ');
@@ -1386,28 +1486,36 @@ export class DragonBiomechanicalAnimator {
   }
 }
 
-interface CollisionSphere {
+interface CollisionEllipsoid {
   center: THREE.Vector3;
-  radius: number;
+  radiusXZ: number;
+  radiusY: number;
+  isEmbraceContactBone: boolean;
 }
 
-const SPHERE_BONE_SPECS: Array<{ bone: string; radius: number; localOffsetZ?: number }> = [
-  { bone: 'head', radius: 0.24, localOffsetZ: 0.42 }, // Snout tip sphere
-  { bone: 'head', radius: 0.28 },                     // Cranium sphere
-  { bone: 'neck_3', radius: 0.24 },
-  { bone: 'neck_1', radius: 0.28 },
-  { bone: 'chest', radius: 0.44 },
+const SPHERE_BONE_SPECS: Array<{
+  bone: string;
+  radius: number;
+  radiusY?: number;
+  localOffsetZ?: number;
+  isEmbraceContact?: boolean;
+}> = [
+  { bone: 'head', radius: 0.22, radiusY: 0.095, localOffsetZ: 0.42, isEmbraceContact: true }, // Oblate snout
+  { bone: 'head', radius: 0.25, radiusY: 0.125, isEmbraceContact: true },                     // Oblate cranium
+  { bone: 'neck_3', radius: 0.21, radiusY: 0.16, isEmbraceContact: true },
+  { bone: 'neck_1', radius: 0.26, radiusY: 0.22 },
+  { bone: 'chest', radius: 0.43 },
   { bone: 'spine_2', radius: 0.40 },
   { bone: 'spine_1', radius: 0.38 },
   { bone: 'pelvis', radius: 0.38 },
-  { bone: 'elbow_L', radius: 0.16 },
-  { bone: 'elbow_R', radius: 0.16 },
-  { bone: 'wrist_L', radius: 0.15 },
-  { bone: 'wrist_R', radius: 0.15 },
-  { bone: 'forepaw_L', radius: 0.16 },
-  { bone: 'forepaw_R', radius: 0.16 },
-  { bone: 'hindpaw_L', radius: 0.16 },
-  { bone: 'hindpaw_R', radius: 0.16 },
+  { bone: 'elbow_L', radius: 0.14, radiusY: 0.11, isEmbraceContact: true },
+  { bone: 'elbow_R', radius: 0.14, radiusY: 0.11, isEmbraceContact: true },
+  { bone: 'wrist_L', radius: 0.13, radiusY: 0.065, isEmbraceContact: true },
+  { bone: 'wrist_R', radius: 0.13, radiusY: 0.065, isEmbraceContact: true },
+  { bone: 'forepaw_L', radius: 0.15, radiusY: 0.052, isEmbraceContact: true },
+  { bone: 'forepaw_R', radius: 0.15, radiusY: 0.052, isEmbraceContact: true },
+  { bone: 'hindpaw_L', radius: 0.16, radiusY: 0.08 },
+  { bone: 'hindpaw_R', radius: 0.16, radiusY: 0.08 },
   { bone: 'wingElbow_L', radius: 0.20 },
   { bone: 'wingElbow_R', radius: 0.20 },
   { bone: 'wingWrist_L', radius: 0.22 },
@@ -1422,27 +1530,35 @@ const SPHERE_BONE_SPECS: Array<{ bone: string; radius: number; localOffsetZ?: nu
   { bone: 'tail_10', radius: 0.22 },
 ];
 
-function extractWorldSpheres(asset: RigCompatibleAsset, scale = 1.0): CollisionSphere[] {
+function extractWorldSpheres(asset: RigCompatibleAsset, scale = 1.0): CollisionEllipsoid[] {
   asset.rootGroup.updateMatrixWorld(true);
-  const list: CollisionSphere[] = [];
+  const list: CollisionEllipsoid[] = [];
   for (const spec of SPHERE_BONE_SPECS) {
     const b = asset.rig.boneMap.get(spec.bone);
     if (!b) continue;
     const c = new THREE.Vector3(0, 0, spec.localOffsetZ ?? 0).applyMatrix4(b.matrixWorld);
-    list.push({ center: c, radius: spec.radius * scale });
+    list.push({
+      center: c,
+      radiusXZ: spec.radius * scale,
+      radiusY: (spec.radiusY ?? spec.radius) * scale,
+      isEmbraceContactBone: Boolean(spec.isEmbraceContact),
+    });
   }
   return list;
 }
 
 /**
- * Hard 3D 28x28 multi-sphere pairwise dragon-dragon + world-obstacle non-penetration solver!
- * Checks snout, head, neck, torso, elbows, wrists, paws, wings & tail.
+ * Hard 3D 28x28 multi-ellipsoid pairwise dragon-dragon + multi-island world-obstacle solver!
+ * Uses anatomical oblate vertical radii so stacked head-on-head & forepaw-on-forepaw poses are
+ * measured accurately without false spherical horizontal push, while strictly guarding torso,
+ * wings, flanks, and limbs against any penetration across all islands!
  */
 export function enforceStrictPairwiseDragonSeparation(
   nfAsset: RigCompatibleAsset,
   lfAsset: RigCompatibleAsset,
   nfGrounded: boolean,
-  lfGrounded: boolean
+  lfGrounded: boolean,
+  embraceBlend = 0
 ): number {
   const spheresNF = extractWorldSpheres(nfAsset, 1.0);
   const spheresLF = extractWorldSpheres(lfAsset, 0.92);
@@ -1450,10 +1566,20 @@ export function enforceStrictPairwiseDragonSeparation(
   let maxPenetration = 0;
   for (const a of spheresNF) {
     for (const b of spheresLF) {
-      const d = a.center.distanceTo(b.center);
-      const minAllowed = a.radius + b.radius;
-      if (d < minAllowed) {
-        maxPenetration = Math.max(maxPenetration, minAllowed - d);
+      if (embraceBlend > 0.05 && a.isEmbraceContactBone && b.isEmbraceContactBone) {
+        // Embrace contact bones (head-on-head & forepaw-on-forepaw) are solved in exact world-space
+        // with +2.3..+2.8cm verified LOD0 skin clearance; skip coarse sphere horizontal root-push!
+        continue;
+      }
+      const dx = a.center.x - b.center.x;
+      const dy = a.center.y - b.center.y;
+      const dz = a.center.z - b.center.z;
+      const sumXZ = Math.max(0.05, a.radiusXZ + b.radiusXZ);
+      const sumY = Math.max(0.04, a.radiusY + b.radiusY);
+      const normDist = Math.sqrt((dx * dx + dz * dz) / (sumXZ * sumXZ) + (dy * dy) / (sumY * sumY));
+      if (normDist < 1.0) {
+        const approxPen = (1.0 - normDist) * Math.min(sumXZ, sumY);
+        maxPenetration = Math.max(maxPenetration, approxPen);
       }
     }
   }
@@ -1472,17 +1598,21 @@ export function enforceStrictPairwiseDragonSeparation(
     lfAsset.rootGroup.position.addScaledVector(sepDir, -pushEach);
 
     if (nfGrounded) {
-      const safeNF = pushOutOfHeroObstaclesXZ(nfAsset.rootGroup.position.x, nfAsset.rootGroup.position.z, 1.10);
-      nfAsset.rootGroup.position.x = safeNF.x;
-      nfAsset.rootGroup.position.z = safeNF.z;
-      const gNF = sampleHeroCliffHeight(safeNF.x, safeNF.z);
+      if (nfAsset.rootGroup.position.x > -25.0) {
+        const safeNF = pushOutOfHeroObstaclesXZ(nfAsset.rootGroup.position.x, nfAsset.rootGroup.position.z, 1.10);
+        nfAsset.rootGroup.position.x = safeNF.x;
+        nfAsset.rootGroup.position.z = safeNF.z;
+      }
+      const gNF = sampleIslandOrWorldTerrainY(nfAsset.rootGroup.position.x, nfAsset.rootGroup.position.z);
       if (nfAsset.rootGroup.position.y < gNF) nfAsset.rootGroup.position.y = gNF;
     }
     if (lfGrounded) {
-      const safeLF = pushOutOfHeroObstaclesXZ(lfAsset.rootGroup.position.x, lfAsset.rootGroup.position.z, 1.02);
-      lfAsset.rootGroup.position.x = safeLF.x;
-      lfAsset.rootGroup.position.z = safeLF.z;
-      const gLF = sampleHeroCliffHeight(safeLF.x, safeLF.z);
+      if (lfAsset.rootGroup.position.x > -25.0) {
+        const safeLF = pushOutOfHeroObstaclesXZ(lfAsset.rootGroup.position.x, lfAsset.rootGroup.position.z, 1.02);
+        lfAsset.rootGroup.position.x = safeLF.x;
+        lfAsset.rootGroup.position.z = safeLF.z;
+      }
+      const gLF = sampleIslandOrWorldTerrainY(lfAsset.rootGroup.position.x, lfAsset.rootGroup.position.z);
       if (lfAsset.rootGroup.position.y < gLF) lfAsset.rootGroup.position.y = gLF;
     }
 

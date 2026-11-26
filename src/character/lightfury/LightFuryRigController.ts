@@ -622,7 +622,8 @@ export class LightFuryRigController {
         const wrTarget = this.asset.rig.bindWorldPositions.get(`wrist_${side}`)!.clone().add(foreOffset);
         const excessReach = shChar.distanceTo(wrTarget) - 0.615;
         if (excessReach > 0) {
-          this.setBonePose(`scapula_${side}`, 0, 0, 0, 'XYZ', 0, -excessReach * 1.08 * groundedWeight, 0);
+          const clampedExcess = Math.min(excessReach, 0.042);
+          this.setBonePose(`scapula_${side}`, 0, 0, 0, 'XYZ', 0, -clampedExcess * 1.08 * groundedWeight, 0);
           scapBone.updateMatrixWorld(true);
         }
 
