@@ -724,7 +724,8 @@ export function createCinematicLoveStoryDirector(
     curve: THREE.CatmullRomCurve3,
     u: number,
     flareBlend = 0.0,
-    landingYaw = 0.0
+    landingYaw = 0.0,
+    yawBlendOverride?: number
   ): { bankRoll: number; climbPitch: number } {
     const asset = who === 'nf' ? toothless : lightFury;
     const scale = who === 'nf' ? 1.0 : 0.92;
@@ -752,7 +753,12 @@ export function createCinematicLoveStoryDirector(
     while (dYaw < -Math.PI) dYaw += Math.PI * 2;
     const bankRoll = clamp(-dYaw * 3.1, -0.68, 0.68) * (1.0 - flareBlend);
 
-    const finalYaw = lerpAngle(flightYaw, landingYaw, flareBlend);
+    // When a dedicated (monotonic, branch-free) yaw blend is supplied, use a raw lerp so the
+    // approach rotates smoothly in ONE direction toward the landing heading (teardrop!).
+    const finalYaw =
+      yawBlendOverride !== undefined
+        ? lerp(flightYaw, landingYaw, clamp01(yawBlendOverride))
+        : lerpAngle(flightYaw, landingYaw, flareBlend);
     const finalPitch = lerp(flightPitch * 0.72, 0.0, flareBlend);
 
     asset.rootGroup.position.copy(p);
@@ -1082,12 +1088,18 @@ export function createCinematicLoveStoryDirector(
           Math.max(1.0 - liftoff, landFlare),
           t < 45.0 ? -0.16 : -1.05
         );
+        // Teardrop approach: begin the held left-hand turn to the landing heading at ~47.5s and
+        // rotate MONOTONICALLY all the way to touchdown (no mid-flare reversal!). Uses landingYaw
+        // = 0.49 - 2*PI (identical orientation) with a raw lerp so the sweep never flips branch.
+        const lfLandingYaw = 0.49 - Math.PI * 2;
+        const lfYawBlend = smoothstep(47.5, 53.4, t);
         const lfAero = placeDragonOnFlightSpline(
           'lf',
           lfWaltzSpline,
           waltzU,
           Math.max(1.0 - liftoff, landFlare),
-          t < 45.0 ? 0.16 : 0.49
+          lfLandingYaw,
+          lfYawBlend
         );
 
         const cloakPulse = smoothstep(45.8, 46.5, t) * (1.0 - smoothstep(49.4, 50.1, t));

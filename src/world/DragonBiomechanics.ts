@@ -304,6 +304,8 @@ interface WorldFootPlantState {
   plantedWz: number;
   swingStartWx: number;
   swingStartWz: number;
+  lastFootWx: number;
+  lastFootWz: number;
   wasInStance: boolean;
   idleRepositionTimer: number;
   idleFromWx: number;
@@ -319,6 +321,8 @@ function createFootPlantState(): WorldFootPlantState {
     plantedWz: 0,
     swingStartWx: 0,
     swingStartWz: 0,
+    lastFootWx: 0,
+    lastFootWz: 0,
     wasInStance: true,
     idleRepositionTimer: -1,
     idleFromWx: 0,
@@ -335,6 +339,7 @@ export class DragonBiomechanicalAnimator {
   private readonly restPos = new Map<string, THREE.Vector3>();
   private readonly restQuat = new Map<string, THREE.Quaternion>();
 
+  private microTimeSec = 0;
   private prevPos = new THREE.Vector3();
   private prevYaw = 0;
   private velWorldX = 0;
@@ -433,6 +438,7 @@ export class DragonBiomechanicalAnimator {
     }
 
     const safeDt = clamp(dt, 0.001, 0.05);
+    if (!isFrozenPause) this.microTimeSec += safeDt;
     if (isFrozenPause) {
       this.smoothedSpeed = 0;
       this.smoothedTurnRate = 0;
@@ -528,7 +534,7 @@ export class DragonBiomechanicalAnimator {
 
     // Subtle affectionate purr resonance when nestled or cradling!
     const purrMicro = (cradle + nestle + clamp(macro.affectionateNuzzle, 0, 1)) > 0.1
-      ? Math.sin(macro.timeSec * 14.5) * 0.0018 * grounded
+      ? Math.sin(this.microTimeSec * 14.5) * 0.0018 * grounded
       : 0;
 
     if (rootBone) {
@@ -608,7 +614,7 @@ export class DragonBiomechanicalAnimator {
     if (grounded > 0.02) {
       const crouchForeSplay = Math.max(0, -crouchFore);
       const crouchHindSplay = Math.max(0, -crouchHind);
-      const tSec = macro.timeSec + (this.isLightFury ? 1.7 : 0.0);
+      const tSec = this.microTimeSec + (this.isLightFury ? 1.7 : 0.0);
 
       for (const side of ['L', 'R'] as const) {
         const sign = side === 'L' ? 1 : -1;
@@ -622,7 +628,7 @@ export class DragonBiomechanicalAnimator {
         const hindKey: LimbKey = side === 'L' ? 'HL' : 'HR';
         const hindRestLocalX = sign * (crouchHindSplay * 0.052 + rear * 0.040);
         const hindRestLocalZ = -crouchHindSplay * 0.038 + rear * 0.075;
-        const hindTarget = this.computeWorldFootTarget(
+    const hindTarget = this.computeWorldFootTarget(
           hindKey,
           `ankle_${side}`,
           hindRestLocalX,
@@ -814,11 +820,11 @@ export class DragonBiomechanicalAnimator {
         // Joyful rear-up / playful paw wave FK blend when fully rearing
         const airPawFK = clamp(Math.max(rear, playPaw), 0, 1);
         if (airPawFK > 0.001) {
-          const wave = Math.sin(macro.timeSec * 4.2 + (side === 'L' ? 0.0 : 2.1));
-          const shPitch = rear > playPaw ? -0.58 - wave * 0.14 : -0.76 - Math.sin(macro.timeSec * 4.8) * 0.12;
+          const wave = Math.sin(this.microTimeSec * 4.2 + (side === 'L' ? 0.0 : 2.1));
+          const shPitch = rear > playPaw ? -0.58 - wave * 0.14 : -0.76 - Math.sin(this.microTimeSec * 4.8) * 0.12;
           const shYaw = -sign * (0.12 * playPaw + 0.05 * rear);
           const shRoll = sign * 0.10;
-          const elPitch = rear > playPaw ? 0.56 + wave * 0.16 : 0.42 + Math.cos(macro.timeSec * 4.8) * 0.14;
+          const elPitch = rear > playPaw ? 0.56 + wave * 0.16 : 0.42 + Math.cos(this.microTimeSec * 4.8) * 0.14;
           const wrPitch = 0.32 - wave * 0.18;
           const pPitch = 0.24 + wave * 0.16;
 
@@ -889,7 +895,7 @@ export class DragonBiomechanicalAnimator {
     const mateSignSmooth = clamp(mateLocal.x / 0.45, -1, 1);
 
     // Subtle organic feline curiosity micro-movements (suppressed peacefully during head-on-head rest!)
-    const microPhase = macro.timeSec + (this.isLightFury ? 3.1 : 0.0);
+    const microPhase = this.microTimeSec + (this.isLightFury ? 3.1 : 0.0);
     const embraceQuiet = 1.0 - clamp(Math.max(cradle, nestle), 0, 1);
     const curiousHeadTilt =
       grounded *
@@ -961,7 +967,7 @@ export class DragonBiomechanicalAnimator {
       const thumb = boneMap.get(`wingFinger_${side}_1_a`);
 
       const walkWingBounce = Math.sin(cycRad * 2.0 - 0.8 + (side === 'L' ? 0 : 0.35)) * 0.038 * wWalk;
-      const aeroFlutter = air > 0.1 ? Math.sin(macro.timeSec * 3.4 + (side === 'L' ? 0 : 0.9)) * 0.028 * air : 0;
+      const aeroFlutter = air > 0.1 ? Math.sin(this.microTimeSec * 3.4 + (side === 'L' ? 0 : 0.9)) * 0.028 * air : 0;
       const idleWingSettle = grounded * Math.sin(microPhase * 1.15 + (side === 'L' ? 0 : 1.2)) * 0.014;
 
       if (clav) this.addLocalEuler(clav, 0, 0, sign * (walkWingBounce * 0.45 + idleWingSettle * 0.5), 'YXZ');
@@ -1062,7 +1068,8 @@ export class DragonBiomechanicalAnimator {
     const restWz = restWorld.z;
 
     const st = this.footPlants[key];
-    if (!st.initialized || Math.hypot(st.plantedWx - restWx, st.plantedWz - restWz) > 0.72 * this.bodyScale) {
+    const resetDist = Math.hypot(st.plantedWx - restWx, st.plantedWz - restWz);
+    if (!st.initialized || resetDist > 0.72 * this.bodyScale) {
       st.plantedWx = restWx;
       st.plantedWz = restWz;
       st.swingStartWx = restWx;
@@ -1149,8 +1156,19 @@ export class DragonBiomechanicalAnimator {
         toeCurl = 0.24 * Math.sin(u * Math.PI);
       }
     } else {
-      // Standing / quiet posture: keep paw locked on turf, taking a tiny natural adjustment micro-step ONLY if body turns significantly!
-      st.wasInStance = true;
+      // Standing / quiet posture: if the gait cycle froze mid-SWING (walk weight dropped below
+      // threshold just before this paw finished its stride), glide the paw from its frozen
+      // mid-air position into a natural plant instead of snapping it to the rest footprint!
+      if (!st.wasInStance) {
+        st.wasInStance = true;
+        st.idleRepositionTimer = 0;
+        st.idleFromWx = st.lastFootWx;
+        st.idleFromWz = st.lastFootWz;
+        st.idleToWx = restWx;
+        st.idleToWz = restWz;
+      } else {
+        st.wasInStance = true;
+      }
       const drift = Math.hypot(st.plantedWx - restWx, st.plantedWz - restWz);
       const staggerDelay = key === 'FL' ? 0.0 : key === 'HR' ? 0.08 : key === 'FR' ? 0.16 : 0.24;
       if (st.idleRepositionTimer < 0 && drift > (0.15 + staggerDelay * 0.25) * this.bodyScale) {
@@ -1184,6 +1202,10 @@ export class DragonBiomechanicalAnimator {
         footWz = st.plantedWz;
       }
     }
+
+    // Remember the exact foot position used this frame so an interrupted mid-swing can resume smoothly!
+    st.lastFootWx = footWx;
+    st.lastFootWz = footWz;
 
     // Sample EXACT contoured terrain elevation & local slope right under THIS paw!
     const hGround = sampleIslandOrWorldTerrainY(footWx, footWz);
@@ -1346,6 +1368,38 @@ export class DragonBiomechanicalAnimator {
       }
     }
 
+    // D2. Grounded paw-sole hard floor: when walking/standing on contoured turf, the world-space
+    //     IK normally plants each wrist exactly on the ray-cast terrain height — but slope-conform
+    //     paw pitch/roll and reach-envelope clamping can still sink a paw pad a few centimetres
+    //     into the ground. Guarantee ZERO terrain penetration by lifting the root by the largest
+    //     paw deficit (a centimetre-scale, invisible correction that cannot break the IK solve
+    //     because the IK re-plants every paw from scratch on the next frame).
+    if (groundedWeight > 0.45 && neededLiftY <= 0.0005) {
+      rootGroup.updateMatrixWorld(true);
+      let pawDeficit = 0;
+      const pawCheck: Array<[string, number]> = [
+        ['forepaw_L', 0.012],
+        ['forepaw_R', 0.012],
+        ['hindpaw_L', 0.012],
+        ['hindpaw_R', 0.012],
+        ['wrist_L', 0.010],
+        ['wrist_R', 0.010],
+        ['ankle_L', 0.010],
+        ['ankle_R', 0.010],
+      ];
+      for (const [bName, clearance] of pawCheck) {
+        const b = boneMap.get(bName);
+        if (!b) continue;
+        const wp = this.tmpVecB.setFromMatrixPosition(b.matrixWorld);
+        const tY = sampleIslandOrWorldTerrainY(wp.x, wp.z);
+        pawDeficit = Math.max(pawDeficit, tY + clearance - wp.y);
+      }
+      if (pawDeficit > 0.0005) {
+        rootGroup.position.y += pawDeficit;
+        rootGroup.updateMatrixWorld(true);
+      }
+    }
+
     if (neededLiftY > 0.0005) {
       rootGroup.position.y += neededLiftY;
       rootGroup.updateMatrixWorld(true);
@@ -1478,10 +1532,14 @@ export class DragonBiomechanicalAnimator {
     pawBone.quaternion.copy(this.restQuat.get(pawName)!).multiply(this.tmpQuatA.setFromEuler(this.tmpEuler));
 
     if (blendWeight < 0.999) {
-      upperBone.quaternion.copy(prevUpperQ).slerp(upperBone.quaternion, blendWeight);
-      midBone.quaternion.copy(prevMidQ).slerp(midBone.quaternion, blendWeight);
-      endBone.quaternion.copy(prevEndQ).slerp(endBone.quaternion, blendWeight);
-      pawBone.quaternion.copy(prevPawQ).slerp(pawBone.quaternion, blendWeight);
+      const solvedUpper = upperBone.quaternion.clone();
+      const solvedMid = midBone.quaternion.clone();
+      const solvedEnd = endBone.quaternion.clone();
+      const solvedPaw = pawBone.quaternion.clone();
+      upperBone.quaternion.copy(prevUpperQ).slerp(solvedUpper, blendWeight);
+      midBone.quaternion.copy(prevMidQ).slerp(solvedMid, blendWeight);
+      endBone.quaternion.copy(prevEndQ).slerp(solvedEnd, blendWeight);
+      pawBone.quaternion.copy(prevPawQ).slerp(solvedPaw, blendWeight);
     }
   }
 }

@@ -145,7 +145,7 @@ export function createUserExperienceHUD(
         pathLength="100"
       />
     </svg>
-    <p class="ux-confession-whisper">Will you stay with me, and make this world ours?</p>
+    <p class="ux-confession-whisper">Will you stay with me forever, and let this whole world become ours?</p>
     <div class="ux-confession-sigils">
       <button type="button" class="ux-sigil-btn ux-sigil-yes" id="ux-confess-yes">
         <span class="ux-sigil-ring" aria-hidden="true"></span>
