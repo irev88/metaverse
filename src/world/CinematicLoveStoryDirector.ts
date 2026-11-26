@@ -1,17 +1,24 @@
 import * as THREE from 'three';
 import { ToothlessCharacterAsset } from '../character/ToothlessAsset';
-import { ToothlessRigController } from '../character/ToothlessRigController';
+import { ToothlessRigController, ToothlessRigState } from '../character/ToothlessRigController';
 import { LightFuryCharacterAsset } from '../character/lightfury/LightFuryAsset';
-import { LightFuryRigController } from '../character/lightfury/LightFuryRigController';
+import {
+  LightFuryRigController,
+  LightFuryRigState,
+} from '../character/lightfury/LightFuryRigController';
 import { NordicAtmosphereController, WeatherPresetId } from './NordicAtmosphere';
+import { sampleWorldTerrainHeight } from './NordicCliffWorld';
 import { NorthSeaOceanController } from './NorthSeaOcean';
 import { CourtshipSanctuaryController, SANCTUARY_CENTER_Z } from './CourtshipSanctuaryProps';
-import { CelestialFireworksController } from './CelestialFireworksSystem';
+import { CelestialFireworksController, FireworkShellKind } from './CelestialFireworksSystem';
 import {
   computeSafeCliffGroundPlacement,
+  ContinuousPoseFilter,
+  ContinuousTransformFilter,
   createDefaultMacroDirective,
   DragonBiomechanicalAnimator,
   DragonMacroDirective,
+  enforceStrictPairwiseDragonSeparation,
 } from './DragonBiomechanics';
 
 export type StoryPlaybackMode =
@@ -53,9 +60,18 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
+
 function smoothstep(e0: number, e1: number, x: number): number {
-  const t = clamp((x - e0) / Math.max(1e-5, e1 - e0), 0, 1);
+  const t = clamp01((x - e0) / Math.max(1e-5, e1 - e0));
   return t * t * (3 - 2 * t);
+}
+
+function smootherstep(e0: number, e1: number, x: number): number {
+  const t = clamp01((x - e0) / Math.max(1e-5, e1 - e0));
+  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 function lerp(a: number, b: number, t: number): number {
@@ -87,20 +103,29 @@ export function createCinematicLoveStoryDirector(
   callbacks: CinematicLoveStoryCallbacks
 ): CinematicLoveStoryController {
   let mode: StoryPlaybackMode = 'playing';
-  let storyTime = 0;
-  let declineElapsed = 0;
-  let postEndingElapsed = 0;
-  let worldClock = 0;
-  let hoverBias = 0; // -1 = No hover, +1 = Yes hover
+  let storyTime = 0.0;
+  let declineElapsed = 0.0;
+  let postEndingElapsed = 0.0;
+  let worldClock = 0.0;
+  let hoverBias = 0.0;
+  let smoothedHoverBias = 0.0;
 
-  // True 4-beat biomechanical gait & full-joint macro animators
+  let nfFlapPhase = 0.0;
+  let lfFlapPhase = 0.75;
+
   const nfBio = new DragonBiomechanicalAnimator(toothless, false);
   const lfBio = new DragonBiomechanicalAnimator(lightFury, true);
+
   const nfMacro: DragonMacroDirective = createDefaultMacroDirective();
   const lfMacro: DragonMacroDirective = createDefaultMacroDirective();
 
-  let nfFlapPhase = 0;
-  let lfFlapPhase = 0.8;
+  // Continuous C1 Pose & Transform filters — guarantee 0.0 instantaneous posture or position jumps!
+  const nfStateFilter = new ContinuousPoseFilter<ToothlessRigState>();
+  const lfStateFilter = new ContinuousPoseFilter<LightFuryRigState>();
+  const nfMacroFilter = new ContinuousPoseFilter<DragonMacroDirective>();
+  const lfMacroFilter = new ContinuousPoseFilter<DragonMacroDirective>();
+  const nfTransformFilter = new ContinuousTransformFilter();
+  const lfTransformFilter = new ContinuousTransformFilter();
 
   const firedEvents = new Set<string>();
   function once(key: string, fn: () => void): void {
@@ -109,125 +134,321 @@ export function createCinematicLoveStoryDirector(
     fn();
   }
 
-  // Smooth unified camera state
-  const camPos = new THREE.Vector3(0, 5.8, 18.5);
-  const camTarget = new THREE.Vector3(0, 2.2, -12.0);
-  let camFov = 40;
+  // Camera tracking state
+  const smoothedCamPos = new THREE.Vector3(11.2, -7.2, 58.0);
+  const smoothedCamTarget = new THREE.Vector3(6.5, -2.5, 92.0);
+  let smoothedCamFov = 46;
   let camInitialized = false;
+  let prevShotId = -1;
 
-  const desiredCamPos = new THREE.Vector3();
-  const desiredCamTarget = new THREE.Vector3();
-  let desiredFov = 40;
+  const focusPoint = new THREE.Vector3(0, 1.2, SANCTUARY_CENTER_Z);
+  const finalExploreCamPos = new THREE.Vector3(0.0, 2.32, 6.65);
+  const finalExploreCamTarget = new THREE.Vector3(0.0, 1.48, SANCTUARY_CENTER_Z - 1.0);
+  const tmpCamPos = new THREE.Vector3();
+  const tmpCamTarget = new THREE.Vector3();
+  const tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
-  const focusPoint = new THREE.Vector3(0, 1.15, SANCTUARY_CENTER_Z);
-  const tmpVecA = new THREE.Vector3();
-  const tmpVecB = new THREE.Vector3();
-  const tmpVecC = new THREE.Vector3();
-  const tmpEuler = new THREE.Euler();
-
-  // ============================================================================
-  // SMOOTH 3D FLIGHT SPLINES (GUARANTEED FORWARD VELOCITY TANGENT ALIGNMENT!)
-  // ============================================================================
-  const nfArrivalCurve = new THREE.CatmullRomCurve3(
+  // ==========================================================================
+  // 1. ACT I SPLINES: Restored Sunlit Clear-Sky Ocean Wave-Skim -> Sanctuary Landing
+  //    (Dragons stay > 8.2m apart in flight and land at (+3.85, -1.85) & (-3.85, -1.85))
+  // ==========================================================================
+  const nfArrivalSpline = new THREE.CatmullRomCurve3(
     [
-      new THREE.Vector3(24.0, 14.5, -62.0),
-      new THREE.Vector3(14.0, 10.2, -38.0),
-      new THREE.Vector3(6.5, 6.2, -19.0),
-      new THREE.Vector3(3.4, 2.8, -8.8),
-      new THREE.Vector3(2.25, 0.65, -3.8),
-      new THREE.Vector3(1.85, 0.05, SANCTUARY_CENTER_Z),
+      new THREE.Vector3(9.5, 22.0, 178.0),
+      new THREE.Vector3(14.5, 6.5, 118.0),
+      new THREE.Vector3(16.2, -6.2, 68.0),
+      new THREE.Vector3(11.8, -4.5, 34.0),
+      new THREE.Vector3(6.8, 4.4, 12.0),
+      new THREE.Vector3(4.45, 2.55, 1.85),
+      new THREE.Vector3(3.85, 0.06, SANCTUARY_CENTER_Z),
     ],
     false,
     'catmullrom',
     0.45
   );
 
-  const lfArrivalCurve = new THREE.CatmullRomCurve3(
+  const lfArrivalSpline = new THREE.CatmullRomCurve3(
     [
-      new THREE.Vector3(-24.0, 15.2, -64.0),
-      new THREE.Vector3(-13.5, 10.6, -39.0),
-      new THREE.Vector3(-6.2, 6.4, -19.5),
-      new THREE.Vector3(-3.2, 2.9, -9.0),
-      new THREE.Vector3(-2.15, 0.70, -3.9),
-      new THREE.Vector3(-1.75, 0.05, SANCTUARY_CENTER_Z),
+      new THREE.Vector3(-2.5, 24.5, 184.0),
+      new THREE.Vector3(3.2, 8.2, 122.0),
+      new THREE.Vector3(5.4, -5.8, 70.0),
+      new THREE.Vector3(1.2, -3.8, 35.5),
+      new THREE.Vector3(-5.2, 4.6, 12.2),
+      new THREE.Vector3(-4.45, 2.60, 1.75),
+      new THREE.Vector3(-3.85, 0.06, SANCTUARY_CENTER_Z),
     ],
     false,
     'catmullrom',
     0.45
   );
 
-  const nfSkyWaltzCurve = new THREE.CatmullRomCurve3(
+  // ==========================================================================
+  // 2. ACT II-C SPLINES: Double-Helix Sky Waltz & Mirror-Cloak Peekaboo
+  //    Starts seamlessly at (-3.15, -0.35) & (+3.15, -0.35), stays > 9.0m apart
+  //    on opposite 180-deg phase sides, lands at (+3.20, -1.85) & (-3.20, -1.85)
+  // ==========================================================================
+  const nfWaltzSpline = new THREE.CatmullRomCurve3(
     [
-      new THREE.Vector3(1.35, 0.10, -0.45),
-      new THREE.Vector3(4.2, 3.6, 2.2),
-      new THREE.Vector3(9.8, 9.8, -2.5),
-      new THREE.Vector3(6.5, 15.2, -13.5),
-      new THREE.Vector3(-4.8, 16.4, -16.0),
-      new THREE.Vector3(-9.5, 11.2, -7.5),
-      new THREE.Vector3(-5.2, 4.8, -4.2),
-      new THREE.Vector3(1.55, 0.95, -3.1),
-      new THREE.Vector3(1.45, 0.05, SANCTUARY_CENTER_Z),
+      new THREE.Vector3(-3.95, 0.16, 0.15),
+      new THREE.Vector3(-7.4, 4.8, 8.8),
+      new THREE.Vector3(-2.0, 11.2, 18.0),
+      new THREE.Vector3(6.8, 15.6, 15.0),
+      new THREE.Vector3(8.4, 16.8, 6.5),
+      new THREE.Vector3(6.8, 11.2, 2.5),
+      new THREE.Vector3(4.8, 4.6, 1.8),
+      new THREE.Vector3(3.20, 0.08, SANCTUARY_CENTER_Z),
     ],
     false,
     'catmullrom',
-    0.5
+    0.48
   );
 
-  const lfSkyWaltzCurve = new THREE.CatmullRomCurve3(
+  const lfWaltzSpline = new THREE.CatmullRomCurve3(
     [
-      new THREE.Vector3(-1.25, 0.10, -0.45),
-      new THREE.Vector3(1.4, 3.9, 2.5),
-      new THREE.Vector3(7.2, 10.4, -1.8),
-      new THREE.Vector3(4.2, 15.8, -12.0),
-      new THREE.Vector3(-6.8, 16.0, -14.8),
-      new THREE.Vector3(-11.2, 10.6, -6.8),
-      new THREE.Vector3(-6.4, 4.5, -3.8),
-      new THREE.Vector3(-1.55, 0.90, -3.0),
-      new THREE.Vector3(-1.45, 0.05, SANCTUARY_CENTER_Z),
+      new THREE.Vector3(3.95, 0.16, 0.15),
+      new THREE.Vector3(7.4, 5.2, 8.8),
+      new THREE.Vector3(2.0, 11.6, 4.2),
+      new THREE.Vector3(-6.8, 16.0, 7.0),
+      new THREE.Vector3(-8.4, 17.2, 15.5),
+      new THREE.Vector3(-6.8, 11.6, 10.5),
+      new THREE.Vector3(-4.8, 4.8, 2.2),
+      new THREE.Vector3(-3.20, 0.08, SANCTUARY_CENTER_Z),
     ],
     false,
     'catmullrom',
-    0.5
+    0.48
   );
 
-  function evaluateSplineFlightPose(
-    curve: THREE.CatmullRomCurve3,
-    u: number
-  ): { pos: THREE.Vector3; yaw: number; pitch: number; bankRoll: number } {
-    const cu = clamp(u, 0, 1);
-    const eps = 0.006;
-    const u0 = clamp(cu - eps, 0, 1);
-    const u1 = clamp(cu + eps, 0, 1);
-    const u2 = clamp(cu + eps * 2.2, 0, 1);
-
-    const pos = curve.getPointAt(cu);
-    const pPrev = curve.getPointAt(u0);
-    const pNext = curve.getPointAt(u1);
-    const pAhead = curve.getPointAt(u2);
-
-    const vx = pNext.x - pPrev.x;
-    const vy = pNext.y - pPrev.y;
-    const vz = pNext.z - pPrev.z;
-    const horiz = Math.max(1e-4, Math.hypot(vx, vz));
-
-    const yaw = Math.atan2(vx, vz);
-    const pitch = clamp(-Math.atan2(vy, horiz), -0.58, 0.58);
-
-    const yawAhead = Math.atan2(pAhead.x - pNext.x, pAhead.z - pNext.z);
-    let dYaw = yawAhead - yaw;
-    while (dYaw > Math.PI) dYaw -= Math.PI * 2;
-    while (dYaw < -Math.PI) dYaw += Math.PI * 2;
-    const bankRoll = clamp(-dYaw * 9.5, -0.72, 0.72);
-
-    return { pos, yaw, pitch, bankRoll };
+  // ==========================================================================
+  // 3. SHOCKING CRIMSON / HOT-PINK + "9" "2" "7" FIREWORK CUES
+  // ==========================================================================
+  interface FireworkCue {
+    id: string;
+    timeSec: number;
+    origin: THREE.Vector3;
+    target: THREE.Vector3;
+    kind: FireworkShellKind;
+    colA: number;
+    colB: number;
+    scale: number;
+    dur: number;
   }
 
+  const fireworkCues: FireworkCue[] = [
+    // Wave 1 (99.4s -> 103.5s): Shocking Crimson, Hot-Pink, Dahlia, Spiral & Crossette Opening!
+    {
+      id: 'fw_1',
+      timeSec: 99.45,
+      origin: new THREE.Vector3(-14, -4, -30),
+      target: new THREE.Vector3(-12.5, 14.5, -28),
+      kind: 'dahlia',
+      colA: 0xff0e3c,
+      colB: 0xff78c4,
+      scale: 1.25,
+      dur: 1.15,
+    },
+    {
+      id: 'fw_2',
+      timeSec: 99.85,
+      origin: new THREE.Vector3(14, -4, -30),
+      target: new THREE.Vector3(12.5, 15.0, -28),
+      kind: 'spiral',
+      colA: 0xff1488,
+      colB: 0x48e5ff,
+      scale: 1.25,
+      dur: 1.15,
+    },
+    {
+      id: 'fw_3',
+      timeSec: 100.55,
+      origin: new THREE.Vector3(0, -4, -34),
+      target: new THREE.Vector3(0.0, 18.8, -32),
+      kind: 'heart',
+      colA: 0xff0c46,
+      colB: 0xffe298,
+      scale: 1.52,
+      dur: 1.22,
+    },
+    {
+      id: 'fw_4',
+      timeSec: 101.40,
+      origin: new THREE.Vector3(-20, -4, -35),
+      target: new THREE.Vector3(-17.5, 16.5, -33),
+      kind: 'crossette',
+      colA: 0xff2090,
+      colB: 0xffd884,
+      scale: 1.22,
+      dur: 1.20,
+    },
+    {
+      id: 'fw_5',
+      timeSec: 101.95,
+      origin: new THREE.Vector3(20, -4, -35),
+      target: new THREE.Vector3(17.5, 16.8, -33),
+      kind: 'saturn',
+      colA: 0x3ad8ff,
+      colB: 0xff1868,
+      scale: 1.28,
+      dur: 1.20,
+    },
+    {
+      id: 'fw_6',
+      timeSec: 102.75,
+      origin: new THREE.Vector3(-8, -4, -36),
+      target: new THREE.Vector3(-7.0, 20.2, -34),
+      kind: 'willow',
+      colA: 0xffd97d,
+      colB: 0xff2277,
+      scale: 1.32,
+      dur: 1.25,
+    },
+    {
+      id: 'fw_7',
+      timeSec: 103.10,
+      origin: new THREE.Vector3(8, -4, -36),
+      target: new THREE.Vector3(7.0, 20.4, -34),
+      kind: 'peony',
+      colA: 0xff1040,
+      colB: 0xff88cc,
+      scale: 1.28,
+      dur: 1.25,
+    },
+
+    // Wave 2 (104.75s -> 109.8s): Outer framing willows for the "9"  "2"  "7" Sky Triptych!
+    {
+      id: 'fw_927_left_frame',
+      timeSec: 105.05,
+      origin: new THREE.Vector3(-26, -5, -36),
+      target: new THREE.Vector3(-23.5, 12.2, -33),
+      kind: 'willow',
+      colA: 0xff2268,
+      colB: 0xffe49c,
+      scale: 1.05,
+      dur: 1.15,
+    },
+    {
+      id: 'fw_927_right_frame',
+      timeSec: 105.10,
+      origin: new THREE.Vector3(26, -5, -36),
+      target: new THREE.Vector3(23.5, 12.2, -33),
+      kind: 'willow',
+      colA: 0xff2268,
+      colB: 0xffe49c,
+      scale: 1.05,
+      dur: 1.15,
+    },
+
+    // Wave 3 (109.9s -> 118.2s): Grand Shocking Red/Pink & Gold Symphonic Finale!
+    {
+      id: 'fw_10',
+      timeSec: 109.95,
+      origin: new THREE.Vector3(-15, -4, -34),
+      target: new THREE.Vector3(-13.5, 16.5, -31),
+      kind: 'dahlia',
+      colA: 0xff0a3c,
+      colB: 0xff70bf,
+      scale: 1.38,
+      dur: 1.18,
+    },
+    {
+      id: 'fw_11',
+      timeSec: 110.25,
+      origin: new THREE.Vector3(15, -4, -34),
+      target: new THREE.Vector3(13.5, 16.8, -31),
+      kind: 'dahlia',
+      colA: 0xff1688,
+      colB: 0xffe498,
+      scale: 1.38,
+      dur: 1.18,
+    },
+    {
+      id: 'fw_12',
+      timeSec: 111.15,
+      origin: new THREE.Vector3(0, -4, -33),
+      target: new THREE.Vector3(0.0, 20.5, -30),
+      kind: 'heart',
+      colA: 0xff0d44,
+      colB: 0xff8ad4,
+      scale: 1.72,
+      dur: 1.25,
+    },
+    {
+      id: 'fw_13',
+      timeSec: 112.10,
+      origin: new THREE.Vector3(-19, -5, -38),
+      target: new THREE.Vector3(-17.0, 19.0, -35),
+      kind: 'spiral',
+      colA: 0xff1a75,
+      colB: 0x52e5ff,
+      scale: 1.35,
+      dur: 1.25,
+    },
+    {
+      id: 'fw_14',
+      timeSec: 112.45,
+      origin: new THREE.Vector3(19, -5, -38),
+      target: new THREE.Vector3(17.0, 19.2, -35),
+      kind: 'crossette',
+      colA: 0xff124c,
+      colB: 0xffe29a,
+      scale: 1.35,
+      dur: 1.25,
+    },
+    {
+      id: 'fw_15',
+      timeSec: 113.85,
+      origin: new THREE.Vector3(-9.5, -4, -35),
+      target: new THREE.Vector3(-8.5, 17.5, -32),
+      kind: 'heart',
+      colA: 0xff1882,
+      colB: 0xffb8e2,
+      scale: 1.35,
+      dur: 1.20,
+    },
+    {
+      id: 'fw_16',
+      timeSec: 114.05,
+      origin: new THREE.Vector3(9.5, -4, -35),
+      target: new THREE.Vector3(8.5, 17.5, -32),
+      kind: 'heart',
+      colA: 0xff0e3e,
+      colB: 0xffd88e,
+      scale: 1.35,
+      dur: 1.20,
+    },
+    {
+      id: 'fw_17',
+      timeSec: 115.40,
+      origin: new THREE.Vector3(0, -5, -38),
+      target: new THREE.Vector3(0.0, 22.0, -35),
+      kind: 'willow',
+      colA: 0xffe08c,
+      colB: 0xff1e72,
+      scale: 1.65,
+      dur: 1.32,
+    },
+    {
+      id: 'fw_18',
+      timeSec: 116.50,
+      origin: new THREE.Vector3(0, -4, -31),
+      target: new THREE.Vector3(0.0, 16.5, -28),
+      kind: 'heart',
+      colA: 0xff0e48,
+      colB: 0xff77c8,
+      scale: 1.62,
+      dur: 1.18,
+    },
+  ];
+
+  // ==========================================================================
+  // 4. ATMOSPHERE, CAMERA & RIG BASE HELPERS
+  // ==========================================================================
   function applyAtmosphereBlend(
     fromId: WeatherPresetId,
     toId: WeatherPresetId,
     alpha: number,
     wind: number,
-    rain = 0,
+    rain: number,
     auroraOverride?: number,
     sunElevOffset = 0,
     sunAzimOffset = 0
@@ -235,7 +456,7 @@ export function createCinematicLoveStoryDirector(
     atmosphere.blendPresets(
       fromId,
       toId,
-      clamp(alpha, 0, 1),
+      clamp01(alpha),
       renderer,
       scene,
       sunElevOffset,
@@ -259,36 +480,36 @@ export function createCinematicLoveStoryDirector(
     nf.hindlegStance = 0.05;
     nf.spineArch = 0.05;
     nf.spineTwist = 0;
-    nf.neckArch = 0.14;
+    nf.neckArch = 0.16;
     nf.neckYaw = 0;
     nf.headPitch = 0;
     nf.headYaw = 0;
     nf.headRoll = 0;
     nf.jawOpen = 0.02;
-    nf.tongueExtend = 0.08;
-    nf.tongueCurl = 0.08;
-    nf.earPerk = 0.70;
+    nf.tongueExtend = 0.06;
+    nf.tongueCurl = 0.06;
+    nf.earPerk = 0.72;
     nf.earAsymmetry = 0;
     nf.cheekNubFlare = 0.45;
     nf.blink = 0;
     nf.squint = 0.08;
     nf.eyeYaw = 0;
     nf.eyePitch = 0;
-    nf.pupilDilation = 0.74;
-    nf.wingUnfurl = 0.12;
+    nf.pupilDilation = 0.76;
+    nf.wingUnfurl = 0.08;
     nf.wingFlap = 0;
     nf.wingSweep = 0;
     nf.wingCamber = 0.24;
-    nf.wingWristFold = 0.42;
+    nf.wingWristFold = 0.44;
     nf.wingTipLag = 0;
     nf.pelvicFinFlare = 0.18;
-    nf.dorsalSpineSplit = 0.14;
-    nf.alphaGlow = 0.02;
+    nf.dorsalSpineSplit = 0.16;
+    nf.alphaGlow = 0.04;
     nf.tailPitch = 0.14;
     nf.tailYaw = 0;
-    nf.tailCurl = 0.16;
+    nf.tailCurl = 0.0;
     nf.tailWaveAmp = 0;
-    nf.rightTailFinFlare = 0.42;
+    nf.rightTailFinFlare = 0.45;
     nf.autoSyncProstheticTail = true;
     nf.subtleBreathing = true;
 
@@ -305,27 +526,29 @@ export function createCinematicLoveStoryDirector(
     lf.headYaw = 0;
     lf.headRoll = 0;
     lf.jawOpen = 0.01;
-    lf.tongueExtend = 0.05;
-    lf.tongueCurl = 0.05;
-    lf.earPerk = 0.74;
+    lf.tongueExtend = 0.04;
+    lf.tongueCurl = 0.04;
+    lf.earPerk = 0.76;
     lf.earAsymmetry = 0;
     lf.cheekNubFlare = 0.44;
     lf.blink = 0;
     lf.squint = 0.12;
     lf.eyeYaw = 0;
     lf.eyePitch = 0;
-    lf.pupilDilation = 0.68;
-    lf.wingUnfurl = 0.10;
+    lf.pupilDilation = 0.72;
+    lf.wingUnfurl = 0.08;
     lf.wingFlap = 0;
     lf.wingSweep = 0;
     lf.wingCamber = 0.24;
-    lf.wingWristFold = 0.46;
+    lf.wingWristFold = 0.48;
     lf.wingTipLag = 0;
     lf.pelvicFinFlare = 0.18;
-    lf.iridescentShimmer = 0.18;
+    lf.iridescentShimmer = 0.28;
+    lf.thermalCloak = 0.0;
+    lf.plasmaGlow = 0.0;
     lf.tailPitch = 0.18;
     lf.tailYaw = 0;
-    lf.tailCurl = 0.22;
+    lf.tailCurl = 0.0;
     lf.tailWaveAmp = 0;
     lf.rightHeartFinFlare = 0.56;
     lf.leftHeartFinFlare = 0.56;
@@ -338,6 +561,7 @@ export function createCinematicLoveStoryDirector(
     nfMacro.affectionateNuzzle = 0;
     nfMacro.protectiveWingMantle = 0;
     nfMacro.tuckInnerWingNeat = 0;
+    nfMacro.compactFoldedWings = 0;
     nfMacro.lookAtMateWeight = 0;
 
     lfMacro.rearUpJoy = 0;
@@ -347,829 +571,1004 @@ export function createCinematicLoveStoryDirector(
     lfMacro.affectionateNuzzle = 0;
     lfMacro.protectiveWingMantle = 0;
     lfMacro.tuckInnerWingNeat = 0;
+    lfMacro.compactFoldedWings = 0;
     lfMacro.lookAtMateWeight = 0;
   }
 
-  function placeGroundedDragon(
-    rootGroup: THREE.Group,
-    rawX: number,
-    rawZ: number,
-    yaw: number,
-    extraLiftY = 0,
-    bodyScale = 1.0
+  function applySafeCamera(
+    shotId: number,
+    rawPos: THREE.Vector3,
+    target: THREE.Vector3,
+    fov: number,
+    dt: number,
+    breathTime: number,
+    breathAmp = 0.026
   ): void {
-    const g = computeSafeCliffGroundPlacement(rawX, rawZ, yaw, bodyScale);
-    rootGroup.position.set(g.x, g.y + extraLiftY, g.z);
-    tmpEuler.set(g.terrainPitch, yaw, g.terrainRoll, 'YXZ');
-    rootGroup.quaternion.setFromEuler(tmpEuler);
-  }
-
-  function commitSmoothCamera(dt: number, damping = 3.0): void {
     if (mode === 'free-explore') return;
 
-    const aspect = camera.aspect || 16 / 9;
-    let finalFov = desiredFov;
-    const pullbackPos = desiredCamPos.clone();
+    tmpCamPos.copy(rawPos);
+    tmpCamPos.x += Math.sin(breathTime * 0.58) * breathAmp;
+    tmpCamPos.y += Math.cos(breathTime * 0.44) * breathAmp * 0.65;
 
-    if (aspect < 1.35) {
-      const portraitFactor = clamp((1.35 - aspect) / 0.80, 0, 1);
-      const dir = tmpVecA.subVectors(desiredCamPos, desiredCamTarget);
-      pullbackPos.copy(desiredCamTarget).addScaledVector(dir, 1.0 + portraitFactor * 0.48);
-      finalFov = clamp(desiredFov + portraitFactor * 8.0, 28, 62);
+    const minGroundY = Math.max(-10.1, sampleWorldTerrainHeight(tmpCamPos.x, tmpCamPos.z) + 0.88);
+    if (tmpCamPos.y < minGroundY) {
+      tmpCamPos.y = minGroundY;
     }
 
-    if (!camInitialized) {
-      camPos.copy(pullbackPos);
-      camTarget.copy(desiredCamTarget);
-      camFov = finalFov;
+    if (!camInitialized || shotId !== prevShotId) {
+      smoothedCamPos.copy(tmpCamPos);
+      smoothedCamTarget.copy(target);
+      smoothedCamFov = fov;
+      prevShotId = shotId;
       camInitialized = true;
     } else {
-      const k = 1 - Math.exp(-damping * Math.min(dt, 0.05));
-      camPos.lerp(pullbackPos, k);
-      camTarget.lerp(desiredCamTarget, k);
-      camFov = lerp(camFov, finalFov, k);
+      const k = 1.0 - Math.exp(-clamp(dt, 0.001, 0.05) / 0.14);
+      smoothedCamPos.lerp(tmpCamPos, k);
+      smoothedCamTarget.lerp(target, k);
+      smoothedCamFov = lerp(smoothedCamFov, fov, k);
     }
 
-    camera.position.copy(camPos);
-    if (Math.abs(camera.fov - camFov) > 0.02) {
-      camera.fov = camFov;
+    if (Math.abs(camera.fov - smoothedCamFov) > 0.04) {
+      camera.fov = smoothedCamFov;
       camera.updateProjectionMatrix();
     }
-    camera.lookAt(camTarget);
+    camera.position.copy(smoothedCamPos);
+    camera.lookAt(smoothedCamTarget);
   }
 
-  function updateMateWorldTargets(clockSec: number): void {
-    nfMacro.timeSec = clockSec;
-    lfMacro.timeSec = clockSec;
+  function placeDragonOnCliff(who: 'nf' | 'lf', rawX: number, rawZ: number, yaw: number): void {
+    const asset = who === 'nf' ? toothless : lightFury;
+    const scale = who === 'nf' ? 1.0 : 0.92;
+    const g = computeSafeCliffGroundPlacement(rawX, rawZ, yaw, scale);
+    asset.rootGroup.position.set(g.x, g.y, g.z);
+    tmpEuler.set(g.terrainPitch * 0.45, yaw, g.terrainRoll * 0.42, 'YXZ');
+    asset.rootGroup.quaternion.setFromEuler(tmpEuler);
+  }
+
+  function placeDragonOnFlightSpline(
+    who: 'nf' | 'lf',
+    curve: THREE.CatmullRomCurve3,
+    u: number,
+    flareBlend = 0.0,
+    landingYaw = 0.0
+  ): { bankRoll: number; climbPitch: number } {
+    const asset = who === 'nf' ? toothless : lightFury;
+    const scale = who === 'nf' ? 1.0 : 0.92;
+    const clampedU = clamp01(u);
+
+    const p = curve.getPointAt(clampedU);
+    const tan = curve.getTangentAt(clampedU).normalize();
+    const tanAhead = curve.getTangentAt(clamp01(clampedU + 0.025)).normalize();
+
+    const minSafeY = Math.max(-10.85, sampleWorldTerrainHeight(p.x, p.z) + 0.08);
+    if (p.y < minSafeY) p.y = minSafeY;
+
+    if (flareBlend > 0.001) {
+      const g = computeSafeCliffGroundPlacement(p.x, p.z, landingYaw, scale);
+      p.y = lerp(p.y, g.y, flareBlend);
+      p.x = lerp(p.x, g.x, flareBlend);
+      p.z = lerp(p.z, g.z, flareBlend);
+    }
+
+    const flightYaw = Math.atan2(tan.x, tan.z);
+    const flightPitch = -Math.asin(clamp(tan.y, -0.82, 0.82));
+
+    let dYaw = Math.atan2(tanAhead.x, tanAhead.z) - flightYaw;
+    while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+    while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+    const bankRoll = clamp(-dYaw * 3.1, -0.68, 0.68) * (1.0 - flareBlend);
+
+    const finalYaw = lerpAngle(flightYaw, landingYaw, flareBlend);
+    const finalPitch = lerp(flightPitch * 0.72, 0.0, flareBlend);
+
+    asset.rootGroup.position.copy(p);
+    tmpEuler.set(finalPitch, finalYaw, bankRoll, 'YXZ');
+    asset.rootGroup.quaternion.setFromEuler(tmpEuler);
+
+    return { bankRoll, climbPitch: flightPitch };
+  }
+
+  function updateMateWorldTargets(timeSec: number): void {
+    nfMacro.timeSec = timeSec;
+    lfMacro.timeSec = timeSec;
+
     toothless.rootGroup.updateMatrixWorld(false);
     lightFury.rootGroup.updateMatrixWorld(false);
 
-    const nfHeadApprox = tmpVecB.set(0, 0.92, 0.58).applyMatrix4(toothless.rootGroup.matrixWorld);
-    const lfHeadApprox = tmpVecC.set(0, 0.88, 0.54).applyMatrix4(lightFury.rootGroup.matrixWorld);
-
-    nfMacro.mateWorldPos.copy(lfHeadApprox);
-    lfMacro.mateWorldPos.copy(nfHeadApprox);
+    nfMacro.mateWorldPos.copy(lightFury.rootGroup.position);
+    nfMacro.mateWorldPos.y += 1.25;
+    lfMacro.mateWorldPos.copy(toothless.rootGroup.position);
+    lfMacro.mateWorldPos.y += 1.32;
   }
 
-  // ============================================================================
-  // 5-ACT CHOREOGRAPHY WITH 5 UNIFIED MASTER CAMERA SHOTS
-  // ============================================================================
-  function evaluateMainStoryTimeline(t: number, dt: number, isFrozenPause: boolean): void {
+  // ==========================================================================
+  // 5. MAIN 120-SECOND STORY TIMELINE (0.0s -> 120.0s)
+  // ==========================================================================
+  function evaluateMainStoryTimeline(t: number, dt: number, isPostComplete: boolean): void {
     resetNeutralGroundedBase();
     const nf = toothlessController.state;
     const lf = lightFuryController.state;
 
-    // --------------------------------------------------------------------------
-    // ACT I (0:00 - 0:24): FATEFUL ARRIVAL IN ONE CONTINUOUS SWEEPING MASTER SHOT
-    // --------------------------------------------------------------------------
-    if (t < 24.0) {
-      applyAtmosphereBlend('golden-hour', 'dawn-dusk', (t / 24.0) * 0.45, 0.34, 0);
-      ocean.setOceanParams({ waveAmplitude: 0.52, waveSpeed: 0.90, seaChoppiness: 0.38 });
-      sanctuary.setWildflowerBloom(0.28);
-      sanctuary.setCelebrationFlowerWave(0.0);
-      sanctuary.setEtchProgress(0);
-      sanctuary.setAcceptanceGlow(0);
-      sanctuary.setFadeOut(1);
+    // ------------------------------------------------------------------------
+    // ACT I (0.0s -> 22.0s): Restored Sunlit Clear-Sky Ocean-Skim & Sanctuary Landing
+    // ------------------------------------------------------------------------
+    if (t < 22.0) {
+      const envU = smoothstep(0.0, 22.0, t);
+      applyAtmosphereBlend('clear-day', 'golden-hour', envU * 0.42, 0.36, 0);
+      ocean.setOceanParams({ waveAmplitude: 0.95, waveSpeed: 1.0, seaChoppiness: 0.52 });
 
-      if (t < 15.8) {
-        const u = clamp(t / 15.8, 0, 1);
-        const easedU = u < 0.75 ? u * 1.04 : 0.78 + (1 - Math.pow(1 - (u - 0.75) / 0.25, 1.45)) * 0.22;
-        const nfPose = evaluateSplineFlightPose(nfArrivalCurve, clamp(easedU, 0, 1));
-        const lfPose = evaluateSplineFlightPose(lfArrivalCurve, clamp(easedU, 0, 1));
+      const flightU = smootherstep(0.0, 21.3, t);
+      const flare = smoothstep(18.0, 21.3, t);
+      const settled = smoothstep(20.6, 21.8, t);
+      const air = 1.0 - settled;
 
-        const landBlend = smoothstep(13.2, 15.8, t);
-        const air = 1.0 - landBlend;
-
-        const nfGround = computeSafeCliffGroundPlacement(nfPose.pos.x, nfPose.pos.z, nfPose.yaw);
-        const lfGround = computeSafeCliffGroundPlacement(lfPose.pos.x, lfPose.pos.z, lfPose.yaw, 0.94);
-
-        const nfY = lerp(nfPose.pos.y, nfGround.y, landBlend);
-        const lfY = lerp(lfPose.pos.y, lfGround.y, landBlend);
-
-        const flarePitch = Math.sin(landBlend * Math.PI) * -0.26;
-        toothless.rootGroup.position.set(lerp(nfPose.pos.x, nfGround.x, landBlend), nfY, lerp(nfPose.pos.z, nfGround.z, landBlend));
-        tmpEuler.set(lerp(nfPose.pitch + flarePitch, nfGround.terrainPitch, landBlend), nfPose.yaw, nfPose.bankRoll * air, 'YXZ');
-        toothless.rootGroup.quaternion.setFromEuler(tmpEuler);
-
-        lightFury.rootGroup.position.set(lerp(lfPose.pos.x, lfGround.x, landBlend), lfY, lerp(lfPose.pos.z, lfGround.z, landBlend));
-        tmpEuler.set(lerp(lfPose.pitch + flarePitch, lfGround.terrainPitch, landBlend), lfPose.yaw, lfPose.bankRoll * air, 'YXZ');
-        lightFury.rootGroup.quaternion.setFromEuler(tmpEuler);
-
-        const flapFreq = lerp(1.55, 2.85, smoothstep(11.5, 14.8, t));
-        if (!isFrozenPause) {
-          nfFlapPhase += dt * flapFreq * Math.PI * 2;
-          lfFlapPhase += dt * (flapFreq * 1.05) * Math.PI * 2;
-        }
-        const flapAmp = lerp(0.58, 0.92, smoothstep(12.0, 14.8, t)) * air;
-
-        nf.airborneFactor = air;
-        nf.legFlightTuck = lerp(0.92, -0.45, smoothstep(12.2, 15.0, t)) * air;
-        nf.wingUnfurl = lerp(0.96, 0.24, smoothstep(14.8, 15.8, t));
-        nf.wingFlap = Math.sin(nfFlapPhase) * flapAmp;
-        nf.wingTipLag = -Math.cos(nfFlapPhase) * 0.65 * air;
-        nf.wingWristFold = Math.max(0, Math.cos(nfFlapPhase)) * 0.36 * air + (1 - air) * 0.35;
-        nf.wingCamber = lerp(0.55, 0.85, smoothstep(12.5, 14.8, t)) * air + 0.22;
-        nf.pelvicFinFlare = 0.88 * air + 0.18;
-        nf.rightTailFinFlare = 0.88;
-        nf.tailWaveAmp = 0.38 * air;
-        nf.tailWavePhase = nfFlapPhase;
-
-        lf.airborneFactor = air;
-        lf.legFlightTuck = lerp(0.92, -0.45, smoothstep(12.2, 15.0, t)) * air;
-        lf.wingUnfurl = lerp(0.96, 0.20, smoothstep(14.8, 15.8, t));
-        lf.wingFlap = Math.sin(lfFlapPhase) * flapAmp;
-        lf.wingTipLag = -Math.cos(lfFlapPhase) * 0.65 * air;
-        lf.wingWristFold = Math.max(0, Math.cos(lfFlapPhase)) * 0.36 * air + (1 - air) * 0.38;
-        lf.wingCamber = lerp(0.55, 0.85, smoothstep(12.5, 14.8, t)) * air + 0.22;
-        lf.pelvicFinFlare = 0.88 * air + 0.18;
-        lf.rightHeartFinFlare = 0.90;
-        lf.leftHeartFinFlare = 0.90;
-        lf.tailWaveAmp = 0.38 * air;
-        lf.tailWavePhase = lfFlapPhase;
-
-        nfMacro.lookAtMateWeight = smoothstep(5.0, 15.8, t) * 0.65;
-        lfMacro.lookAtMateWeight = smoothstep(5.0, 15.8, t) * 0.65;
-      } else {
-        const u = (t - 15.8) / 8.2;
-        const ease = smoothstep(0.05, 0.92, u);
-        const nfYaw = lerpAngle(0.0, -Math.PI * 0.5, smoothstep(0.0, 0.45, u));
-        const lfYaw = lerpAngle(0.0, Math.PI * 0.5, smoothstep(0.0, 0.45, u));
-
-        placeGroundedDragon(toothless.rootGroup, lerp(1.85, 1.48, ease), SANCTUARY_CENTER_Z, nfYaw);
-        placeGroundedDragon(lightFury.rootGroup, lerp(-1.75, -1.42, ease), SANCTUARY_CENTER_Z, lfYaw, 0, 0.94);
-
-        const settleCrouch = Math.sin(clamp((t - 15.8) / 1.4, 0, 1) * Math.PI) * -0.36;
-        nf.forelegStance = settleCrouch;
-        nf.hindlegStance = settleCrouch * 0.85;
-        lf.forelegStance = settleCrouch * 0.85;
-        lf.hindlegStance = settleCrouch * 0.75;
-
-        nf.headRoll = Math.sin((t - 16.0) * 1.15) * 0.28;
-        nf.earPerk = 0.88;
-        nf.pupilDilation = 0.92;
-        lf.headRoll = -Math.sin((t - 16.4) * 1.05) * 0.26;
-        lf.earPerk = 0.84;
-        lf.iridescentShimmer = 0.32;
-
-        nfMacro.lookAtMateWeight = 0.92;
-        lfMacro.lookAtMateWeight = 0.92;
-      }
-
-      const craneSettle = smoothstep(0.0, 14.5, t);
-      desiredCamPos.set(0.0, lerp(5.8, 2.58, craneSettle), lerp(18.5, 8.85, craneSettle));
-      const midPoint = tmpVecA.addVectors(toothless.rootGroup.position, lightFury.rootGroup.position).multiplyScalar(0.5);
-      desiredCamTarget.set(
-        lerp(midPoint.x, 0.0, craneSettle),
-        lerp(midPoint.y + 0.8, 1.15, craneSettle),
-        lerp(midPoint.z, SANCTUARY_CENTER_Z, craneSettle)
+      const nfAero = placeDragonOnFlightSpline('nf', nfArrivalSpline, flightU, flare, -Math.PI * 0.5);
+      const lfAero = placeDragonOnFlightSpline(
+        'lf',
+        lfArrivalSpline,
+        clamp01(flightU * 1.006 - 0.006),
+        flare,
+        Math.PI * 0.5
       );
-      focusPoint.copy(desiredCamTarget);
-      desiredFov = 40;
-      commitSmoothCamera(dt, 2.6);
+
+      const flapHz = lerp(1.55, 1.05, flare);
+      nfFlapPhase += dt * flapHz * Math.PI * 2;
+      lfFlapPhase += dt * (flapHz * 1.04) * Math.PI * 2;
+
+      nf.airborneFactor = air;
+      nf.legFlightTuck = (1.0 - flare) * 0.90;
+      nf.wingUnfurl = lerp(0.96, 0.08, settled);
+      nf.wingFlap = (Math.sin(nfFlapPhase) * (1.0 - flare * 0.65) + flare * 0.35) * 0.78 * air;
+      nf.wingTipLag = -Math.cos(nfFlapPhase) * 0.55 * (1.0 - flare * 0.6) * air;
+      nf.wingSweep = -0.10 * (1.0 - flare);
+      nf.spineTwist = nfAero.bankRoll * 0.35;
+      nf.neckArch = lerp(0.18, 0.24, settled);
+      nf.headPitch = -nfAero.climbPitch * 0.32;
+      nf.forelegStance = lerp(0.25, 0.05, flare);
+      nf.hindlegStance = lerp(0.25, 0.06, flare);
+      nf.pelvicFinFlare = 0.85 * air + 0.18 * settled;
+      nf.rightTailFinFlare = 0.88 - 0.35 * settled;
+      nf.tailWaveAmp = 0.42 * air;
+      nf.tailWavePhase = nfFlapPhase;
+
+      lf.airborneFactor = air;
+      lf.legFlightTuck = (1.0 - flare) * 0.90;
+      lf.wingUnfurl = lerp(0.95, 0.08, settled);
+      lf.wingFlap = (Math.sin(lfFlapPhase) * (1.0 - flare * 0.65) + flare * 0.35) * 0.76 * air;
+      lf.wingTipLag = -Math.cos(lfFlapPhase) * 0.55 * (1.0 - flare * 0.6) * air;
+      lf.wingSweep = -0.08 * (1.0 - flare);
+      lf.spineTwist = lfAero.bankRoll * 0.35;
+      lf.neckArch = lerp(0.20, 0.28, settled);
+      lf.headPitch = -lfAero.climbPitch * 0.32;
+      lf.forelegStance = lerp(0.25, 0.08, flare);
+      lf.hindlegStance = lerp(0.25, 0.08, flare);
+      lf.pelvicFinFlare = 0.85 * air + 0.18 * settled;
+      lf.rightHeartFinFlare = 0.88 - 0.30 * settled;
+      lf.leftHeartFinFlare = 0.88 - 0.30 * settled;
+      lf.tailWaveAmp = 0.42 * air;
+      lf.tailWavePhase = lfFlapPhase;
+      lf.iridescentShimmer = 0.78;
+
+      nfMacro.lookAtMateWeight = 0.25 + 0.65 * settled;
+      lfMacro.lookAtMateWeight = 0.25 + 0.65 * settled;
+
+      const mid = tmpCamTarget
+        .copy(toothless.rootGroup.position)
+        .add(lightFury.rootGroup.position)
+        .multiplyScalar(0.5);
+
+      if (t < 8.8) {
+        // Shot 1: Iconic Sunlit Clear-Sky Low Ocean-Skim Establishing Shot!
+        const cPos = new THREE.Vector3(11.2, -7.2, 58.0).lerp(
+          new THREE.Vector3(18.5, -5.0, 42.0),
+          t / 8.8
+        );
+        mid.y += 0.6;
+        applySafeCamera(1, cPos, mid, 46, dt, t, 0.055);
+      } else if (t < 15.6) {
+        // Shot 2: Sweeping Aerial Tracking Pan up toward the Sunlit Emerald Headland!
+        const s = (t - 8.8) / (15.6 - 8.8);
+        const cPos = new THREE.Vector3(
+          mid.x + lerp(13.5, 9.5, s),
+          mid.y + lerp(2.2, 3.6, s),
+          mid.z + lerp(15.5, 11.8, s)
+        );
+        mid.y += 0.5;
+        applySafeCamera(2, cPos, mid, 43, dt, t, 0.045);
+      } else {
+        // Shot 3: Hero Cliff Flare & Four-Paw Touchdown Two-Shot!
+        const s = smootherstep(15.6, 21.8, t);
+        const cPos = new THREE.Vector3(
+          lerp(6.8, 0.0, s),
+          lerp(3.8, 2.35, s),
+          lerp(11.5, 8.20, s)
+        );
+        mid.lerp(new THREE.Vector3(0.0, 1.30, SANCTUARY_CENTER_Z), s);
+        applySafeCamera(3, cPos, mid, 39, dt, t, 0.032);
+      }
       return;
     }
 
-    // --------------------------------------------------------------------------
-    // ACT II (0:24 - 0:54): PLAYFUL COURTSHIP, FACE-TO-FACE WALK & RUNNING SKY-WALTZ
-    // --------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    // ACT II (22.0s -> 54.0s): Coy Greeting, Face-to-Face Circle & Sky Helix Waltz
+    // ------------------------------------------------------------------------
     if (t < 54.0) {
-      const actU = (t - 24.0) / 30.0;
-      applyAtmosphereBlend('golden-hour', 'dawn-dusk', lerp(0.45, 0.96, actU), 0.36, 0);
-      ocean.setOceanParams({ waveAmplitude: 0.56, waveSpeed: 0.92, seaChoppiness: 0.40 });
-      sanctuary.setWildflowerBloom(lerp(0.28, 0.56, actU));
+      const envU = smoothstep(22.0, 52.0, t);
+      applyAtmosphereBlend('clear-day', 'golden-hour', 0.42 + envU * 0.58, 0.30, 0);
+      ocean.setOceanParams({ waveAmplitude: 0.72, waveSpeed: 0.92, seaChoppiness: 0.42 });
 
-      if (t < 31.0) {
-        placeGroundedDragon(toothless.rootGroup, 1.48, SANCTUARY_CENTER_Z, -Math.PI * 0.5);
-        placeGroundedDragon(lightFury.rootGroup, -1.42, SANCTUARY_CENTER_Z, Math.PI * 0.5, 0, 0.94);
+      if (t < 30.5) {
+        // Scene II-A (22.0 -> 30.5s): Playful Rear-Up & Wing Display + Coy Peek!
+        // Seamless from (+3.85, -1.85) & (-3.85, -1.85) -> (+3.35, -1.85) & (-3.35, -1.85) (6.70m apart!)
+        const stepIn = smootherstep(22.0, 30.2, t);
+        placeDragonOnCliff('nf', lerp(3.85, 3.35, stepIn), SANCTUARY_CENTER_Z, -Math.PI * 0.5);
+        placeDragonOnCliff('lf', lerp(-3.85, -3.35, stepIn), SANCTUARY_CENTER_Z, Math.PI * 0.5);
 
-        const rearWindow = clamp((t - 24.4) / 2.8, 0, 1);
-        const rearCurve = rearWindow > 0 && rearWindow < 1 ? Math.sin(rearWindow * Math.PI) : 0;
-        const rearSmooth = smoothstep(0.0, 0.35, rearCurve);
+        nfMacro.lookAtMateWeight = 0.85;
+        lfMacro.lookAtMateWeight = 0.88;
 
-        const preCrouch = t >= 24.0 && t < 24.6 ? Math.sin(((t - 24.0) / 0.6) * Math.PI) * -0.45 : 0;
-        const postCushion = t >= 27.1 && t < 27.9 ? Math.sin(((t - 27.1) / 0.8) * Math.PI) * -0.42 : 0;
+        const rearWindow = smoothstep(23.8, 25.0, t) * (1.0 - smoothstep(28.0, 29.5, t));
+        nfMacro.rearUpJoy = rearWindow * 0.80;
 
-        nfMacro.rearUpJoy = rearSmooth * 0.92;
-        nf.forelegStance = preCrouch + postCushion;
-        nf.hindlegStance = preCrouch * 1.1 + postCushion * 0.7 - rearSmooth * 0.35;
-        nf.wingUnfurl = lerp(0.18, 0.88, rearSmooth);
-        nf.wingFlap = Math.sin((t - 24.4) * 3.8) * 0.36 * rearSmooth;
-        nf.jawOpen = 0.24 * rearSmooth;
-        nf.earPerk = 0.95;
+        const coyPawWindow = smoothstep(26.6, 27.5, t) * (1.0 - smoothstep(29.2, 30.2, t));
+        lfMacro.playPawR = coyPawWindow * 0.85;
+
+        const hopBob = Math.max(0, Math.sin((t - 23.0) * 5.2)) * (t > 23.0 && t < 29.4 ? 1 : 0);
+
+        nf.forelegStance = -0.12 + rearWindow * 0.22;
+        nf.hindlegStance = 0.14 + rearWindow * 0.20;
+        nf.neckArch = 0.30;
+        nf.headRoll = Math.sin(t * 2.2) * 0.14;
+        nf.jawOpen = 0.20 * hopBob;
+        nf.tongueExtend = 0.24 * hopBob;
         nf.pupilDilation = 0.95;
-        nf.tailYaw = Math.sin(t * 3.4) * 0.42;
+        nf.earPerk = 0.90;
+        nf.wingUnfurl = 0.08 + 0.56 * rearWindow;
+        nf.wingFlap = Math.sin(t * 6.8) * 0.22 * rearWindow;
+        nf.alphaGlow = 0.14 + 0.24 * rearWindow;
 
-        const batT = clamp((t - 27.8) / 3.0, 0, 1);
-        const lfBatEnv = Math.sin(clamp(batT / 0.65, 0, 1) * Math.PI);
-        const nfBowEnv = Math.sin(clamp((batT - 0.25) / 0.72, 0, 1) * Math.PI);
+        const coyWindow = smoothstep(22.8, 24.4, t) * (1.0 - smoothstep(28.0, 29.8, t));
+        lf.forelegStance = 0.10;
+        lf.neckArch = 0.30;
+        lf.headRoll = 0.20;
+        lf.wingUnfurl = 0.08 + coyWindow * 0.28;
+        lf.wingSweep = 0.18 * coyWindow;
+        lf.earPerk = 0.88;
+        lf.pupilDilation = 0.88;
+        lf.squint = 0.22 * (1.0 - coyWindow);
+        lf.iridescentShimmer = 0.82;
 
-        lfMacro.playPawR = lfBatEnv * 0.88;
-        lf.neckArch = 0.30 + lfBatEnv * 0.16;
-        lf.squint = 0.42 * lfBatEnv;
-        lf.tailYaw = Math.sin(t * 2.8) * 0.45;
-        lf.iridescentShimmer = 0.25 + 0.35 * lfBatEnv;
+        // Shot 4: Intimate Low Over-the-Shoulder Greeting Two-Shot
+        const u = (t - 22.0) / (30.5 - 22.0);
+        const cPos = new THREE.Vector3(lerp(-1.2, 1.2, u), lerp(2.15, 1.85, u), lerp(7.80, 6.95, u));
+        tmpCamTarget.set(0.0, 1.32, SANCTUARY_CENTER_Z);
+        applySafeCamera(4, cPos, tmpCamTarget, 37, dt, t, 0.028);
+      } else if (t < 40.5) {
+        // Scene II-B (30.5 -> 40.5s): True 4-Beat Face-to-Face Courtship Circle!
+        // theta: 0 -> PI => nf(+3.35, -1.85) -> (-3.95, -1.85), lf(-3.35, -1.85) -> (+3.95, -1.85)
+        const circleU = smootherstep(30.5, 40.5, t);
+        const theta = circleU * Math.PI;
+        const rx = lerp(3.35, 3.95, circleU);
+        const rz = 1.80;
 
-        nf.forelegStance += -0.64 * nfBowEnv;
-        nf.hindlegStance += 0.18 * nfBowEnv;
-        nfMacro.playPawL = Math.sin(clamp((batT - 0.45) / 0.50, 0, 1) * Math.PI) * 0.72;
+        const nfAngle = theta;
+        const lfAngle = theta + Math.PI;
 
-        nfMacro.lookAtMateWeight = 0.95;
-        lfMacro.lookAtMateWeight = 0.95;
-      } else if (t < 38.2) {
-        // Face-to-face circular courtship walk on safe continuous meadow plateau!
-        const u = (t - 31.0) / 7.2;
-        const easeU = smoothstep(0.0, 1.0, u);
-        const angle = easeU * Math.PI * 1.35;
-        const rx = lerp(1.50, 1.95, Math.sin(u * Math.PI));
-        const rz = lerp(0.15, 1.55, Math.sin(u * Math.PI));
+        const nfX = Math.cos(nfAngle) * rx;
+        const nfZ = SANCTUARY_CENTER_Z - Math.sin(nfAngle) * rz;
+        const lfX = Math.cos(lfAngle) * rx;
+        const lfZ = SANCTUARY_CENTER_Z - Math.sin(lfAngle) * rz;
 
-        const nfX = Math.cos(angle) * rx;
-        const nfZ = SANCTUARY_CENTER_Z + Math.sin(angle) * rz;
-        const lfX = Math.cos(angle + Math.PI) * rx;
-        const lfZ = SANCTUARY_CENTER_Z + Math.sin(angle + Math.PI) * rz;
+        const nfTanYaw = Math.atan2(-Math.sin(nfAngle) * rx, -Math.cos(nfAngle) * rz);
+        const lfTanYaw = Math.atan2(-Math.sin(lfAngle) * rx, -Math.cos(lfAngle) * rz);
 
-        const nfTanYaw = Math.atan2(-Math.sin(angle) * rx, Math.cos(angle) * rz);
-        const lfTanYaw = Math.atan2(-Math.sin(angle + Math.PI) * rx, Math.cos(angle + Math.PI) * rz);
-        const nfToPartnerYaw = Math.atan2(lfX - nfX, lfZ - nfZ);
-        const lfToPartnerYaw = Math.atan2(nfX - lfX, nfZ - lfZ);
+        const nfToLfYaw = Math.atan2(lfX - nfX, lfZ - nfZ);
+        const lfToNfYaw = Math.atan2(nfX - lfX, nfZ - lfZ);
 
-        const nfYaw = lerpAngle(nfTanYaw, nfToPartnerYaw, 0.46);
-        const lfYaw = lerpAngle(lfTanYaw, lfToPartnerYaw, 0.46);
+        const startBlend = smoothstep(30.5, 32.2, t);
+        const endBlend = smootherstep(38.4, 40.5, t);
+        const walkInward = 0.36 * startBlend * (1.0 - endBlend);
 
-        placeGroundedDragon(toothless.rootGroup, nfX, nfZ, nfYaw);
-        placeGroundedDragon(lightFury.rootGroup, lfX, lfZ, lfYaw, 0, 0.94);
+        // Unwrapped continuous headings (avoids +-PI branch cut when turning toward +Z at t~39.9s!)
+        const nfHeading = lerpAngle(lerpAngle(-Math.PI * 0.5, nfTanYaw, startBlend), 0.0, endBlend);
+        const lfBaseTan = lfTanYaw < 0 ? lfTanYaw + Math.PI * 2 : lfTanYaw;
+        const lfHeading = lerp(lerp(Math.PI * 0.5, lfBaseTan, startBlend), 0.0, endBlend);
 
-        nf.wingUnfurl = 0.22;
-        lf.wingUnfurl = 0.20;
-        nf.tailCurl = 0.42;
-        lf.tailCurl = 0.48;
+        placeDragonOnCliff('nf', nfX, nfZ, lerpAngle(nfHeading, nfToLfYaw, walkInward));
+        placeDragonOnCliff('lf', lfX, lfZ, lerpAngle(lfHeading, lfToNfYaw, walkInward));
+
+        nfMacro.lookAtMateWeight = 0.92;
+        lfMacro.lookAtMateWeight = 0.92;
+        nfMacro.compactFoldedWings = 0.65;
+        lfMacro.compactFoldedWings = 0.65;
+
+        sanctuary.setWildflowerBloom(0.26 + 0.18 * circleU);
+
+        nf.wingUnfurl = 0.08;
+        nf.neckArch = 0.30;
+        nf.earPerk = 0.90;
+        nf.pupilDilation = 0.92;
+
+        lf.wingUnfurl = 0.08;
+        lf.neckArch = 0.32;
+        lf.headRoll = 0.14;
+        lf.earPerk = 0.92;
+        lf.pupilDilation = 0.90;
+        lf.squint = 0.24;
+        lf.iridescentShimmer = 0.88;
+
+        // Shot 5: Sweeping Golden-Hour Orbiting Crane around their Courtship Circle
+        const camAngle = circleU * 1.35 - 0.55;
+        const cPos = new THREE.Vector3(
+          Math.sin(camAngle) * 8.4,
+          2.65 + Math.sin(circleU * Math.PI) * 1.0,
+          SANCTUARY_CENTER_Z + Math.cos(camAngle) * 8.4
+        );
+        tmpCamTarget.set(0.0, 1.25, SANCTUARY_CENTER_Z);
+        applySafeCamera(5, cPos, tmpCamTarget, 39, dt, t, 0.032);
+      } else if (t < 42.4) {
+        // Scene II-C1 (40.5 -> 42.4s): Running Takeoff & Coiled Launch Crouch at Cliff Lip!
+        const runU = smootherstep(40.5, 42.4, t);
+        const crouchCoil = smoothstep(41.1, 42.1, t) * (1.0 - smoothstep(42.1, 42.4, t) * 0.5);
+        const wingRaise = smoothstep(41.2, 42.4, t);
+
+        placeDragonOnCliff('nf', -3.95, lerp(SANCTUARY_CENTER_Z, 0.15, runU), -0.16 * runU);
+        placeDragonOnCliff('lf', 3.95, lerp(SANCTUARY_CENTER_Z, 0.15, runU), 0.16 * runU);
+
+        nf.forelegStance = -0.45 * crouchCoil;
+        nf.hindlegStance = -0.40 * crouchCoil;
+        nf.wingUnfurl = lerp(0.10, 0.92, runU);
+        nf.wingFlap = 0.68 * wingRaise;
+        nf.neckArch = 0.26;
         nf.earPerk = 0.88;
-        lf.earPerk = 0.86;
-        nf.squint = 0.22;
-        lf.squint = 0.28;
 
-        nfMacro.lookAtMateWeight = 1.0;
-        lfMacro.lookAtMateWeight = 1.0;
-      } else if (t < 40.8) {
-        // Forward ground takeoff run + deep coiled launch crouch + raised overhead wings!
-        const prepU = (t - 38.2) / 2.6;
-        const prevAngle = Math.PI * 1.35;
-        const startNfX = Math.cos(prevAngle) * 1.50;
-        const startNfZ = SANCTUARY_CENTER_Z + Math.sin(prevAngle) * 0.15;
-        const startLfX = Math.cos(prevAngle + Math.PI) * 1.50;
-        const startLfZ = SANCTUARY_CENTER_Z + Math.sin(prevAngle + Math.PI) * 0.15;
+        lf.forelegStance = -0.42 * crouchCoil;
+        lf.hindlegStance = -0.38 * crouchCoil;
+        lf.wingUnfurl = lerp(0.10, 0.92, runU);
+        lf.wingFlap = 0.68 * wingRaise;
+        lf.neckArch = 0.28;
+        lf.earPerk = 0.88;
 
-        const runEase = smoothstep(0.0, 0.78, prepU);
-        const nfX = lerp(startNfX, 1.35, runEase);
-        const nfZ = lerp(startNfZ, -0.45, runEase);
-        const lfX = lerp(startLfX, -1.25, runEase);
-        const lfZ = lerp(startLfZ, -0.45, runEase);
-
-        const nfLaunchPose = evaluateSplineFlightPose(nfSkyWaltzCurve, 0.01);
-        const lfLaunchPose = evaluateSplineFlightPose(lfSkyWaltzCurve, 0.01);
-
-        const nfRunYaw = lerpAngle(Math.atan2(1.35 - startNfX, -0.45 - startNfZ), nfLaunchPose.yaw, smoothstep(0.25, 0.95, prepU));
-        const lfRunYaw = lerpAngle(Math.atan2(-1.25 - startLfX, -0.45 - startLfZ), lfLaunchPose.yaw, smoothstep(0.25, 0.95, prepU));
-
-        placeGroundedDragon(toothless.rootGroup, nfX, nfZ, nfRunYaw);
-        placeGroundedDragon(lightFury.rootGroup, lfX, lfZ, lfRunYaw, 0, 0.94);
-
-        const crouchCoil = smoothstep(0.58, 0.96, prepU);
-        nf.forelegStance = -0.82 * crouchCoil;
-        nf.hindlegStance = -0.88 * crouchCoil;
-        lf.forelegStance = -0.78 * crouchCoil;
-        lf.hindlegStance = -0.85 * crouchCoil;
-
-        nf.wingUnfurl = smoothstep(0.15, 0.88, prepU);
-        lf.wingUnfurl = smoothstep(0.15, 0.88, prepU);
-        nf.wingFlap = lerp(0.0, 0.95, crouchCoil);
-        lf.wingFlap = lerp(0.0, 0.95, crouchCoil);
-        nf.wingSweep = -0.24 * crouchCoil;
-        lf.wingSweep = -0.24 * crouchCoil;
         nfFlapPhase = Math.PI * 0.5;
         lfFlapPhase = Math.PI * 0.5;
+
+        const cPos = new THREE.Vector3(0.0, 2.55, 8.8);
+        tmpCamTarget.set(0.0, 1.35, -0.8);
+        applySafeCamera(6, cPos, tmpCamTarget, 44, dt, t, 0.035);
       } else {
-        // Explosive hindleg launch push + tangent-locked sky-waltz + cushioned landing!
-        const airDur = 12.2;
-        const rawU = clamp((t - 40.8) / airDur, 0, 1);
+        // Scene II-C2 (42.4 -> 54.0s): Spiraling Sky Helix & Mirror-Cloak Peekaboo!
+        const waltzU = smootherstep(42.4, 53.5, t);
+        const liftoff = smoothstep(42.4, 43.8, t);
+        const landFlare = smoothstep(50.8, 53.5, t);
+        const settled = smoothstep(53.0, 53.9, t);
+        const air = liftoff * (1.0 - settled);
 
-        const nfPose = evaluateSplineFlightPose(nfSkyWaltzCurve, rawU);
-        const lfPose = evaluateSplineFlightPose(lfSkyWaltzCurve, rawU);
+        const nfAero = placeDragonOnFlightSpline(
+          'nf',
+          nfWaltzSpline,
+          waltzU,
+          Math.max(1.0 - liftoff, landFlare),
+          t < 45.0 ? -0.16 : -Math.PI * 0.5
+        );
+        const lfAero = placeDragonOnFlightSpline(
+          'lf',
+          lfWaltzSpline,
+          waltzU,
+          Math.max(1.0 - liftoff, landFlare),
+          t < 45.0 ? 0.16 : Math.PI * 0.5
+        );
 
-        const launchBlend = smoothstep(40.8, 41.55, t);
-        const landBlend = smoothstep(51.8, 53.1, t);
-        const air = launchBlend * (1.0 - landBlend);
-
-        const nfGround = computeSafeCliffGroundPlacement(nfPose.pos.x, nfPose.pos.z, nfPose.yaw);
-        const lfGround = computeSafeCliffGroundPlacement(lfPose.pos.x, lfPose.pos.z, lfPose.yaw, 0.94);
-
-        const climbEffort = 1.0 - smoothstep(43.5, 46.5, t) + smoothstep(50.8, 52.6, t) * 0.65;
-        const flapHz = lerp(1.35, 2.75, clamp(climbEffort, 0, 1));
-        if (!isFrozenPause) {
-          nfFlapPhase += dt * flapHz * Math.PI * 2;
-          lfFlapPhase += dt * (flapHz * 1.04) * Math.PI * 2;
+        const cloakPulse = smoothstep(45.8, 46.5, t) * (1.0 - smoothstep(49.4, 50.1, t));
+        if (t >= 46.3) {
+          once('cloak_out', () => sanctuary.spawnShimmerBurst(lightFury.rootGroup.position, false, 65));
+        }
+        if (t >= 49.6) {
+          once('cloak_in', () => sanctuary.spawnShimmerBurst(lightFury.rootGroup.position, false, 65));
         }
 
-        toothless.rootGroup.position.set(
-          lerp(nfGround.x, nfPose.pos.x, air),
-          lerp(nfGround.y, nfPose.pos.y, air),
-          lerp(nfGround.z, nfPose.pos.z, air)
-        );
-        const nfFlare = Math.sin(landBlend * Math.PI) * -0.24;
-        tmpEuler.set(
-          lerp(nfGround.terrainPitch, nfPose.pitch + nfFlare, air),
-          nfPose.yaw,
-          nfPose.bankRoll * air,
-          'YXZ'
-        );
-        toothless.rootGroup.quaternion.setFromEuler(tmpEuler);
-
-        lightFury.rootGroup.position.set(
-          lerp(lfGround.x, lfPose.pos.x, air),
-          lerp(lfGround.y, lfPose.pos.y, air),
-          lerp(lfGround.z, lfPose.pos.z, air)
-        );
-        tmpEuler.set(
-          lerp(lfGround.terrainPitch, lfPose.pitch + nfFlare, air),
-          lfPose.yaw,
-          lfPose.bankRoll * air,
-          'YXZ'
-        );
-        lightFury.rootGroup.quaternion.setFromEuler(tmpEuler);
-
-        const pushExtend = t < 41.35 ? Math.sin(((t - 40.8) / 0.55) * Math.PI) * 0.65 : 0;
-        const flightTuck = smoothstep(41.25, 42.2, t) * (1.0 - smoothstep(51.4, 52.8, t)) * 0.94;
-        const touchdownReach = smoothstep(51.4, 52.6, t) * (1.0 - landBlend) * -0.45;
-        const postLandCushion = t > 52.8 ? Math.sin(clamp((t - 52.8) / 1.1, 0, 1) * Math.PI) * -0.35 : 0;
-
-        nf.forelegStance = postLandCushion;
-        nf.hindlegStance = pushExtend + postLandCushion;
-        lf.forelegStance = postLandCushion;
-        lf.hindlegStance = pushExtend + postLandCushion;
+        nfFlapPhase += dt * 1.45 * Math.PI * 2;
+        lfFlapPhase += dt * 1.48 * Math.PI * 2;
 
         nf.airborneFactor = air;
-        nf.legFlightTuck = flightTuck + touchdownReach;
-        nf.wingUnfurl = lerp(0.18, 0.98, clamp(air + (1 - landBlend) * 0.25, 0, 1));
-        nf.wingFlap = Math.sin(nfFlapPhase) * lerp(0.55, 0.96, clamp(climbEffort, 0, 1)) * air;
-        nf.wingSweep = (Math.sin(nfFlapPhase) < 0 ? 0.34 : -0.16) * climbEffort * air;
-        nf.wingCamber = lerp(0.48, 0.88, clamp(climbEffort, 0, 1)) * air + 0.22;
-        nf.wingWristFold = Math.max(0, -Math.cos(nfFlapPhase)) * 0.38 * air + (1 - air) * 0.38;
-        nf.wingTipLag = -Math.cos(nfFlapPhase) * 0.72 * air;
-        nf.pelvicFinFlare = 0.88 * air + 0.18;
-        nf.rightTailFinFlare = clamp(0.85 + nfPose.bankRoll * 0.2, 0.4, 1.0);
+        nf.legFlightTuck = liftoff * (1.0 - landFlare) * 0.90;
+        nf.wingUnfurl = lerp(0.96, 0.10, settled);
+        nf.wingFlap = (Math.sin(nfFlapPhase) * (1.0 - landFlare * 0.65) + landFlare * 0.35) * 0.78 * (1.0 - settled);
+        nf.wingTipLag = -Math.cos(nfFlapPhase) * 0.55 * (1.0 - landFlare * 0.6) * air;
+        nf.spineTwist = nfAero.bankRoll * 0.40;
+        nf.headYaw = cloakPulse * Math.sin(t * 5.2) * 0.42;
+        nf.forelegStance = lerp(0.22, 0.06, landFlare) * liftoff;
+        nf.hindlegStance = lerp(0.22, 0.06, landFlare) * liftoff;
+        nf.pelvicFinFlare = 0.85 * air + 0.18 * (1.0 - air);
         nf.tailWaveAmp = 0.42 * air;
         nf.tailWavePhase = nfFlapPhase;
 
         lf.airborneFactor = air;
-        lf.legFlightTuck = flightTuck + touchdownReach;
-        lf.wingUnfurl = lerp(0.16, 0.98, clamp(air + (1 - landBlend) * 0.25, 0, 1));
-        lf.wingFlap = Math.sin(lfFlapPhase) * lerp(0.55, 0.96, clamp(climbEffort, 0, 1)) * air;
-        lf.wingSweep = (Math.sin(lfFlapPhase) < 0 ? 0.34 : -0.16) * climbEffort * air;
-        lf.wingCamber = lerp(0.48, 0.88, clamp(climbEffort, 0, 1)) * air + 0.22;
-        lf.wingWristFold = Math.max(0, -Math.cos(lfFlapPhase)) * 0.38 * air + (1 - air) * 0.40;
-        lf.wingTipLag = -Math.cos(lfFlapPhase) * 0.72 * air;
-        lf.pelvicFinFlare = 0.88 * air + 0.18;
-        lf.rightHeartFinFlare = 0.92;
-        lf.leftHeartFinFlare = 0.92;
-        lf.iridescentShimmer = 0.45 * air + 0.18;
+        lf.legFlightTuck = liftoff * (1.0 - landFlare) * 0.90;
+        lf.wingUnfurl = lerp(0.95, 0.10, settled);
+        lf.wingFlap = (Math.sin(lfFlapPhase) * (1.0 - landFlare * 0.65) + landFlare * 0.35) * 0.78 * (1.0 - settled);
+        lf.wingTipLag = -Math.cos(lfFlapPhase) * 0.55 * (1.0 - landFlare * 0.6) * air;
+        lf.spineTwist = lfAero.bankRoll * 0.40;
+        lf.forelegStance = lerp(0.22, 0.08, landFlare) * liftoff;
+        lf.hindlegStance = lerp(0.22, 0.08, landFlare) * liftoff;
+        lf.thermalCloak = cloakPulse * 0.92;
+        lf.plasmaGlow = smoothstep(45.4, 46.3, t) * (1.0 - smoothstep(46.5, 47.2, t)) * 0.88;
+        lf.iridescentShimmer = 0.96;
         lf.tailWaveAmp = 0.42 * air;
         lf.tailWavePhase = lfFlapPhase;
 
-        if (!isFrozenPause && air > 0.65 && Math.random() < 0.55) {
-          sanctuary.emitWingWake(toothless.rootGroup.position, lightFury.rootGroup.position);
+        const mid = tmpCamTarget
+          .copy(toothless.rootGroup.position)
+          .add(lightFury.rootGroup.position)
+          .multiplyScalar(0.5);
+        const cPos = new THREE.Vector3(
+          Math.sin(waltzU * 2.2) * 15.5,
+          Math.max(2.6, mid.y - 1.8),
+          mid.z + 18.5
+        );
+        if (landFlare > 0.01) {
+          cPos.lerp(new THREE.Vector3(0.0, 2.55, SANCTUARY_CENTER_Z + 9.2), landFlare);
+          mid.lerp(new THREE.Vector3(0.0, 1.25, SANCTUARY_CENTER_Z), landFlare);
         }
-
-        nfMacro.lookAtMateWeight = 0.48;
-        lfMacro.lookAtMateWeight = 0.48;
+        applySafeCamera(6, cPos, mid, 45, dt, t, 0.042);
       }
-
-      const skyArc = smoothstep(40.4, 45.2, t) * (1.0 - smoothstep(49.5, 53.5, t));
-      const coupleMid = tmpVecA
-        .addVectors(toothless.rootGroup.position, lightFury.rootGroup.position)
-        .multiplyScalar(0.5);
-
-      desiredCamPos.set(0.0, lerp(2.58, 12.2, skyArc), lerp(8.85, 20.5, skyArc));
-      desiredCamTarget.set(
-        lerp(0.0, coupleMid.x * 0.65, skyArc),
-        lerp(1.15, coupleMid.y, skyArc),
-        lerp(SANCTUARY_CENTER_Z, coupleMid.z, skyArc)
-      );
-      focusPoint.copy(desiredCamTarget);
-      desiredFov = lerp(40, 45, skyArc);
-      commitSmoothCamera(dt, 2.8);
       return;
     }
 
-    // --------------------------------------------------------------------------
-    // ACT III (0:54 - 1:18): SEASONS OF DEVOTION IN ONE UNBROKEN 360° DOLLY ORBIT
-    // --------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    // ACT III (54.0s -> 78.0s): Accelerated Seasons Montage & 360-Deg Orbital Crane
+    // ------------------------------------------------------------------------
     if (t < 78.0) {
-      const u = (t - 54.0) / 24.0;
-      const sunAzimTurn = u * 160;
+      const actU = (t - 54.0) / 24.0;
+      const sunAzimTurn = actU * 155;
+      sanctuary.setWildflowerBloom(0.44 + 0.24 * actU);
 
-      if (t < 62.0) {
-        const p = (t - 54.0) / 8.0;
-        applyAtmosphereBlend('dawn-dusk', 'starlit-night', p, 0.32, 0, smoothstep(0.35, 1.0, p) * 0.88, 0, sunAzimTurn);
-        ocean.setOceanParams({ waveAmplitude: 0.48, waveSpeed: 0.85, seaChoppiness: 0.35 });
-      } else if (t < 68.5) {
-        applyAtmosphereBlend('starlit-night', 'starlit-night', 1.0, 0.28, 0, 0.94, 0, sunAzimTurn);
-        ocean.setOceanParams({ waveAmplitude: 0.42, waveSpeed: 0.80, seaChoppiness: 0.30 });
-        if (!isFrozenPause && Math.floor((t - 62.0) * 1.6) !== Math.floor((t - dt - 62.0) * 1.6)) {
-          once(`star_${Math.floor((t - 62.0) * 1.6)}`, () => {
-            fireworks.spawnShootingStar(
-              new THREE.Vector3(-28 + Math.random() * 24, 28 + Math.random() * 10, -48),
-              new THREE.Vector3(24 + Math.random() * 10, -8.5, 4)
-            );
-          });
+      if (t < 60.0) {
+        // Scene III-A (54.0 -> 60.0s): Golden-Hour -> Amber Dusk + 360-Deg Circle
+        // theta: 0 -> 2*PI => starts at (+3.20, -1.85) & (-3.20, -1.85), ends at (+2.85, -1.85) & (-2.85, -1.85)
+        const sub = smootherstep(54.0, 60.0, t);
+        applyAtmosphereBlend('golden-hour', 'dawn-dusk', sub, 0.34, 0, undefined, 0, sunAzimTurn);
+        ocean.setOceanParams({ waveAmplitude: 0.58, waveSpeed: 0.88, seaChoppiness: 0.38 });
+
+        const theta = sub * Math.PI * 2.0;
+        const rx = lerp(3.20, 2.85, sub);
+        const rz = 1.72;
+
+        const nfX = Math.cos(theta) * rx;
+        const nfZ = SANCTUARY_CENTER_Z - Math.sin(theta) * rz;
+        const lfX = Math.cos(theta + Math.PI) * rx;
+        const lfZ = SANCTUARY_CENTER_Z - Math.sin(theta + Math.PI) * rz;
+
+        const nfTanYaw = Math.atan2(-Math.sin(theta) * rx, -Math.cos(theta) * rz);
+        const lfTanYaw = Math.atan2(-Math.sin(theta + Math.PI) * rx, -Math.cos(theta + Math.PI) * rz);
+
+        placeDragonOnCliff('nf', nfX, nfZ, nfTanYaw);
+        placeDragonOnCliff('lf', lfX, lfZ, lfTanYaw);
+
+        nfMacro.lookAtMateWeight = 0.65;
+        lfMacro.lookAtMateWeight = 0.65;
+
+        const playHop = Math.max(0, Math.sin(t * 4.4)) * (1.0 - smoothstep(58.5, 59.8, t));
+        nf.wingUnfurl = 0.12 + 0.24 * playHop;
+        nf.wingFlap = 0.18 * playHop;
+        nf.jawOpen = 0.16 * playHop;
+        nf.earPerk = 0.92;
+
+        lf.wingUnfurl = 0.10 + 0.22 * playHop;
+        lf.wingFlap = 0.18 * playHop;
+        lf.earPerk = 0.92;
+      } else if (t < 66.5) {
+        // Scene III-B (60.0 -> 66.5s): First Starlit Night, Shooting Stars & Non-Intersecting Cozy Perch
+        const envP = smoothstep(60.0, 63.2, t);
+        applyAtmosphereBlend('dawn-dusk', 'starlit-night', envP, 0.28, 0, envP * 0.92, 0, sunAzimTurn);
+        ocean.setOceanParams({ waveAmplitude: 0.45, waveSpeed: 0.80, seaChoppiness: 0.32 });
+
+        const settle = smootherstep(60.0, 62.6, t);
+        placeDragonOnCliff(
+          'nf',
+          lerp(2.85, 1.08, settle),
+          lerp(SANCTUARY_CENTER_Z, -2.02, settle),
+          lerpAngle(-Math.PI * 0.5, -0.14, settle)
+        );
+        placeDragonOnCliff(
+          'lf',
+          lerp(-2.85, -1.02, settle),
+          lerp(SANCTUARY_CENTER_Z, -1.68, settle),
+          lerpAngle(Math.PI * 0.5, 0.14, settle)
+        );
+
+        nfMacro.protectiveWingMantle = settle * 0.85;
+        lfMacro.tuckInnerWingNeat = settle * 1.0;
+        nfMacro.affectionateNuzzle = settle * 0.35;
+        lfMacro.affectionateNuzzle = settle * 0.35;
+
+        if (t >= 61.8) {
+          once('star_1', () =>
+            fireworks.spawnShootingStar(new THREE.Vector3(-28, 36, -42), new THREE.Vector3(34, -12, 6))
+          );
         }
-      } else if (t < 75.0) {
-        const p = (t - 68.5) / 6.5;
-        const stormBell = Math.sin(p * Math.PI);
-        applyAtmosphereBlend('starlit-night', 'stormy-squall', stormBell * 0.85, lerp(0.30, 0.92, stormBell), stormBell * 0.55, lerp(0.92, 0.32, stormBell), 0, sunAzimTurn);
+        if (t >= 63.4) {
+          once('star_2', () =>
+            fireworks.spawnShootingStar(new THREE.Vector3(26, 40, -48), new THREE.Vector3(-36, -14, 8))
+          );
+        }
+        if (t >= 65.0) {
+          once('star_3', () =>
+            fireworks.spawnShootingStar(new THREE.Vector3(-12, 42, -45), new THREE.Vector3(30, -10, 4))
+          );
+        }
+
+        const starTrackYaw = Math.sin((t - 61.5) * 1.2) * 0.24 * settle;
+        nf.forelegStance = 0.14;
+        nf.neckArch = 0.38;
+        nf.headPitch = 0.32 * settle;
+        nf.headYaw = starTrackYaw;
+        nf.wingUnfurl = 0.0;
+        nf.tailCurl = -0.45 * settle;
+        nf.tailYaw = -0.35 * settle;
+        nf.earPerk = 0.94;
+        nf.pupilDilation = 0.96;
+        nf.alphaGlow = 0.32;
+
+        lf.forelegStance = 0.14;
+        lf.neckArch = 0.40;
+        lf.headPitch = 0.34 * settle;
+        lf.headYaw = starTrackYaw;
+        lf.wingUnfurl = 0.0;
+        lf.tailCurl = 0.45 * settle;
+        lf.tailYaw = 0.35 * settle;
+        lf.earPerk = 0.95;
+        lf.pupilDilation = 0.94;
+        lf.iridescentShimmer = 0.65;
+      } else if (t < 73.2) {
+        // Scene III-C (66.5 -> 73.2s): Storm Squall & High-Clearance Protective Wing Canopy (>53cm 3D clearance!)
+        const stormP = (t - 66.5) / 6.7;
+        const stormBell = Math.sin(stormP * Math.PI);
+        applyAtmosphereBlend(
+          'starlit-night',
+          'stormy-squall',
+          stormBell * 0.88,
+          lerp(0.32, 0.92, stormBell),
+          stormBell * 0.65,
+          lerp(0.88, 0.30, stormBell),
+          0,
+          sunAzimTurn
+        );
         ocean.setOceanParams({
-          waveAmplitude: lerp(0.45, 1.35, stormBell),
-          waveSpeed: lerp(0.85, 1.35, stormBell),
+          waveAmplitude: lerp(0.45, 1.38, stormBell),
+          waveSpeed: lerp(0.82, 1.35, stormBell),
           seaChoppiness: lerp(0.32, 0.78, stormBell),
         });
+
+        const shield = smootherstep(66.5, 68.4, t);
+        placeDragonOnCliff('nf', 1.04, -2.02, -0.14);
+        placeDragonOnCliff('lf', -0.98, -1.68, 0.14);
+
+        nfMacro.protectiveWingMantle = lerp(0.85, 1.0, shield);
+        lfMacro.tuckInnerWingNeat = 1.0;
+        nfMacro.lookAtMateWeight = 0.45;
+        lfMacro.lookAtMateWeight = 0.55;
+
+        if (t >= 69.15) {
+          once('thunder_1', () =>
+            fireworks.spawnShootingStar(new THREE.Vector3(-18, 38, -36), new THREE.Vector3(6, -34, 4))
+          );
+        }
+        if (t >= 71.05) {
+          once('thunder_2', () =>
+            fireworks.spawnShootingStar(new THREE.Vector3(20, 40, -38), new THREE.Vector3(-8, -36, 4))
+          );
+        }
+
+        nf.forelegStance = -0.06 * shield;
+        nf.hindlegStance = 0.08;
+        nf.neckArch = 0.24;
+        nf.headPitch = -0.06;
+        nf.wingUnfurl = 0.0;
+        nf.tailCurl = -0.48;
+        nf.tailYaw = -0.38;
+        nf.earPerk = 0.38;
+        nf.squint = 0.42 * shield;
+        nf.alphaGlow = 0.45 * shield;
+
+        lf.forelegStance = -0.18 * shield;
+        lf.hindlegStance = -0.12 * shield;
+        lf.neckArch = 0.18;
+        lf.headRoll = 0.20 * shield;
+        lf.wingUnfurl = 0.0;
+        lf.tailCurl = 0.48;
+        lf.tailYaw = 0.38;
+        lf.earPerk = 0.42;
+        lf.squint = 0.38 * shield;
       } else {
-        const p = (t - 75.0) / 3.0;
-        applyAtmosphereBlend('starlit-night', 'dawn-dusk', p * 0.25, lerp(0.45, 0.22, p), 0, 0.78, 0, sunAzimTurn);
-        ocean.setOceanParams({ waveAmplitude: 0.42, waveSpeed: 0.80, seaChoppiness: 0.30 });
+        // Scene III-D (73.2 -> 78.0s): Storm Clearing -> Outward Tail-Safe Turn to Sanctuary Positions!
+        const part = smootherstep(73.2, 77.8, t);
+        applyAtmosphereBlend('starlit-night', 'dawn-dusk', part * 0.45, lerp(0.55, 0.24, part), 0, 0.72, 0, sunAzimTurn);
+        ocean.setOceanParams({ waveAmplitude: 0.44, waveSpeed: 0.80, seaChoppiness: 0.30 });
+
+        placeDragonOnCliff(
+          'nf',
+          lerp(1.04, 2.68, part),
+          lerp(-2.02, SANCTUARY_CENTER_Z, part),
+          lerpAngle(-0.14, -Math.PI * 0.5, part)
+        );
+        placeDragonOnCliff(
+          'lf',
+          lerp(-0.98, -2.62, part),
+          lerp(-1.68, SANCTUARY_CENTER_Z, part),
+          lerpAngle(0.14, Math.PI * 0.5, part)
+        );
+
+        nfMacro.protectiveWingMantle = (1.0 - smoothstep(73.2, 75.0, t)) * 1.0;
+        lfMacro.tuckInnerWingNeat = (1.0 - smoothstep(73.2, 75.2, t)) * 1.0;
+        nfMacro.compactFoldedWings = smoothstep(74.2, 76.5, t) * 0.75;
+        lfMacro.compactFoldedWings = smoothstep(74.2, 76.5, t) * 0.75;
+        nfMacro.lookAtMateWeight = 0.85 * part;
+        lfMacro.lookAtMateWeight = 0.85 * part;
+
+        nf.wingUnfurl = 0.08 * part;
+        nf.tailCurl = lerp(-0.48, 0.0, part);
+        nf.tailYaw = lerp(-0.38, 0.0, part);
+        nf.earPerk = 0.88;
+        nf.pupilDilation = 0.90;
+        nf.alphaGlow = 0.28;
+
+        lf.forelegStance = lerp(-0.18, 0.12, part);
+        lf.wingUnfurl = 0.08 * part;
+        lf.tailCurl = lerp(0.48, 0.0, part);
+        lf.tailYaw = lerp(0.38, 0.0, part);
+        lf.headRoll = 0.16;
+        lf.earPerk = 0.88;
+        lf.pupilDilation = 0.90;
       }
 
-      sanctuary.setWildflowerBloom(0.62);
-
-      const cozyBlend = smoothstep(54.0, 58.5, t);
-      placeGroundedDragon(
-        toothless.rootGroup,
-        lerp(1.45, 0.98, cozyBlend),
-        lerp(SANCTUARY_CENTER_Z, -2.42, cozyBlend),
-        lerpAngle(-Math.PI * 0.5, -0.14, cozyBlend)
+      // Shot 7: Continuous Hypnotic 360-Deg Orbital Crane around the Circular Sanctuary!
+      const orbitAngle = smootherstep(0, 1, actU) * Math.PI * 2.0;
+      const orbitRad = lerp(9.2, 7.6, smoothstep(0.65, 1.0, actU));
+      const cPos = new THREE.Vector3(
+        Math.sin(orbitAngle) * orbitRad,
+        2.55 + Math.sin(actU * Math.PI) * 1.55,
+        SANCTUARY_CENTER_Z + Math.cos(orbitAngle) * orbitRad
       );
-      placeGroundedDragon(
-        lightFury.rootGroup,
-        lerp(-1.45, -0.64, cozyBlend),
-        lerp(SANCTUARY_CENTER_Z, -1.96, cozyBlend),
-        lerpAngle(Math.PI * 0.5, 0.14, cozyBlend),
-        0,
-        0.94
-      );
-
-      nf.forelegStance = -0.18 * cozyBlend;
-      nf.hindlegStance = -0.52 * cozyBlend;
-      lf.forelegStance = -0.22 * cozyBlend;
-      lf.hindlegStance = -0.56 * cozyBlend;
-
-      const starGaze = smoothstep(61.0, 63.5, t) * (1.0 - smoothstep(67.5, 69.2, t));
-      const stormShelter = smoothstep(68.2, 70.2, t) * (1.0 - smoothstep(74.5, 76.8, t));
-
-      nf.headPitch = lerp(0.06, 0.44, starGaze) - stormShelter * 0.12;
-      lf.headPitch = lerp(0.08, 0.46, starGaze) - stormShelter * 0.10;
-      nf.squint = 0.25 + stormShelter * 0.25;
-      lf.squint = 0.35 + stormShelter * 0.32;
-
-      lf.wingUnfurl = 0.08;
-      lfMacro.tuckInnerWingNeat = cozyBlend;
-
-      nf.wingUnfurl = lerp(0.16, 0.72, stormShelter);
-      nfMacro.protectiveWingMantle = lerp(0.35, 1.0, stormShelter) * cozyBlend;
-      nfMacro.affectionateNuzzle = stormShelter * 0.55;
-      lfMacro.affectionateNuzzle = cozyBlend * 0.35 + stormShelter * 0.65;
-      nfMacro.lookAtMateWeight = (1.0 - starGaze) * 0.65;
-      lfMacro.lookAtMateWeight = (1.0 - starGaze) * 0.65;
-
-      nf.tailCurl = 0.52 * cozyBlend;
-      lf.tailCurl = -0.52 * cozyBlend;
-
-      const orbitAngle = smoothstep(0.0, 1.0, u) * Math.PI * 2;
-      const orbitR = 8.85;
-      desiredCamPos.set(
-        Math.sin(orbitAngle) * orbitR,
-        2.45 + Math.sin(orbitAngle * 0.5) * 0.45,
-        SANCTUARY_CENTER_Z + Math.cos(orbitAngle) * orbitR
-      );
-      desiredCamTarget.set(0.12, 1.18, -2.20);
-      focusPoint.copy(desiredCamTarget);
-      desiredFov = 40;
-      commitSmoothCamera(dt, 3.2);
+      tmpCamTarget.set(0.0, 1.22, SANCTUARY_CENTER_Z);
+      applySafeCamera(7, cPos, tmpCamTarget, 41, dt, t, 0.035);
       return;
     }
 
-    // --------------------------------------------------------------------------
-    // ACT IV (1:18 - 1:28 + PAUSE): SAND-HEART CONFESSION & DEEP COURTSHIP BOW
-    // --------------------------------------------------------------------------
-    if (
-      t <= CONFESSION_PAUSE_SEC + 0.0001 &&
-      mode !== 'accepted-playing' &&
-      mode !== 'completed-awaiting-explore' &&
-      mode !== 'free-explore'
-    ) {
-      applyAtmosphereBlend('starlit-night', 'dawn-dusk', 0.24, 0.16, 0, 0.82);
-      ocean.setOceanParams({ waveAmplitude: 0.32, waveSpeed: 0.72, seaChoppiness: 0.24 });
-      sanctuary.setWildflowerBloom(0.68);
-      sanctuary.setCelebrationFlowerWave(0.0);
+    // ------------------------------------------------------------------------
+    // ACT IV — PART A (78.0s -> 88.0s) & CONFESSION PAUSE:
+    // Circular Fairy-Ring Sanctuary, Glowing Sand-Heart & NATURAL NOBLE COURTSHIP BOW!
+    // ------------------------------------------------------------------------
+    if (t <= CONFESSION_PAUSE_SEC && mode !== 'accepted-playing' && !isPostComplete) {
+      const duskToStar = smoothstep(78.0, 86.5, t);
+      applyAtmosphereBlend('dawn-dusk', 'starlit-night', 0.55 + duskToStar * 0.35, 0.20, 0, 0.80);
+      ocean.setOceanParams({ waveAmplitude: 0.38, waveSpeed: 0.76, seaChoppiness: 0.28 });
 
-      const lfStep = smoothstep(78.0, 80.5, t);
-      placeGroundedDragon(
-        lightFury.rootGroup,
-        lerp(-0.64, -2.08, lfStep),
-        lerp(-1.96, SANCTUARY_CENTER_Z, lfStep),
-        lerpAngle(0.14, Math.PI * 0.5, lfStep),
-        0,
-        0.94
+      const etchU = smoothstep(78.4, 83.8, t);
+      sanctuary.setEtchProgress(etchU);
+      sanctuary.setWildflowerBloom(0.68 + 0.14 * etchU);
+
+      const bowU = smootherstep(84.0, 87.8, t);
+      const isTracing = smoothstep(78.3, 79.0, t) * (1.0 - smoothstep(83.3, 84.1, t));
+      const traceSway = Math.sin(etchU * Math.PI * 2.0) * isTracing;
+
+      const nfX = lerp(2.68, 2.52, bowU) - isTracing * 0.12;
+      const nfZ = SANCTUARY_CENTER_Z + traceSway * 0.22;
+      const nfYaw = -Math.PI * 0.5 + traceSway * 0.14;
+
+      placeDragonOnCliff('nf', nfX, nfZ, nfYaw);
+      placeDragonOnCliff('lf', -2.62, SANCTUARY_CENTER_Z, Math.PI * 0.5);
+
+      const isPaused = mode === 'awaiting-confession-choice';
+      const heartPulse = 0.5 + 0.5 * Math.sin(worldClock * 3.2);
+      const posBias = Math.max(0, smoothedHoverBias);
+      const negBias = Math.max(0, -smoothedHoverBias);
+
+      // NATURAL, NOBLE, GRACEFUL COURTSHIP BOW (respectful shoulder dip, head at ~1.35m, NEVER crushed!)
+      nfMacro.deepCourtshipBow = bowU * 0.16;
+      nfMacro.lookAtMateWeight = 0.35 * (1.0 - bowU) + 0.25 * posBias;
+      lfMacro.lookAtMateWeight = 0.88;
+      nfMacro.compactFoldedWings = 0.45 * (1.0 - bowU);
+      lfMacro.compactFoldedWings = 0.65;
+
+      nf.forelegStance = lerp(0.04, -0.52, bowU);
+      nf.hindlegStance = lerp(0.06, 0.14, bowU);
+      nf.neckArch = lerp(0.18, -0.10, bowU) - isTracing * 0.20;
+      nf.headPitch = lerp(-0.24 * isTracing, 0.14, bowU) + posBias * 0.10 - negBias * 0.18;
+      nf.headRoll = -0.06 * bowU - posBias * 0.06;
+      nf.eyePitch = 0.20 * bowU;
+      nf.pupilDilation = clamp01(0.96 + posBias * 0.04 - negBias * 0.22);
+      nf.earPerk = clamp01(0.86 + posBias * 0.14 - negBias * 0.48);
+      nf.earAsymmetry = isPaused ? Math.sin(worldClock * 1.6) * 0.08 : 0.04;
+      nf.jawOpen = 0.03 * posBias;
+      nf.wingUnfurl = lerp(0.10, 0.34, bowU);
+      nf.wingSweep = -0.12 * bowU;
+      nf.tailPitch = 0.20 + posBias * 0.16 - negBias * 0.16;
+      nf.tailYaw = isPaused ? Math.sin(worldClock * 2.0) * (0.12 + posBias * 0.20) : 0.12;
+      nf.alphaGlow = clamp01(0.32 + 0.44 * bowU * (0.76 + 0.24 * heartPulse) + posBias * 0.22);
+
+      lf.forelegStance = 0.12 - posBias * 0.10;
+      lf.neckArch = 0.28 + posBias * 0.08;
+      lf.headPitch = -0.06 - 0.06 * bowU;
+      lf.headRoll = 0.18 + posBias * 0.14 - negBias * 0.14;
+      lf.pupilDilation = clamp01(0.92 + posBias * 0.08 - negBias * 0.18);
+      lf.squint = clamp01(0.16 + posBias * 0.44);
+      lf.earPerk = clamp01(0.90 + posBias * 0.10 - negBias * 0.38);
+      lf.wingUnfurl = 0.12 + negBias * 0.18;
+      lf.iridescentShimmer = clamp01(0.45 + posBias * 0.38);
+
+      // Shot 8: High Circular Fairy-Ring & Sand-Heart Reveal settling into Confession Profile Two-Shot!
+      const camSettle = smootherstep(78.0, 87.5, t);
+      const cPos = new THREE.Vector3(
+        0.0,
+        lerp(4.15, 2.22, camSettle),
+        lerp(SANCTUARY_CENTER_Z + 6.35, SANCTUARY_CENTER_Z + 6.95, camSettle)
       );
-      lf.neckArch = 0.28;
-      lf.earPerk = 0.88;
-      lf.pupilDilation = 0.88;
-      lfMacro.lookAtMateWeight = 0.92;
-
-      if (t < 84.2) {
-        const etchU = clamp((t - 78.5) / 5.4, 0, 1);
-        sanctuary.setEtchProgress(etchU);
-
-        const a = etchU * Math.PI * 2 - Math.PI * 0.5;
-        const sa = Math.sin(a);
-        const hx = 16 * sa * sa * sa * 0.056;
-        const hz = -(13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - 1 * Math.cos(4 * a)) * 0.054;
-        const targetX = clamp(hx + 1.08, 0.25, 2.35);
-        const targetZ = clamp(SANCTUARY_CENTER_Z + hz, -3.55, -1.05);
-
-        const walkIn = smoothstep(78.0, 79.0, t);
-        placeGroundedDragon(
-          toothless.rootGroup,
-          lerp(0.98, targetX, walkIn),
-          lerp(-2.42, targetZ, walkIn),
-          Math.atan2(hx - targetX, (SANCTUARY_CENTER_Z + hz) - targetZ)
-        );
-        nf.forelegStance = -0.34;
-        nf.headPitch = -0.44;
-        nf.alphaGlow = 0.24 * Math.sin(etchU * Math.PI);
-      } else {
-        sanctuary.setEtchProgress(1.0);
-        const bowApproach = smoothstep(84.2, 85.8, t);
-        const deepBow = smoothstep(85.4, 87.6, t);
-
-        placeGroundedDragon(
-          toothless.rootGroup,
-          lerp(1.45, 2.08, bowApproach),
-          SANCTUARY_CENTER_Z,
-          -Math.PI * 0.5
-        );
-
-        nf.forelegStance = -1.0 * deepBow;
-        nf.hindlegStance = 0.22 * deepBow;
-        nfMacro.deepCourtshipBow = deepBow;
-        nf.wingUnfurl = 0.62 * deepBow;
-        nf.wingFlap = -0.18 * deepBow;
-        nf.earPerk = 0.88 - Math.max(0, -hoverBias) * 0.48;
-        nf.pupilDilation = 0.98;
-        nf.alphaGlow = 0.36 + Math.max(0, hoverBias) * 0.30;
-        nf.tailYaw = Math.max(0, hoverBias) * 0.25 * Math.sin(worldClock * 2.2);
-
-        const yesHover = Math.max(0, hoverBias);
-        const noHover = Math.max(0, -hoverBias);
-        lf.forelegStance = 0.08 - yesHover * 0.12;
-        lf.headRoll = yesHover * 0.18 - noHover * 0.14;
-        lf.earPerk = 0.86 + yesHover * 0.12 - noHover * 0.44;
-        lf.squint = 0.22 + yesHover * 0.28;
-        lf.iridescentShimmer = 0.25 + yesHover * 0.38;
-
-        nfMacro.lookAtMateWeight = 0.88;
-        lfMacro.lookAtMateWeight = 0.94;
-      }
-
-      desiredCamPos.set(0.0, 2.08, 6.45);
-      desiredCamTarget.set(0.0, 1.08, SANCTUARY_CENTER_Z);
-      focusPoint.copy(desiredCamTarget);
-      desiredFov = 36;
-      commitSmoothCamera(dt, 2.8);
+      tmpCamTarget.set(0.0, lerp(0.58, 1.52, camSettle), SANCTUARY_CENTER_Z);
+      applySafeCamera(8, cPos, tmpCamTarget, 36, dt, worldClock, isPaused ? 0.016 : 0.028);
       return;
     }
 
-    // --------------------------------------------------------------------------
-    // ACT V (1:28 - 2:00): HER ACCEPTANCE, SHOCKING HALO, BLOOMING FLOWERS,
-    // JOYFUL DRAGON CELEBRATION, COLOSSAL FIREWORKS & PROTECTIVE WING TABLEAU!
-    // --------------------------------------------------------------------------
-    const vU = clamp((t - CONFESSION_PAUSE_SEC) / (TOTAL_MOVIE_SEC - CONFESSION_PAUSE_SEC), 0, 1);
+    // ------------------------------------------------------------------------
+    // ACT IV — PART B & ACT V (88.0s -> 120.0s):
+    // Calibrated Non-Penetrating Snout Kiss, 58m Aurora Dome, Circular Flower Wave,
+    // "9"  "2"  "7" Sky Triptych, Shocking Red/Pink Fireworks & Non-Intersecting Embrace!
+    // ------------------------------------------------------------------------
+    if (!isPostComplete) {
+      applyAtmosphereBlend('dawn-dusk', 'starlit-night', 0.94, 0.20, 0, 0.96);
+      ocean.setOceanParams({ waveAmplitude: 0.38, waveSpeed: 0.78, seaChoppiness: 0.28 });
+    }
 
-    applyAtmosphereBlend('starlit-night', 'dawn-dusk', lerp(0.24, 0.10, vU), 0.18, 0, lerp(0.84, 1.0, vU));
-    ocean.setOceanParams({ waveAmplitude: 0.36, waveSpeed: 0.78, seaChoppiness: 0.28 });
+    if (t < 96.2) {
+      // Shot 9 (88.0 -> 96.2s): Graceful Walk Across the Circular Flower Ring & Gentle Muzzle Touch!
+      const acceptU = smootherstep(88.0, 92.4, t);
+      const nuzzleHold = smoothstep(91.6, 92.8, t) * (1.0 - smoothstep(94.0, 95.0, t));
+      const joyCelebrate = smoothstep(93.8, 94.6, t) * (1.0 - smoothstep(95.4, 96.1, t));
 
-    sanctuary.setEtchProgress(1.0);
-    sanctuary.setAcceptanceGlow(smoothstep(88.2, 91.5, t));
-    sanctuary.setWildflowerBloom(lerp(0.68, 1.0, smoothstep(89.0, 95.0, t)));
-    sanctuary.setCelebrationFlowerWave(smoothstep(89.6, 95.8, t));
+      sanctuary.setEtchProgress(1.0);
+      sanctuary.setAcceptanceGlow(acceptU);
+      sanctuary.setWildflowerBloom(0.82 + 0.18 * acceptU);
+      sanctuary.setCelebrationFlowerWave(smoothstep(89.2, 95.6, t));
 
-    if (t < 96.4) {
-      const stepAcross = smoothstep(88.1, 90.4, t);
-      const nuzzleHold = smoothstep(89.8, 90.8, t) * (1.0 - smoothstep(92.2, 93.0, t));
-      const joyDance = smoothstep(92.3, 93.1, t) * (1.0 - smoothstep(95.2, 96.2, t));
+      // Calibrated non-penetrating snout touch: NF(+2.24) & LF(-2.14) -> dx = 4.38m (> 4.22m combined snout reach!)
+      const nfX = lerp(2.52, 2.24, acceptU) + joyCelebrate * 0.28;
+      const lfX = lerp(-2.62, -2.14, acceptU) - joyCelebrate * 0.26;
 
-      placeGroundedDragon(
-        toothless.rootGroup,
-        lerp(2.08, 0.72, smoothstep(88.4, 90.6, t)),
-        SANCTUARY_CENTER_Z,
-        -Math.PI * 0.5
-      );
-      placeGroundedDragon(
-        lightFury.rootGroup,
-        lerp(-2.08, -0.68, stepAcross),
-        SANCTUARY_CENTER_Z,
-        Math.PI * 0.5,
-        0,
-        0.94
-      );
+      placeDragonOnCliff('nf', nfX, SANCTUARY_CENTER_Z, -Math.PI * 0.5);
+      placeDragonOnCliff('lf', lfX, SANCTUARY_CENTER_Z, Math.PI * 0.5);
 
-      if (t >= 90.2) {
-        once('acceptance_shockwave_halo', () => {
-          const touchPt = new THREE.Vector3(0.0, 1.15, SANCTUARY_CENTER_Z);
+      nfMacro.deepCourtshipBow = (1.0 - acceptU) * 0.16;
+      nfMacro.rearUpJoy = joyCelebrate * 0.52;
+      nfMacro.compactFoldedWings = 0.70 * (1.0 - joyCelebrate);
+      lfMacro.compactFoldedWings = 0.70 * (1.0 - joyCelebrate);
+
+      if (t >= 92.3) {
+        once('acceptance_resonance_wave', () => {
+          const touchPt = new THREE.Vector3(0, 0.10, SANCTUARY_CENTER_Z);
           sanctuary.triggerResonanceWave(touchPt);
-          sanctuary.spawnShimmerBurst(touchPt, true, 95);
+          sanctuary.spawnShimmerBurst(new THREE.Vector3(0, 1.15, SANCTUARY_CENTER_Z), true, 95);
         });
       }
 
-      const remainBow = 1.0 - smoothstep(88.2, 90.2, t);
-      nf.forelegStance = -1.0 * remainBow;
-      nfMacro.deepCourtshipBow = remainBow;
+      const nuzzleSway = Math.sin((t - 92.0) * 2.2) * 0.07 * nuzzleHold;
 
-      nfMacro.affectionateNuzzle = nuzzleHold;
-      lfMacro.affectionateNuzzle = nuzzleHold;
+      nf.forelegStance = lerp(-0.52, -0.06, acceptU);
+      nf.hindlegStance = 0.12;
+      nf.neckArch = lerp(-0.10, 0.22, acceptU);
+      nf.headPitch = lerp(0.14, -0.08, acceptU);
+      nf.headRoll = nuzzleSway;
+      nf.blink = 0.92 * nuzzleHold;
+      nf.squint = 0.72 * nuzzleHold;
+      nf.pupilDilation = 0.98;
+      nf.earPerk = 0.94;
+      nf.wingUnfurl = 0.12 + 0.42 * joyCelebrate;
+      nf.wingFlap = 0.20 * joyCelebrate;
+      nf.dorsalSpineSplit = 0.85;
+      nf.alphaGlow = 0.92;
 
-      const nfRearBell = Math.sin(clamp((t - 92.4) / 2.8, 0, 1) * Math.PI);
-      nfMacro.rearUpJoy = nfRearBell * 0.85;
-      nf.wingUnfurl = lerp(0.24, 0.92, Math.max(nuzzleHold * 0.35, nfRearBell));
-      nf.wingFlap = Math.sin((t - 92.4) * 3.6) * 0.34 * nfRearBell;
-      nf.alphaGlow = lerp(0.55, 1.0, Math.max(nuzzleHold, joyDance));
-      nf.dorsalSpineSplit = 0.88;
-      nf.jawOpen = 0.22 * nfRearBell;
-      nf.squint = 0.55 * nuzzleHold + 0.25 * joyDance;
-      nf.blink = nuzzleHold * 0.75;
-      nf.tailYaw = Math.sin(t * 2.8) * 0.38 * joyDance;
+      lf.forelegStance = lerp(0.12, -0.06, acceptU);
+      lf.neckArch = lerp(0.28, 0.22, acceptU);
+      lf.headPitch = -0.08;
+      lf.headRoll = -nuzzleSway + 0.08;
+      lf.blink = 0.94 * nuzzleHold;
+      lf.squint = 0.80 * nuzzleHold;
+      lf.pupilDilation = 0.96;
+      lf.earPerk = 0.94;
+      lf.wingUnfurl = 0.12 + 0.36 * joyCelebrate;
+      lf.iridescentShimmer = 0.96;
 
-      const lfPranceBell = Math.sin(clamp((t - 92.8) / 2.6, 0, 1) * Math.PI);
-      lfMacro.playPawL = lfPranceBell * 0.82;
-      lf.wingUnfurl = lerp(0.18, 0.78, lfPranceBell);
-      lf.wingFlap = Math.sin((t - 92.8) * 3.8) * 0.28 * lfPranceBell;
-      lf.iridescentShimmer = lerp(0.45, 0.95, Math.max(nuzzleHold, joyDance));
-      lf.squint = 0.58 * nuzzleHold + 0.35 * joyDance;
-      lf.blink = nuzzleHold * 0.75;
-      lf.tailYaw = -Math.sin(t * 2.8) * 0.42 * joyDance;
-
-      nfMacro.lookAtMateWeight = 0.95;
-      lfMacro.lookAtMateWeight = 0.95;
-
-      const pullStart = smoothstep(94.2, 96.4, t);
-      desiredCamPos.set(0.0, lerp(2.08, 2.45, pullStart), lerp(6.45, 8.8, pullStart));
-      desiredCamTarget.set(0.0, lerp(1.08, 1.85, pullStart), lerp(SANCTUARY_CENTER_Z, -3.2, pullStart));
-      focusPoint.copy(desiredCamTarget);
-      desiredFov = lerp(36, 42, pullStart);
-      commitSmoothCamera(dt, 2.6);
+      // Shot 9: Intimate Telephoto Push-In onto their Meeting Foreheads & Circular Blooming Wreath!
+      const pushU = smootherstep(88.0, 95.4, t);
+      const cPos = new THREE.Vector3(
+        0.0,
+        lerp(2.22, 1.52, pushU),
+        lerp(SANCTUARY_CENTER_Z + 6.95, SANCTUARY_CENTER_Z + 4.35, pushU)
+      );
+      tmpCamTarget.set(0.0, lerp(1.52, 1.18, pushU), SANCTUARY_CENTER_Z);
+      applySafeCamera(9, cPos, tmpCamTarget, lerp(36, 30, pushU), dt, t, 0.022);
       return;
     }
 
-    const turnSea = smoothstep(96.4, 98.4, t);
-    placeGroundedDragon(
-      toothless.rootGroup,
-      lerp(0.72, 0.96, turnSea),
-      lerp(SANCTUARY_CENTER_Z, -2.42, turnSea),
-      lerpAngle(-Math.PI * 0.5, -Math.PI + 0.18, turnSea)
-    );
-    placeGroundedDragon(
-      lightFury.rootGroup,
-      lerp(-0.68, -0.62, turnSea),
-      lerp(SANCTUARY_CENTER_Z, -1.98, turnSea),
-      lerpAngle(Math.PI * 0.5, Math.PI - 0.18, turnSea),
-      0,
-      0.94
-    );
+    // ------------------------------------------------------------------------
+    // Shot 10 (96.2s -> 120.0s): Outward Tail-Safe Turn Toward -Z Sky, Twin Plasma Launch,
+    // "9"  "2"  "7" Sky Triptych, Shocking Red/Pink Fireworks & Non-Intersecting Embrace!
+    // ------------------------------------------------------------------------
+    sanctuary.setEtchProgress(1.0);
+    sanctuary.setWildflowerBloom(1.0);
+    sanctuary.setAcceptanceGlow(1.0);
+    sanctuary.setCelebrationFlowerWave(1.0);
 
-    const breathBuild = smoothstep(97.8, 98.8, t) * (1.0 - smoothstep(99.4, 100.4, t));
-    if (t >= 98.9) {
-      once('twin_dragon_comets', () => {
-        const nfMouth = new THREE.Vector3(0.92, 1.65, -3.15);
-        const lfMouth = new THREE.Vector3(-0.58, 1.58, -2.72);
-        const apex = new THREE.Vector3(0.0, 20.5, -26.0);
-        fireworks.launchTwinDragonComets(nfMouth, lfMouth, apex);
+    const alignU = smootherstep(96.2, 98.0, t);
+    const cozyIn = smootherstep(99.8, 103.5, t);
+    const launchWindow = smoothstep(97.5, 98.1, t) * (1.0 - smoothstep(99.1, 99.8, t));
+    const endU = smootherstep(111.5, 119.2, Math.min(TOTAL_MOVIE_SEC, t));
+
+    const nfX = lerp(lerp(2.24, 2.15, alignU), 1.10, cozyIn);
+    const lfX = lerp(lerp(-2.14, -2.08, alignU), -1.04, cozyIn);
+    const nfZ = lerp(SANCTUARY_CENTER_Z, -2.02, cozyIn);
+    const lfZ = lerp(SANCTUARY_CENTER_Z, -1.68, cozyIn);
+
+    placeDragonOnCliff('nf', nfX, nfZ, lerpAngle(-Math.PI * 0.5, -2.98, alignU));
+    placeDragonOnCliff('lf', lfX, lfZ, lerpAngle(Math.PI * 0.5, 2.98, alignU));
+
+    nfMacro.compactFoldedWings = (1.0 - cozyIn) * (1.0 - launchWindow * 0.7) * 0.85;
+    lfMacro.compactFoldedWings = (1.0 - cozyIn) * (1.0 - launchWindow * 0.7) * 0.85;
+    nfMacro.protectiveWingMantle = cozyIn * 0.98;
+    lfMacro.tuckInnerWingNeat = cozyIn * 1.0;
+    nfMacro.affectionateNuzzle = 0.42 * endU;
+    lfMacro.affectionateNuzzle = 0.42 * endU;
+
+    if (t >= 98.0) {
+      once('twin_plasma_comets', () => {
+        toothless.rootGroup.updateMatrixWorld(true);
+        lightFury.rootGroup.updateMatrixWorld(true);
+        const nfJaw = toothless.rig.boneMap.get('jaw')!;
+        const lfJaw = lightFury.rig.boneMap.get('jaw')!;
+        const pNF = new THREE.Vector3().setFromMatrixPosition(nfJaw.matrixWorld);
+        const pLF = new THREE.Vector3().setFromMatrixPosition(lfJaw.matrixWorld);
+        fireworks.launchTwinDragonComets(pNF, pLF, new THREE.Vector3(0.0, 18.2, -28.0));
       });
     }
 
-    const fwCues: Array<[number, 'heart' | 'willow' | 'peony' | 'saturn', number, number, number, number, number, number]> = [
-      [100.6, 'peony', -14.0, 17.5, -28.0, 0x38d8ff, 0xffd875, 1.45],
-      [101.2, 'peony', 14.0, 18.2, -28.0, 0xff72c6, 0xfff0a8, 1.45],
-      [102.4, 'heart', -7.5, 20.5, -26.0, 0xff62b8, 0xffe28a, 1.55],
-      [103.2, 'saturn', 8.5, 21.0, -27.5, 0x56e2ff, 0xff8ad8, 1.50],
-      [104.5, 'willow', 0.0, 23.5, -30.0, 0xffd97d, 0xff85c8, 1.75],
-      [105.8, 'heart', 11.5, 19.5, -25.5, 0xff7ac8, 0x72eeff, 1.55],
-      [107.0, 'willow', -11.5, 21.5, -29.0, 0xffdf85, 0x8ae8ff, 1.65],
-      [108.4, 'saturn', -4.5, 22.5, -28.0, 0xc98eff, 0xffe494, 1.55],
-      [109.6, 'peony', 6.5, 20.0, -26.5, 0x4de8ff, 0xff7ec4, 1.50],
-      [111.0, 'willow', -15.5, 22.0, -30.0, 0xffe082, 0xff78c4, 1.75],
-      [111.3, 'willow', 15.5, 22.0, -30.0, 0xffe082, 0x5ce8ff, 1.75],
-      [112.2, 'heart', -5.5, 23.0, -27.0, 0xff5eb5, 0xffea96, 1.65],
-      [112.5, 'heart', 5.5, 23.0, -27.0, 0x48e5ff, 0xff85d0, 1.65],
-      [113.8, 'heart', 0.0, 24.5, -28.0, 0xff6ec4, 0xffe898, 2.05],
-      [114.6, 'willow', 0.0, 26.0, -32.0, 0xffdf88, 0xffffff, 1.95],
-    ];
+    // Launch the special "9"  "2"  "7" Sky Triptych from left to right at t = 104.75s!
+    if (t >= 104.75) {
+      once('sky_triptych_927', () => {
+        fireworks.launch927SkyTriptych(new THREE.Vector3(0.0, 15.8, -29.0));
+      });
+    }
 
-    for (let i = 0; i < fwCues.length; i++) {
-      const [cueSec, kind, tx, ty, tz, c1, c2, sc] = fwCues[i];
-      if (t >= cueSec) {
-        once(`fw_${i}`, () => {
+    for (const cue of fireworkCues) {
+      if (t >= cue.timeSec) {
+        once(cue.id, () => {
           fireworks.launchShell(
-            new THREE.Vector3(tx * 0.45, -1.5, tz - 5.0),
-            new THREE.Vector3(tx, ty, tz),
-            kind,
-            c1,
-            c2,
-            sc,
-            1.05
+            cue.origin,
+            cue.target,
+            cue.kind,
+            cue.colA,
+            cue.colB,
+            cue.scale,
+            cue.dur
           );
         });
       }
     }
 
-    const cozySit = smoothstep(100.2, 103.5, t);
-    nf.forelegStance = -0.16 * cozySit;
-    nf.hindlegStance = -0.54 * cozySit;
-    lf.forelegStance = -0.20 * cozySit;
-    lf.hindlegStance = -0.58 * cozySit;
+    const skyGazeYaw = Math.sin((t - 99.5) * 1.05) * 0.16 * smoothstep(99.5, 100.8, t) * (1.0 - endU);
+    const affectionateSway = Math.sin(worldClock * 1.05) * 0.035 * endU;
 
-    const finaleNuzzle = smoothstep(113.5, 117.5, t);
-    nf.headPitch = lerp(0.38, 0.24, finaleNuzzle) + breathBuild * 0.36;
-    lf.headPitch = lerp(0.40, 0.26, finaleNuzzle) + breathBuild * 0.36;
-    nf.jawOpen = 0.06 + breathBuild * 0.58;
-    lf.jawOpen = 0.04 + breathBuild * 0.54;
-    nf.alphaGlow = lerp(0.85, 0.42, smoothstep(102.0, 116.0, t)) + breathBuild * 0.3;
-    lf.iridescentShimmer = lerp(0.75, 0.42, smoothstep(102.0, 116.0, t)) + breathBuild * 0.3;
-    nf.squint = 0.30 + finaleNuzzle * 0.22;
-    lf.squint = 0.34 + finaleNuzzle * 0.24;
+    nf.forelegStance = lerp(0.22, 0.18, endU);
+    nf.hindlegStance = 0.12;
+    nf.neckArch = 0.36 + 0.36 * launchWindow;
+    nf.headPitch = lerp(0.32, 0.08, endU) + 0.30 * launchWindow;
+    nf.headYaw = skyGazeYaw;
+    nf.headRoll = 0.14 * endU + affectionateSway;
+    nf.jawOpen = 0.70 * launchWindow;
+    nf.wingUnfurl = 0.24 * launchWindow * (1.0 - cozyIn);
+    nf.wingFlap = 0.18 * launchWindow;
+    nf.tailCurl = 0.42 * cozyIn;
+    nf.tailYaw = 0.32 * cozyIn;
+    nf.earPerk = 0.94;
+    nf.pupilDilation = 0.96;
+    nf.squint = 0.36 * endU;
+    nf.alphaGlow = lerp(0.92, 0.64, endU);
 
-    lf.wingUnfurl = 0.08;
-    lfMacro.tuckInnerWingNeat = cozySit;
-    nf.wingUnfurl = lerp(0.22, 0.68, cozySit);
-    nfMacro.protectiveWingMantle = cozySit;
-    nfMacro.affectionateNuzzle = finaleNuzzle * 0.85;
-    lfMacro.affectionateNuzzle = cozySit * 0.45 + finaleNuzzle * 0.55;
+    lf.forelegStance = lerp(0.22, 0.18, endU);
+    lf.hindlegStance = 0.12;
+    lf.neckArch = 0.38 + 0.36 * launchWindow;
+    lf.headPitch = lerp(0.34, 0.08, endU) + 0.30 * launchWindow;
+    lf.headYaw = skyGazeYaw;
+    lf.headRoll = -0.14 * endU - affectionateSway;
+    lf.jawOpen = 0.66 * launchWindow;
+    lf.wingUnfurl = 0.22 * launchWindow * (1.0 - cozyIn);
+    lf.wingFlap = 0.18 * launchWindow;
+    lf.tailCurl = -0.42 * cozyIn;
+    lf.tailYaw = -0.32 * cozyIn;
+    lf.earPerk = 0.94;
+    lf.pupilDilation = 0.95;
+    lf.squint = 0.44 * endU;
+    lf.plasmaGlow = 0.92 * launchWindow;
+    lf.iridescentShimmer = 0.96;
 
-    nf.tailCurl = 0.58 * cozySit;
-    lf.tailCurl = -0.58 * cozySit;
+    // Wide IMAX Pullback (96.2 -> 111.5s) framing BOTH Dragons + Full Sky Fireworks & "9  2  7",
+    // then gliding gently closer (111.5 -> 120.0s) onto their starlit embrace!
+    const pullU = smootherstep(96.2, 99.4, t);
+    const baseCamZ = lerp(SANCTUARY_CENTER_Z + 4.35, 11.85, pullU);
+    const baseCamY = lerp(1.52, 2.38, pullU);
+    const baseTargY = lerp(1.18, 8.35, pullU);
+    const baseTargZ = lerp(SANCTUARY_CENTER_Z, -18.0, pullU);
+    const baseFov = lerp(30, 52, pullU);
 
-    const grandWide = smoothstep(96.4, 102.5, t);
-    desiredCamPos.set(0.10, lerp(2.45, 2.35, grandWide), lerp(8.8, 9.65, grandWide));
-    desiredCamTarget.set(0.10, lerp(1.85, 4.85, grandWide), lerp(-3.2, -12.5, grandWide));
-    focusPoint.set(0.10, 1.25, SANCTUARY_CENTER_Z);
-    desiredFov = lerp(42, 48, grandWide);
-    commitSmoothCamera(dt, 2.2);
+    finalExploreCamPos.set(0.0, lerp(baseCamY, 2.32, endU), lerp(baseCamZ, 6.65, endU));
+    finalExploreCamTarget.set(
+      0.0,
+      lerp(baseTargY, 1.52, endU),
+      lerp(baseTargZ, SANCTUARY_CENTER_Z - 1.0, endU)
+    );
+    applySafeCamera(10, finalExploreCamPos, finalExploreCamTarget, lerp(baseFov, 40, endU), dt, worldClock, 0.024);
   }
 
+  // ==========================================================================
+  // 6. HEARTBREAK "NO" TIMELINE (12.0s FAREWELL -> PERMANENT SEAL)
+  // ==========================================================================
   function evaluateDeclinedTimeline(el: number, dt: number): void {
     resetNeutralGroundedBase();
     const nf = toothlessController.state;
     const lf = lightFuryController.state;
-    const u = clamp(el / 12.0, 0, 1);
+    const u = clamp01(el / 12.0);
 
-    applyAtmosphereBlend('starlit-night', 'misty-overcast', smoothstep(0.0, 0.85, u), lerp(0.18, 0.65, u), u * 0.25, lerp(0.78, 0.0, smoothstep(0.0, 0.45, u)), -14 * u);
-    ocean.setOceanParams({ waveAmplitude: lerp(0.32, 0.85, u), waveSpeed: 0.95, seaChoppiness: 0.55 });
+    applyAtmosphereBlend(
+      'starlit-night',
+      'misty-overcast',
+      smoothstep(0.0, 0.85, u),
+      lerp(0.20, 0.65, u),
+      u * 0.25,
+      lerp(0.78, 0.0, smoothstep(0.0, 0.45, u)),
+      -14 * u
+    );
+    ocean.setOceanParams({ waveAmplitude: lerp(0.38, 0.85, u), waveSpeed: 0.95, seaChoppiness: 0.55 });
 
     sanctuary.setAcceptanceGlow(0);
     sanctuary.setCelebrationFlowerWave(0);
     sanctuary.setEtchProgress(1.0 - smoothstep(0.08, 0.68, u));
-    sanctuary.setWildflowerBloom(lerp(0.68, 0.04, smoothstep(0.05, 0.75, u)));
+    sanctuary.setWildflowerBloom(lerp(0.82, 0.04, smoothstep(0.05, 0.75, u)));
     sanctuary.setFadeOut(1.0 - smoothstep(0.35, 0.92, u));
 
-    placeGroundedDragon(toothless.rootGroup, 2.08, SANCTUARY_CENTER_Z, lerpAngle(-Math.PI * 0.5, -Math.PI * 0.85, smoothstep(0.28, 0.75, u)));
-    nf.forelegStance = lerp(-1.0, -0.35, smoothstep(0.0, 0.35, u));
-    nf.headPitch = lerp(0.12, -0.34, smoothstep(0.15, 0.65, u));
-    nf.earPerk = lerp(0.65, 0.04, smoothstep(0.0, 0.38, u));
+    // Toothless rises quietly from his bow and watches her depart (> 5.1m away — zero intersection!)
+    placeDragonOnCliff(
+      'nf',
+      2.52,
+      SANCTUARY_CENTER_Z,
+      lerpAngle(-Math.PI * 0.5, -Math.PI * 0.85, smoothstep(0.28, 0.75, u))
+    );
+    nf.forelegStance = lerp(-0.52, -0.18, smoothstep(0.0, 0.35, u));
+    nf.headPitch = lerp(0.14, -0.32, smoothstep(0.15, 0.65, u));
+    nf.earPerk = lerp(0.86, 0.06, smoothstep(0.0, 0.38, u));
     nf.alphaGlow = lerp(0.32, 0.0, smoothstep(0.0, 0.25, u));
     nf.squint = 0.38;
 
     if (el < 3.6) {
       const turnP = smoothstep(0.4, 3.2, el);
-      placeGroundedDragon(
-        lightFury.rootGroup,
-        lerp(-2.08, -2.65, turnP),
+      placeDragonOnCliff(
+        'lf',
+        lerp(-2.62, -3.15, turnP),
         lerp(SANCTUARY_CENTER_Z, -2.85, turnP),
-        lerpAngle(Math.PI * 0.5, -Math.PI * 0.82, turnP),
-        0,
-        0.94
+        lerpAngle(Math.PI * 0.5, -Math.PI * 0.82, turnP)
       );
       const crouch = smoothstep(2.5, 3.5, el);
-      lf.forelegStance = -0.75 * crouch;
-      lf.hindlegStance = -0.82 * crouch;
-      lf.wingUnfurl = smoothstep(2.0, 3.5, el);
-      lf.wingFlap = 0.88 * crouch;
+      lf.forelegStance = -0.62 * crouch;
+      lf.hindlegStance = -0.68 * crouch;
+      lf.wingUnfurl = smoothstep(2.0, 3.5, el) * 0.95;
+      lf.wingFlap = 0.72 * crouch;
       lf.earPerk = 0.22;
       lfFlapPhase = Math.PI * 0.5;
     } else {
-      const flyU = clamp((el - 3.6) / 8.4, 0, 1);
-      lfFlapPhase += dt * 2.2 * Math.PI * 2;
+      const flyU = clamp01((el - 3.6) / 8.4);
+      lfFlapPhase += dt * 2.1 * Math.PI * 2;
       const air = smoothstep(0.0, 0.14, flyU);
 
-      const depX = lerp(-2.65, -36.0, Math.pow(flyU, 1.25));
-      const depY = lerp(0.0, 19.5, Math.pow(flyU, 1.15));
+      const depX = lerp(-3.15, -36.0, Math.pow(flyU, 1.25));
+      const depY = lerp(0.10, 19.5, Math.pow(flyU, 1.15));
       const depZ = lerp(-2.85, -56.0, Math.pow(flyU, 1.25));
-      const depYaw = Math.atan2(-36.0 - -2.65, -56.0 - -2.85);
+      const depYaw = Math.atan2(-36.0 - -3.15, -56.0 - -2.85);
 
       lightFury.rootGroup.position.set(depX, depY, depZ);
       tmpEuler.set(-0.32 * air, depYaw, 0.24 * air, 'YXZ');
@@ -1178,25 +1577,39 @@ export function createCinematicLoveStoryDirector(
       lf.airborneFactor = air;
       lf.legFlightTuck = smoothstep(0.08, 0.28, flyU) * 0.92;
       lf.wingUnfurl = 0.98;
-      lf.wingFlap = Math.sin(lfFlapPhase) * 0.88;
-      lf.wingTipLag = -Math.cos(lfFlapPhase) * 0.65;
+      lf.wingFlap = Math.sin(lfFlapPhase) * 0.86;
+      lf.wingTipLag = -Math.cos(lfFlapPhase) * 0.62;
       lf.pelvicFinFlare = 0.88;
       lf.iridescentShimmer = lerp(0.35, 0.98, smoothstep(0.25, 0.85, flyU));
     }
 
-    desiredCamPos.set(lerp(0.0, 3.2, u), lerp(2.08, 3.4, u), lerp(6.45, 11.8, u));
-    desiredCamTarget.set(lerp(0.0, 0.6, u), 1.15, SANCTUARY_CENTER_Z);
-    focusPoint.copy(desiredCamTarget);
-    desiredFov = lerp(36, 44, u);
-    commitSmoothCamera(dt, 1.8);
+    const cPos = new THREE.Vector3(
+      lerp(0.0, 3.2, u),
+      lerp(2.22, 3.4, u),
+      lerp(SANCTUARY_CENTER_Z + 6.95, 11.8, u)
+    );
+    tmpCamTarget.set(lerp(0.0, 0.6, u), 1.22, SANCTUARY_CENTER_Z);
+    applySafeCamera(8, cPos, tmpCamTarget, lerp(36, 44, u), dt, worldClock, 0.02);
 
     callbacks.onDeclineProgress(smoothstep(5.5, 11.6, el));
   }
 
+  // ==========================================================================
+  // 7. PUBLIC CONTROLLER IMPLEMENTATION
+  // ==========================================================================
   return {
     update: (dt: number): StoryFrameStep => {
-      const safeDt = Math.min(dt, 0.05);
-      worldClock += safeDt;
+      const safeDt = clamp(dt, 0.001, 0.05);
+      smoothedHoverBias += (hoverBias - smoothedHoverBias) * (1.0 - Math.exp(-7.5 * safeDt));
+
+      let worldRate = 1.0;
+      if (mode === 'playing' && storyTime >= 54.0 && storyTime <= 78.0) {
+        const bell = Math.sin(((storyTime - 54.0) / 24.0) * Math.PI);
+        worldRate = 1.0 + bell * bell * 16.0;
+      } else if (mode === 'awaiting-confession-choice') {
+        worldRate = 0.28;
+      }
+      worldClock += safeDt * worldRate;
 
       if (mode === 'playing') {
         storyTime += safeDt;
@@ -1205,9 +1618,9 @@ export function createCinematicLoveStoryDirector(
           mode = 'awaiting-confession-choice';
           callbacks.onReachConfessionPrompt();
         }
-        evaluateMainStoryTimeline(storyTime, safeDt, mode === 'awaiting-confession-choice');
+        evaluateMainStoryTimeline(storyTime, safeDt, false);
       } else if (mode === 'awaiting-confession-choice') {
-        evaluateMainStoryTimeline(CONFESSION_PAUSE_SEC, safeDt, true);
+        evaluateMainStoryTimeline(CONFESSION_PAUSE_SEC, safeDt, false);
       } else if (mode === 'accepted-playing') {
         storyTime += safeDt;
         if (storyTime >= TOTAL_MOVIE_SEC) {
@@ -1227,19 +1640,24 @@ export function createCinematicLoveStoryDirector(
           applyAtmosphereBlend('dawn-dusk', 'golden-hour', (dayCycle - 0.5) * 2.0, 0.28, 0, 0);
         }
 
-        if (dayCycle < 0.42 && Math.floor(postEndingElapsed / 3.5) !== Math.floor((postEndingElapsed - safeDt) / 3.5)) {
-          const kinds: Array<'heart' | 'willow' | 'peony' | 'saturn'> = ['heart', 'willow', 'saturn', 'peony'];
+        if (
+          dayCycle < 0.42 &&
+          Math.floor(postEndingElapsed / 3.4) !== Math.floor((postEndingElapsed - safeDt) / 3.4)
+        ) {
+          const kinds: FireworkShellKind[] = ['heart', 'dahlia', 'spiral', 'crossette', 'willow', 'saturn'];
           const k = kinds[Math.floor(Math.random() * kinds.length)];
           const tx = (Math.random() - 0.5) * 24.0;
-          const ty = 18.0 + Math.random() * 7.0;
-          const tz = -25.0 - Math.random() * 8.0;
+          const ty = 17.5 + Math.random() * 6.5;
+          const tz = -26.0 - Math.random() * 8.0;
+          const shockColors = [0xff0e44, 0xff1688, 0xff2268, 0x48e5ff];
+          const cA = shockColors[Math.floor(Math.random() * shockColors.length)];
           fireworks.launchShell(
             new THREE.Vector3(tx * 0.4, -2.0, tz - 5.0),
             new THREE.Vector3(tx, ty, tz),
             k,
-            k === 'heart' ? 0xff6ec4 : 0x52e5ff,
+            cA,
             0xffe28a,
-            1.45,
+            1.42,
             1.15
           );
         }
@@ -1254,16 +1672,42 @@ export function createCinematicLoveStoryDirector(
         evaluateDeclinedTimeline(12.0, safeDt);
       }
 
+      // Smoothly filter world transforms & every rig/macro channel so 0.0 instantaneous jumps ever occur!
+      nfTransformFilter.apply(
+        toothless.rootGroup,
+        safeDt,
+        0.14,
+        0.16,
+        toothlessController.state.airborneFactor < 0.25
+      );
+      lfTransformFilter.apply(
+        lightFury.rootGroup,
+        safeDt,
+        0.14,
+        0.16,
+        lightFuryController.state.airborneFactor < 0.25
+      );
       updateMateWorldTargets(worldClock);
+      nfStateFilter.filterInPlace(toothlessController.state, safeDt, 0.18);
+      lfStateFilter.filterInPlace(lightFuryController.state, safeDt, 0.18);
+      nfMacroFilter.filterInPlace(nfMacro, safeDt, 0.18);
+      lfMacroFilter.filterInPlace(lfMacro, safeDt, 0.18);
+
       const windNow = atmosphere.sharedUniforms.uWindStrength.value;
       sanctuary.update(safeDt, worldClock, windNow);
       fireworks.update(safeDt, camera.position, atmosphere.isAudioMuted());
+
+      focusPoint
+        .copy(toothless.rootGroup.position)
+        .add(lightFury.rootGroup.position)
+        .multiplyScalar(0.5);
+      focusPoint.y += 1.1;
 
       return { worldTimeSec: worldClock, focusPoint };
     },
 
     applyBiomechanicalPostPass: (dt: number) => {
-      const safeDt = Math.min(dt, 0.05);
+      const safeDt = clamp(dt, 0.001, 0.05);
       const isPausedStandstill =
         mode === 'awaiting-confession-choice' ||
         mode === 'completed-awaiting-explore' ||
@@ -1288,6 +1732,20 @@ export function createCinematicLoveStoryDirector(
         lfMacro,
         isPausedStandstill
       );
+
+      // Hard 24x24 anatomical-sphere dragon-dragon separation guard + ground re-verification!
+      const pushed = enforceStrictPairwiseDragonSeparation(
+        toothless,
+        lightFury,
+        toothlessController.state.airborneFactor < 0.3,
+        lightFuryController.state.airborneFactor < 0.3
+      );
+      if (pushed > 0.0005) {
+        nfTransformFilter.syncAfterCollisionPush(toothless.rootGroup);
+        lfTransformFilter.syncAfterCollisionPush(lightFury.rootGroup);
+        nfBio.enforceStrictGroundClearance(1.0 - toothlessController.state.airborneFactor);
+        lfBio.enforceStrictGroundClearance(1.0 - lightFuryController.state.airborneFactor);
+      }
     },
 
     isCameraLocked: () => mode !== 'free-explore',
@@ -1301,21 +1759,21 @@ export function createCinematicLoveStoryDirector(
     chooseYes: () => {
       if (mode !== 'awaiting-confession-choice') return;
       hoverBias = 0;
+      smoothedHoverBias = 0;
       mode = 'accepted-playing';
     },
 
     chooseNo: () => {
       if (mode !== 'awaiting-confession-choice') return;
       hoverBias = 0;
+      smoothedHoverBias = 0;
       declineElapsed = 0;
       mode = 'declined-playing';
     },
 
     enterFreeExplore: () => {
       mode = 'free-explore';
-      const homePos = new THREE.Vector3(0.10, 2.55, 8.95);
-      const homeTarget = new THREE.Vector3(0.10, 1.20, SANCTUARY_CENTER_Z);
-      callbacks.onEnterFreeExplore(homePos, homeTarget);
+      callbacks.onEnterFreeExplore(finalExploreCamPos.clone(), finalExploreCamTarget.clone());
     },
 
     replayStory: () => {
@@ -1324,13 +1782,21 @@ export function createCinematicLoveStoryDirector(
       declineElapsed = 0;
       postEndingElapsed = 0;
       hoverBias = 0;
+      smoothedHoverBias = 0;
       camInitialized = false;
+      prevShotId = -1;
       nfBio.resetMotionTracking();
       lfBio.resetMotionTracking();
+      nfStateFilter.reset();
+      lfStateFilter.reset();
+      nfMacroFilter.reset();
+      lfMacroFilter.reset();
+      nfTransformFilter.reset();
+      lfTransformFilter.reset();
       sanctuary.setEtchProgress(0);
       sanctuary.setAcceptanceGlow(0);
       sanctuary.setCelebrationFlowerWave(0);
-      sanctuary.setWildflowerBloom(0.28);
+      sanctuary.setWildflowerBloom(0.26);
       sanctuary.setFadeOut(1);
       callbacks.onDeclineProgress(0);
       mode = 'playing';

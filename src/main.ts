@@ -571,6 +571,7 @@ async function bootstrap(): Promise<void> {
     const warm = storyDirector.update(0.016);
     toothlessController.update(0.016);
     lightFuryController.update(0.016);
+    storyDirector.applyBiomechanicalPostPass(0.016);
     atmosphere.update(warm.worldTimeSec, warm.focusPoint, camera.position);
     cliffWorld.update(warm.worldTimeSec, camera.position);
   } else {

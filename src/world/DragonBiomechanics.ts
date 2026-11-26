@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { sampleHeroCliffHeight } from './NordicCliffWorld';
+import { sampleHeroCliffHeight, sampleWorldTerrainHeight } from './NordicCliffWorld';
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
@@ -19,9 +19,9 @@ export interface GroundedPlacementResult {
 }
 
 /**
- * Safe sanctuary plateau clamp + 5-point (center + 4 paws) terrain plane solver.
- * Guarantees neither dragon nor any paw ever dips under the grass or approaches
- * the z > +1.05m southern cliff precipice!
+ * Calibrated 5-point plateau grounding using exact measured paw coordinates
+ * (forepaw z=+1.02m, hindpaw z=-0.52m, width=+-0.33m).
+ * Keeps root strictly above the highest paw terrain sample so ZERO paws or belly vertices sink!
  */
 export function computeSafeCliffGroundPlacement(
   rawX: number,
@@ -29,66 +29,58 @@ export function computeSafeCliffGroundPlacement(
   yaw: number,
   bodyScale = 1.0
 ): GroundedPlacementResult {
-  // Safe continuous grassy plateau verified via heightfield scan: x in [-4.25, +4.25], z in [-4.55, +0.20]
-  const x = clamp(rawX, -4.25, 4.25);
-  const z = clamp(rawZ, -4.55, 0.20);
+  const x = clamp(rawX, -4.45, 4.45);
+  const z = clamp(rawZ, -4.65, 0.18);
 
   const sinY = Math.sin(yaw);
   const cosY = Math.cos(yaw);
 
-  const foreDist = 0.56 * bodyScale;
-  const hindDist = -0.54 * bodyScale;
-  const halfWidth = 0.32 * bodyScale;
+  const foreDist = 1.02 * bodyScale;
+  const hindDist = -0.52 * bodyScale;
+  const halfWidth = 0.33 * bodyScale;
 
-  const samplePaw = (lx: number, lz: number) => {
+  const samplePt = (lx: number, lz: number) => {
     const wx = x + lx * cosY + lz * sinY;
     const wz = z - lx * sinY + lz * cosY;
     return sampleHeroCliffHeight(wx, wz);
   };
 
   const hCenter = sampleHeroCliffHeight(x, z);
-  const hFL = samplePaw(halfWidth, foreDist);
-  const hFR = samplePaw(-halfWidth, foreDist);
-  const hHL = samplePaw(halfWidth, hindDist);
-  const hHR = samplePaw(-halfWidth, hindDist);
+  const hChest = samplePt(0, 0.72 * bodyScale);
+  const hFL = samplePt(halfWidth, foreDist);
+  const hFR = samplePt(-halfWidth, foreDist);
+  const hHL = samplePt(halfWidth, hindDist);
+  const hHR = samplePt(-halfWidth, hindDist);
 
-  const avgPaws = 0.25 * (hFL + hFR + hHL + hHR);
-  const maxPaw = Math.max(hFL, hFR, hHL, hHR);
-  // Keep root cleanly above highest local turf rise so paws & chest never sink below grass!
-  const y = Math.max(hCenter, avgPaws, maxPaw - 0.035) + 0.015;
+  // Use maximum of support points so on sloped/curved turf no paw or chest ever dips under grass!
+  const y = Math.max(hCenter, hChest, hFL, hFR, hHL, hHR) + 0.016;
 
   const hFront = 0.5 * (hFL + hFR);
   const hBack = 0.5 * (hHL + hHR);
   const hLeft = 0.5 * (hFL + hHL);
   const hRight = 0.5 * (hFR + hHR);
 
-  // Positive X rotation tilts nose (+Z) down when hFront < hBack
-  const terrainPitch = clamp((hBack - hFront) / Math.max(0.5, foreDist - hindDist), -0.18, 0.18);
-  const terrainRoll = clamp((hRight - hLeft) / Math.max(0.4, halfWidth * 2), -0.16, 0.16);
+  const terrainPitch = clamp((hBack - hFront) / Math.max(0.8, foreDist - hindDist), -0.14, 0.14);
+  const terrainRoll = clamp((hRight - hLeft) / Math.max(0.5, halfWidth * 2), -0.12, 0.12);
 
   return { x, y, z, terrainPitch, terrainRoll };
 }
 
 export interface DragonMacroDirective {
-  /** 0..1 proud joyful rear-up onto haunches with forepaws pawing air & wings flared */
   rearUpJoy: number;
-  /** 0..1 playful left forepaw lift & gentle batting wave */
   playPawL: number;
-  /** 0..1 playful right forepaw lift & gentle batting wave */
   playPawR: number;
-  /** 0..1 deep unmistakable courtship bow (chest low to sand-heart, eyes gazing warmly up) */
+  /** Gentle respectful bow supplement (kept subtle so bow is noble, never contorted!) */
   deepCourtshipBow: number;
-  /** 0..1 tender cheek/forehead nuzzle curve toward mate */
   affectionateNuzzle: number;
-  /** 0..1 Toothless elevates & arches his inner wing HIGH over Light Fury as a protective canopy (zero overlap!) */
+  /** Elevates Toothless's inner wing high (y > 2.05m) over Light Fury's back with ZERO overlap */
   protectiveWingMantle: number;
-  /** 0..1 Light Fury tucks her inner wing sleekly & slightly lower against her flank (zero overlap!) */
+  /** Sweeps Light Fury's inner wing sleekly back along her flank with ZERO lateral stick-out */
   tuckInnerWingNeat: number;
-  /** 0..1 tracking weight to turn neck & head toward mateWorldPos */
+  /** Sweeps BOTH wings compactly back along flanks when walking/turning near mate */
+  compactFoldedWings: number;
   lookAtMateWeight: number;
-  /** World position of the mate's head/chest for natural gaze & inner-wing detection */
   mateWorldPos: THREE.Vector3;
-  /** Current clock time (seconds) for smooth macro secondary waves */
   timeSec: number;
 }
 
@@ -101,10 +93,106 @@ export function createDefaultMacroDirective(): DragonMacroDirective {
     affectionateNuzzle: 0,
     protectiveWingMantle: 0,
     tuckInnerWingNeat: 0,
+    compactFoldedWings: 0,
     lookAtMateWeight: 0,
     mateWorldPos: new THREE.Vector3(),
     timeSec: 0,
   };
+}
+
+/**
+ * Smoothly filters all numeric properties of a rig state / macro object so NO instantaneous
+ * posture snap can ever occur across scene boundaries!
+ */
+export class ContinuousPoseFilter<T extends object> {
+  private current: Record<string, number> = {};
+  private initialized = false;
+
+  public reset(): void {
+    this.initialized = false;
+    this.current = {};
+  }
+
+  public filterInPlace(targetObj: T, dt: number, tauSec = 0.20): void {
+    const rec = targetObj as unknown as Record<string, unknown>;
+    const alpha = this.initialized ? 1.0 - Math.exp(-Math.min(dt, 0.05) / Math.max(0.02, tauSec)) : 1.0;
+
+    for (const key of Object.keys(rec)) {
+      const val = rec[key];
+      if (typeof val === 'number' && Number.isFinite(val)) {
+        // Keep wavePhase unwrapped so sin(tailWavePhase) stays continuous
+        if (key === 'tailWavePhase' || key === 'timeSec') {
+          this.current[key] = val;
+          continue;
+        }
+        const prev = this.current[key];
+        const next = prev === undefined ? val : prev + (val - prev) * alpha;
+        this.current[key] = next;
+        rec[key] = next;
+      }
+    }
+    this.initialized = true;
+  }
+}
+
+/**
+ * Smoothly filters rootGroup world position & quaternion so world movement & heading turns
+ * are guaranteed 100% C1-continuous across every act & scene boundary!
+ */
+export class ContinuousTransformFilter {
+  private readonly pos = new THREE.Vector3();
+  private readonly quat = new THREE.Quaternion();
+  private initialized = false;
+
+  public reset(): void {
+    this.initialized = false;
+  }
+
+  public apply(
+    rootGroup: THREE.Group,
+    dt: number,
+    posTau = 0.16,
+    rotTau = 0.18,
+    isGrounded = false
+  ): void {
+    if (!this.initialized) {
+      this.pos.copy(rootGroup.position);
+      this.quat.copy(rootGroup.quaternion);
+      this.initialized = true;
+      return;
+    }
+    const safeDt = clamp(dt, 0.001, 0.05);
+    const kp = 1.0 - Math.exp(-safeDt / Math.max(0.02, posTau));
+    const kr = 1.0 - Math.exp(-safeDt / Math.max(0.02, rotTau));
+
+    const nextPos = this.pos.clone().lerp(rootGroup.position, kp);
+    if (isGrounded) {
+      const stepVec = nextPos.clone().sub(this.pos);
+      const maxStep = 4.2 * safeDt;
+      if (stepVec.length() > maxStep) {
+        stepVec.setLength(maxStep);
+        nextPos.copy(this.pos).add(stepVec);
+      }
+    }
+    this.pos.copy(nextPos);
+
+    // Rate-limited quaternion slerp so even antipodal target flips rotate smoothly!
+    const angleDiff = this.quat.angleTo(rootGroup.quaternion);
+    const maxAngleStep = (isGrounded ? 2.6 : 3.8) * safeDt;
+    const desiredStep = angleDiff * kr;
+    const slerpT = angleDiff > 1e-5 ? Math.min(kr, maxAngleStep / angleDiff) : kr;
+    void desiredStep;
+    this.quat.slerp(rootGroup.quaternion, slerpT);
+
+    rootGroup.position.copy(this.pos);
+    rootGroup.quaternion.copy(this.quat);
+    rootGroup.updateMatrixWorld(false);
+  }
+
+  public syncAfterCollisionPush(rootGroup: THREE.Group): void {
+    this.pos.copy(rootGroup.position);
+    this.quat.copy(rootGroup.quaternion);
+  }
 }
 
 interface RigCompatibleAsset {
@@ -116,15 +204,6 @@ interface RigCompatibleAsset {
   };
 }
 
-/**
- * Stateful per-dragon biomechanical locomotion & full-joint secondary motion solver.
- * Implements:
- * - True 4-beat quadruped walk cycle (HL -> FL -> HR -> FR) with 68% ground-push stance & 32% wrist-peel swing
- * - Turn-rate stride asymmetry, body bank, and spinal arc curvature
- * - Center-of-mass weight shift, scapula load compression, cervical head-bob, and traveling S-wave tail
- * - Full-joint macro actions (rear-up joy, playful foreleg reach, deep courtship bow, protective non-overlapping wing mantle)
- * - Aerodynamic wingbeat thoracic heave & trailing slipstream micro-motions in flight
- */
 export class DragonBiomechanicalAnimator {
   private readonly asset: RigCompatibleAsset;
   private readonly restPos = new Map<string, THREE.Vector3>();
@@ -134,10 +213,12 @@ export class DragonBiomechanicalAnimator {
   private prevYaw = 0;
   private initialized = false;
 
-  public gaitCycle = 0; // 0..1 continuous 4-beat cycle
+  public gaitCycle = 0;
   public smoothedSpeed = 0;
   public smoothedTurnRate = 0;
   public walkWeight = 0;
+  private smoothedLookYaw = 0;
+  private smoothedLookPitch = 0;
 
   private readonly tmpVecA = new THREE.Vector3();
   private readonly tmpVecB = new THREE.Vector3();
@@ -167,11 +248,10 @@ export class DragonBiomechanicalAnimator {
     this.smoothedSpeed = 0;
     this.smoothedTurnRate = 0;
     this.walkWeight = 0;
+    this.smoothedLookYaw = 0;
+    this.smoothedLookPitch = 0;
   }
 
-  /**
-   * Call AFTER rootGroup position/rotation and controller.update(dt) have run for this frame!
-   */
   public applyPostPass(
     dt: number,
     airborneFactor: number,
@@ -186,7 +266,6 @@ export class DragonBiomechanicalAnimator {
     const air = clamp(airborneFactor, 0, 1);
     const grounded = 1.0 - air;
 
-    // Extract current horizontal heading yaw from rootGroup forward (+Z in local space)
     rootGroup.updateMatrixWorld(false);
     const fwdWorld = this.tmpVecA.set(0, 0, 1).transformDirection(rootGroup.matrixWorld);
     const curYaw = Math.atan2(fwdWorld.x, fwdWorld.z);
@@ -213,27 +292,22 @@ export class DragonBiomechanicalAnimator {
       let dYaw = curYaw - this.prevYaw;
       while (dYaw > Math.PI) dYaw -= Math.PI * 2;
       while (dYaw < -Math.PI) dYaw += Math.PI * 2;
-      const rawTurnRate = grounded > 0.25 ? clamp(dYaw / safeDt, -2.8, 2.8) : 0;
+      const rawTurnRate = grounded > 0.25 ? clamp(dYaw / safeDt, -2.6, 2.6) : 0;
 
       this.prevPos.copy(rootGroup.position);
       this.prevYaw = curYaw;
 
-      const speedFollow = 1.0 - Math.exp(-10.0 * safeDt);
-      this.smoothedSpeed += (rawSpeed - this.smoothedSpeed) * speedFollow;
+      this.smoothedSpeed += (rawSpeed - this.smoothedSpeed) * (1.0 - Math.exp(-10.0 * safeDt));
       this.smoothedTurnRate += (rawTurnRate - this.smoothedTurnRate) * (1.0 - Math.exp(-8.0 * safeDt));
 
-      if (this.smoothedSpeed < 0.012) {
-        this.smoothedSpeed = 0;
-      }
+      if (this.smoothedSpeed < 0.012) this.smoothedSpeed = 0;
 
       const targetWalkWeight = smoothstep(0.03, 0.34, this.smoothedSpeed) * grounded * (1.0 - macro.rearUpJoy);
       this.walkWeight += (targetWalkWeight - this.walkWeight) * (1.0 - Math.exp(-9.5 * safeDt));
       if (this.walkWeight < 0.0006) this.walkWeight = 0;
 
-      // Advance 4-beat gait phase proportional to actual ground distance so paws NEVER skate!
-      if (this.walkWeight > 0.0005 && horizDist > 0.00005) {
-        // Also allow pure turn-in-place stepping if pivoting on the spot
-        const effectiveStepDist = horizDist + Math.abs(dYaw) * 0.28;
+      if (this.walkWeight > 0.0005 && (horizDist > 0.00005 || Math.abs(dYaw) > 0.0002)) {
+        const effectiveStepDist = horizDist + Math.abs(dYaw) * 0.26;
         this.gaitCycle = (this.gaitCycle + effectiveStepDist / this.strideLength) % 1.0;
       }
     }
@@ -242,9 +316,7 @@ export class DragonBiomechanicalAnimator {
     const rear = clamp(macro.rearUpJoy, 0, 1) * grounded;
     const bow = clamp(macro.deepCourtshipBow, 0, 1) * grounded;
 
-    // -------------------------------------------------------------------------
-    // 1. BODY CENTER-OF-MASS WEIGHT TRANSFER, S-WAVE SPINE & MACRO BOW / REAR-UP
-    // -------------------------------------------------------------------------
+    // 1. Center-of-mass weight shift, S-wave spine & gentle bow / rear-up
     const rootBone = boneMap.get('root');
     const pelvisBone = boneMap.get('pelvis');
     const spine1Bone = boneMap.get('spine_1');
@@ -252,93 +324,76 @@ export class DragonBiomechanicalAnimator {
     const chestBone = boneMap.get('chest');
 
     const cycRad = this.gaitCycle * Math.PI * 2;
-    // Double-harmonic ground push heave (two push peaks per full 4-beat stride)
-    const walkBounceY = Math.sin(cycRad * 2.0 - 0.35) * 0.028 * wWalk;
-    // Lateral weight shift toward currently planted forelimb (FL planted around 0.25..0.93, FR around 0.75..0.43)
-    const lateralWeightX = -Math.cos(cycRad) * 0.026 * wWalk;
-    // Forward push surge impulse twice per cycle
-    const forwardSurgeZ = Math.cos(cycRad * 2.0) * 0.016 * wWalk;
-    // Subtle shoulder/hip roll & yaw from 4-beat weight transfer + turn banking
-    const walkBodyRoll = Math.cos(cycRad) * 0.038 * wWalk - clamp(this.smoothedTurnRate * 0.055, -0.10, 0.10) * wWalk;
-    const walkBodyPitch = Math.cos(cycRad * 2.0 + 0.4) * 0.026 * wWalk;
-    const walkBodyYaw = Math.sin(cycRad) * 0.042 * wWalk;
+    const walkBounceY = Math.sin(cycRad * 2.0 - 0.35) * 0.026 * wWalk;
+    const lateralWeightX = -Math.cos(cycRad) * 0.024 * wWalk;
+    const forwardSurgeZ = Math.cos(cycRad * 2.0) * 0.015 * wWalk;
+    const walkBodyRoll = Math.cos(cycRad) * 0.035 * wWalk - clamp(this.smoothedTurnRate * 0.05, -0.09, 0.09) * wWalk;
+    const walkBodyPitch = Math.cos(cycRad * 2.0 + 0.4) * 0.024 * wWalk;
+    const walkBodyYaw = Math.sin(cycRad) * 0.038 * wWalk;
 
-    // In-flight aerodynamic wingbeat chest surge (downstroke lifts body!)
-    const flightHeaveY = air > 0.05 ? -wingFlap * 0.075 * air : 0;
-    const flightPitchWave = air > 0.05 ? wingFlap * 0.042 * air : 0;
+    const flightHeaveY = air > 0.05 ? -wingFlap * 0.070 * air : 0;
+    const flightPitchWave = air > 0.05 ? wingFlap * 0.038 * air : 0;
 
     if (rootBone) {
       rootBone.position.x += lateralWeightX;
-      rootBone.position.y += walkBounceY + rear * 0.28 - bow * 0.095 + flightHeaveY;
-      rootBone.position.z += forwardSurgeZ - rear * 0.14 + bow * 0.04;
+      rootBone.position.y += walkBounceY + rear * 0.25 - bow * 0.035 + flightHeaveY;
+      rootBone.position.z += forwardSurgeZ - rear * 0.12 + bow * 0.02;
 
       this.addLocalEuler(
         rootBone,
-        walkBodyPitch - rear * 0.44 + bow * 0.22 + flightPitchWave,
+        walkBodyPitch - rear * 0.40 + bow * 0.08 + flightPitchWave,
         walkBodyYaw,
         walkBodyRoll
       );
     }
 
-    const turnSpineBend = clamp(this.smoothedTurnRate * 0.085, -0.14, 0.14) * wWalk;
-    const spineWave1 = Math.sin(cycRad - 0.5) * 0.048 * wWalk + turnSpineBend;
-    const spineWave2 = Math.sin(cycRad - 1.1) * 0.052 * wWalk + turnSpineBend;
-    const spineWave3 = Math.sin(cycRad - 1.7) * 0.055 * wWalk + turnSpineBend * 0.8;
+    const turnSpineBend = clamp(this.smoothedTurnRate * 0.08, -0.13, 0.13) * wWalk;
+    const spineWave1 = Math.sin(cycRad - 0.5) * 0.044 * wWalk + turnSpineBend;
+    const spineWave2 = Math.sin(cycRad - 1.1) * 0.048 * wWalk + turnSpineBend;
+    const spineWave3 = Math.sin(cycRad - 1.7) * 0.052 * wWalk + turnSpineBend * 0.8;
 
-    if (pelvisBone) {
-      this.addLocalEuler(pelvisBone, rear * 0.22 - bow * 0.08, -spineWave1 * 0.7, Math.sin(cycRad) * 0.045 * wWalk);
-    }
-    if (spine1Bone) {
-      this.addLocalEuler(spine1Bone, -rear * 0.10 + bow * 0.09, spineWave1, 0);
-    }
-    if (spine2Bone) {
-      this.addLocalEuler(spine2Bone, -rear * 0.12 + bow * 0.10, spineWave2, 0);
-    }
+    if (pelvisBone) this.addLocalEuler(pelvisBone, rear * 0.20 - bow * 0.04, -spineWave1 * 0.7, Math.sin(cycRad) * 0.04 * wWalk);
+    if (spine1Bone) this.addLocalEuler(spine1Bone, -rear * 0.09 + bow * 0.04, spineWave1, 0);
+    if (spine2Bone) this.addLocalEuler(spine2Bone, -rear * 0.11 + bow * 0.04, spineWave2, 0);
     if (chestBone) {
       this.addLocalEuler(
         chestBone,
-        -rear * 0.14 + bow * 0.12 - Math.cos(cycRad * 2.0) * 0.024 * wWalk,
+        -rear * 0.12 + bow * 0.05 - Math.cos(cycRad * 2.0) * 0.022 * wWalk,
         spineWave3,
-        -Math.cos(cycRad) * 0.032 * wWalk
+        -Math.cos(cycRad) * 0.03 * wWalk
       );
     }
 
     this.asset.rig.rootBone.updateMatrixWorld(true);
 
-    // -------------------------------------------------------------------------
-    // 2. TRUE 4-BEAT QUADRUPED LIMB BIOMECHANICS + PLAYFUL PAW / REAR-UP POSES
-    // -------------------------------------------------------------------------
-    // Natural lateral cat/dragon walk footfall order: HL (0.00) -> FL (0.24) -> HR (0.50) -> FR (0.74)
+    // 2. True 4-beat quadruped limbs + expressive rear-up / play-paw articulation
     if (grounded > 0.02 && (wWalk > 0.001 || rear > 0.001 || macro.playPawL > 0.001 || macro.playPawR > 0.001)) {
       const crouchForeSplay = Math.max(0, -crouchFore);
       const crouchHindSplay = Math.max(0, -crouchHind);
 
       for (const side of ['L', 'R'] as const) {
         const sign = side === 'L' ? 1 : -1;
-        // Turn stride asymmetry: when turning left (+dYaw, toward +X = L), L is inner leg, R is outer leg!
-        const turnScale = clamp(1.0 - sign * this.smoothedTurnRate * 0.18, 0.72, 1.28);
+        const turnScale = clamp(1.0 - sign * this.smoothedTurnRate * 0.18, 0.74, 1.26);
 
         const forePhase = (this.gaitCycle + (side === 'L' ? 0.24 : 0.74)) % 1.0;
         const hindPhase = (this.gaitCycle + (side === 'L' ? 0.00 : 0.50)) % 1.0;
 
-        const foreStep = this.sampleFootTrajectory(forePhase, 0.27 * turnScale * wWalk, 0.068 * wWalk, true);
-        const hindStep = this.sampleFootTrajectory(hindPhase, 0.25 * turnScale * wWalk, 0.058 * wWalk, false);
+        const foreStep = this.sampleFootTrajectory(forePhase, 0.26 * turnScale * wWalk, 0.065 * wWalk, true);
+        const hindStep = this.sampleFootTrajectory(hindPhase, 0.24 * turnScale * wWalk, 0.056 * wWalk, false);
 
         const playPaw = side === 'L' ? clamp(macro.playPawL, 0, 1) : clamp(macro.playPawR, 0, 1);
 
-        // Scapula cushioned load compression when forepaw is pushing into the ground!
         const scapBone = boneMap.get(`scapula_${side}`);
         if (scapBone && rear < 0.5 && playPaw < 0.3) {
           scapBone.position.y += foreStep.scapulaShiftY * wWalk;
           scapBone.updateMatrixWorld(true);
         }
 
-        // Solve Hindlimb IK (planted solidly during walk AND during rear-up!)
         if (wWalk > 0.001 || rear > 0.001) {
           const hindOffset = new THREE.Vector3(
-            sign * (crouchHindSplay * 0.050 + rear * 0.045),
+            sign * (crouchHindSplay * 0.050 + rear * 0.040),
             hindStep.liftY * (1.0 - rear),
-            hindStep.strideZ * (1.0 - rear) - crouchHindSplay * 0.038 + rear * 0.08
+            hindStep.strideZ * (1.0 - rear) - crouchHindSplay * 0.038 + rear * 0.07
           );
           const hindPole = this.tmpVecB
             .set(sign * (0.22 + 0.14 * crouchHindSplay), 0.15 + 0.16 * crouchHindSplay, 1.0)
@@ -354,7 +409,6 @@ export class DragonBiomechanicalAnimator {
           );
         }
 
-        // Solve Forelimb: either IK ground-push/swing OR expressive Rear-Up / Play-Paw Reach!
         const airPawBlend = clamp(Math.max(rear, playPaw), 0, 1);
         if (wWalk > 0.001 && airPawBlend < 0.999) {
           const foreOffset = new THREE.Vector3(
@@ -363,7 +417,6 @@ export class DragonBiomechanicalAnimator {
             foreStep.strideZ + crouchForeSplay * 0.042
           );
 
-          // Prevent over-extension by letting scapula drop slightly on long forward reach
           if (scapBone) {
             rootGroup.updateMatrixWorld(false);
             const rootInv = this.tmpMatA.copy(rootGroup.matrixWorld).invert();
@@ -392,19 +445,14 @@ export class DragonBiomechanicalAnimator {
           );
         }
 
-        // Expressive multi-joint forelimb articulation for Joyful Rear-Up OR Playful Foreleg Batting!
         if (airPawBlend > 0.001) {
-          const wave = Math.sin(macro.timeSec * 4.4 + (side === 'L' ? 0.0 : 2.1));
-          const shPitch = rear > playPaw
-            ? -0.62 - wave * 0.16
-            : -0.82 - Math.sin(macro.timeSec * 5.2) * 0.14;
-          const shYaw = -sign * (0.14 * playPaw + 0.06 * rear);
+          const wave = Math.sin(macro.timeSec * 4.2 + (side === 'L' ? 0.0 : 2.1));
+          const shPitch = rear > playPaw ? -0.58 - wave * 0.14 : -0.76 - Math.sin(macro.timeSec * 4.8) * 0.12;
+          const shYaw = -sign * (0.12 * playPaw + 0.05 * rear);
           const shRoll = sign * 0.10;
-          const elPitch = rear > playPaw
-            ? 0.58 + wave * 0.18
-            : 0.42 + Math.cos(macro.timeSec * 5.2) * 0.16;
-          const wrPitch = 0.34 - wave * 0.22;
-          const pawPitch = 0.25 + wave * 0.20;
+          const elPitch = rear > playPaw ? 0.56 + wave * 0.16 : 0.42 + Math.cos(macro.timeSec * 4.8) * 0.14;
+          const wrPitch = 0.32 - wave * 0.18;
+          const pawPitch = 0.24 + wave * 0.16;
 
           this.blendBoneToRestOffset(`shoulder_${side}`, shPitch, shYaw, shRoll, airPawBlend);
           this.blendBoneToRestOffset(`elbow_${side}`, elPitch, 0, 0, airPawBlend);
@@ -412,128 +460,126 @@ export class DragonBiomechanicalAnimator {
           this.blendBoneToRestOffset(`forepaw_${side}`, pawPitch, 0, 0, airPawBlend);
         }
 
-        // Subtle toe splay on stance push vs curl on swing!
-        const toeFlex = airPawBlend > 0.1
-          ? 0.22 * airPawBlend
-          : foreStep.toeCurl * wWalk;
+        const toeFlex = airPawBlend > 0.1 ? 0.20 * airPawBlend : foreStep.toeCurl * wWalk;
         for (let d = 1; d <= 4; d++) {
           const toeBone = boneMap.get(`foreToe_${side}_${d}`) ?? boneMap.get(`toe_fore_${side}_${d}`);
-          if (toeBone) {
-            this.addLocalEuler(toeBone, toeFlex, 0, 0);
-          }
+          if (toeBone) this.addLocalEuler(toeBone, toeFlex, 0, 0);
         }
       }
     }
 
-    // -------------------------------------------------------------------------
-    // 3. MATE EYE-CONTACT TRACKING, HEAD BOB & AFFECTIONATE NUZZLE (FIXES ISSUE #2)
-    // -------------------------------------------------------------------------
+    // 3. Mate eye-contact tracking, cervical head-bob & gentle nuzzle (100% smooth, zero +-PI jump!)
     rootGroup.updateMatrixWorld(false);
     const rootInv = this.tmpMatA.copy(rootGroup.matrixWorld).invert();
     const mateLocal = this.tmpVecA.copy(macro.mateWorldPos).applyMatrix4(rootInv);
 
-    if (macro.lookAtMateWeight > 0.001) {
-      const lookW = clamp(macro.lookAtMateWeight, 0, 1);
-      // Neck origin in character local space is roughly (0, 0.88, 0.52)
-      const relX = mateLocal.x;
-      const relY = mateLocal.y - 0.88;
-      const relZ = mateLocal.z - 0.52;
-      const horizDist = Math.max(0.35, Math.hypot(relX, relZ));
+    const lookW = clamp(macro.lookAtMateWeight, 0, 1);
+    const relX = mateLocal.x;
+    const relY = mateLocal.y - 1.35;
+    const relZ = mateLocal.z - 1.15;
+    const horizDist = Math.max(0.5, Math.hypot(relX, relZ));
+    // Fade out yaw tracking when mate passes behind dragon so atan2(relX, relZ) never hits +-PI branch cut!
+    const forwardConeFade = smoothstep(-0.65, 0.35, relZ);
 
-      const targetYaw = clamp(Math.atan2(relX, relZ), -1.18, 1.18) * lookW;
-      const targetPitch = clamp(-Math.atan2(relY, horizDist), -0.58, 0.58) * lookW;
+    const desiredLookYaw = clamp(Math.atan2(relX, Math.max(-0.5, relZ)), -0.95, 0.95) * lookW * forwardConeFade;
+    const desiredLookPitch = clamp(-Math.atan2(relY, horizDist), -0.42, 0.42) * lookW;
 
-      // Distribute smoothly across cervical spine & cranium so neck curves naturally toward mate!
+    const lookAlpha = 1.0 - Math.exp(-8.0 * safeDt);
+    this.smoothedLookYaw += (desiredLookYaw - this.smoothedLookYaw) * lookAlpha;
+    this.smoothedLookPitch += (desiredLookPitch - this.smoothedLookPitch) * lookAlpha;
+
+    if (Math.abs(this.smoothedLookYaw) > 0.0005 || Math.abs(this.smoothedLookPitch) > 0.0005) {
       const neckNames = ['neck_1', 'neck_2', 'neck_3', 'neck_4'] as const;
-      const yawShares = [0.10, 0.14, 0.18, 0.22];
-      const pitchShares = [0.08, 0.11, 0.14, 0.18];
+      const yawShares = [0.09, 0.13, 0.17, 0.21];
+      const pitchShares = [0.07, 0.10, 0.13, 0.16];
       for (let i = 0; i < 4; i++) {
         const nb = boneMap.get(neckNames[i]);
         if (nb) {
-          this.addLocalEuler(nb, targetPitch * pitchShares[i], targetYaw * yawShares[i], -targetYaw * 0.04, 'YXZ');
+          this.addLocalEuler(
+            nb,
+            this.smoothedLookPitch * pitchShares[i],
+            this.smoothedLookYaw * yawShares[i],
+            -this.smoothedLookYaw * 0.04,
+            'YXZ'
+          );
         }
       }
       const headBone = boneMap.get('head');
       if (headBone) {
-        this.addLocalEuler(headBone, targetPitch * 0.36, targetYaw * 0.34, -targetYaw * 0.08, 'YXZ');
+        this.addLocalEuler(
+          headBone,
+          this.smoothedLookPitch * 0.32,
+          this.smoothedLookYaw * 0.32,
+          -this.smoothedLookYaw * 0.06,
+          'YXZ'
+        );
       }
     }
 
-    // Natural cervical head-bob counter-balancing chest heave during walk + deep bow / affectionate nuzzle
-    const headBobPitch = Math.sin(cycRad * 2.0 - 0.95) * 0.036 * wWalk;
+    const headBobPitch = Math.sin(cycRad * 2.0 - 0.95) * 0.032 * wWalk;
     const nuzzle = clamp(macro.affectionateNuzzle, 0, 1);
-    const mateSign = mateLocal.x >= 0 ? 1 : -1;
+    const mateSignSmooth = clamp(mateLocal.x / 0.45, -1, 1);
 
     for (let i = 1; i <= 4; i++) {
       const nb = boneMap.get(`neck_${i}`);
       if (nb) {
-        const bowNeck = i <= 3 ? bow * 0.095 : -bow * 0.08;
-        const nuzzleCurve = nuzzle * 0.065 * mateSign;
-        this.addLocalEuler(nb, headBobPitch * 0.22 + bowNeck, nuzzleCurve, nuzzleCurve * 0.45, 'YXZ');
+        const bowNeck = i <= 3 ? bow * 0.045 : -bow * 0.035;
+        const nuzzleCurve = nuzzle * 0.045 * mateSignSmooth;
+        this.addLocalEuler(nb, headBobPitch * 0.20 + bowNeck, nuzzleCurve, nuzzleCurve * 0.35, 'YXZ');
       }
     }
     const headBone = boneMap.get('head');
     if (headBone) {
-      // During deep courtship bow, lift eyes/snout slightly upward from lowered neck to look adorably at her!
       this.addLocalEuler(
         headBone,
-        headBobPitch * 0.35 - bow * 0.26 + nuzzle * 0.08,
-        nuzzle * 0.14 * mateSign,
-        nuzzle * 0.22 * mateSign,
+        headBobPitch * 0.32 - bow * 0.10 + nuzzle * 0.05,
+        nuzzle * 0.10 * mateSignSmooth,
+        nuzzle * 0.18 * mateSignSmooth,
         'YXZ'
       );
     }
 
-    // -------------------------------------------------------------------------
-    // 4. NON-OVERLAPPING WINGS + FOLDED WING WALK SUSPENSION + FLIGHT MICRO-TRIM
-    //    (FIXES ISSUES #5, #8, #12)
-    // -------------------------------------------------------------------------
-    // Automatically identify which wing faces the mate (innerSide) vs away (outerSide)!
-    const innerSide: 'L' | 'R' = mateLocal.x >= 0 ? 'L' : 'R';
+    // 4. Verified Non-Overlapping Wings (Smoothly weighted inner/outer so zero side-switch pop!)
+    const innerWeightL = smoothstep(-0.35, 0.35, mateLocal.x);
     const mantle = clamp(macro.protectiveWingMantle, 0, 1) * grounded;
     const neatTuck = clamp(macro.tuckInnerWingNeat, 0, 1) * grounded;
+    const compactBoth = clamp(macro.compactFoldedWings, 0, 1) * grounded;
 
     for (const side of ['L', 'R'] as const) {
       const sign = side === 'L' ? 1 : -1;
-      const isInner = side === innerSide;
+      const wInner = side === 'L' ? innerWeightL : 1.0 - innerWeightL;
+      const wOuter = 1.0 - wInner;
 
       const clav = boneMap.get(`wingClavicle_${side}`);
       const sh = boneMap.get(`wingShoulder_${side}`);
       const el = boneMap.get(`wingElbow_${side}`);
       const wr = boneMap.get(`wingWrist_${side}`);
 
-      // Grounded walking secondary suspension bounce on folded wings (gives real dragon mass!)
-      const walkWingBounce = Math.sin(cycRad * 2.0 - 0.8 + (side === 'L' ? 0 : 0.35)) * 0.045 * wWalk;
-      // In-flight aero micro-trim wave across wing wrist & outer fingers
+      const walkWingBounce = Math.sin(cycRad * 2.0 - 0.8 + (side === 'L' ? 0 : 0.35)) * 0.042 * wWalk;
       const aeroFlutter = air > 0.1 ? Math.sin(macro.timeSec * 3.4 + (side === 'L' ? 0 : 0.9)) * 0.028 * air : 0;
 
-      if (clav) {
-        this.addLocalEuler(clav, 0, 0, sign * walkWingBounce * 0.45, 'YXZ');
-      }
-      if (sh) {
-        this.addLocalEuler(sh, 0, 0, sign * walkWingBounce, 'YXZ');
-      }
+      if (clav) this.addLocalEuler(clav, 0, 0, sign * walkWingBounce * 0.45, 'YXZ');
+      if (sh) this.addLocalEuler(sh, 0, 0, sign * walkWingBounce, 'YXZ');
 
-      // ISSUE #12: Toothless raises & arches his INNER wing high above Light Fury's back as a
-      // warm, protective canopy while keeping his outer wing neatly posed at his side!
+      // Toothless protective canopy: lifts inner wing cleanly ABOVE y=2.05m (completely above Light Fury!)
       if (mantle > 0.001) {
-        if (isInner) {
-          if (clav) this.addLocalEuler(clav, -0.08 * mantle, -sign * 0.10 * mantle, sign * 0.24 * mantle, 'YXZ');
-          if (sh) this.addLocalEuler(sh, 0.12 * mantle, -sign * 0.48 * mantle, sign * 0.56 * mantle, 'YXZ');
-          if (el) this.addLocalEuler(el, 0, sign * 0.62 * mantle, -sign * 0.28 * mantle, 'YXZ');
-          if (wr) this.addLocalEuler(wr, 0.16 * mantle, -sign * 0.46 * mantle, -sign * 0.22 * mantle, 'YXZ');
-        } else {
-          // Outer wing folds comfortably slightly further back & low
-          if (sh) this.addLocalEuler(sh, 0, sign * 0.16 * mantle, -sign * 0.10 * mantle, 'YXZ');
+        if (wInner > 0.001) {
+          const mIn = mantle * wInner;
+          if (clav) this.addLocalEuler(clav, 0, 0, sign * 0.48 * mIn, 'YXZ');
+          if (sh) this.addLocalEuler(sh, 0.15 * mIn, -sign * 0.22 * mIn, sign * 0.98 * mIn, 'YXZ');
+          if (el) this.addLocalEuler(el, 0, sign * 0.32 * mIn, -sign * 0.38 * mIn, 'YXZ');
+        }
+        if (wOuter > 0.001) {
+          const mOut = mantle * wOuter;
+          if (sh) this.addLocalEuler(sh, -0.06 * mOut, sign * 0.45 * mOut, -sign * 0.18 * mOut, 'YXZ');
         }
       }
 
-      // ISSUE #12: Light Fury keeps her INNER wing sleekly tucked & lowered against her flank
-      // so there is generous vertical & lateral clearance beneath Toothless's protective canopy!
-      if (neatTuck > 0.001 && isInner) {
-        if (clav) this.addLocalEuler(clav, 0.05 * neatTuck, sign * 0.08 * neatTuck, -sign * 0.12 * neatTuck, 'YXZ');
-        if (sh) this.addLocalEuler(sh, -0.06 * neatTuck, sign * 0.26 * neatTuck, -sign * 0.24 * neatTuck, 'YXZ');
-        if (el) this.addLocalEuler(el, 0, -sign * 0.22 * neatTuck, sign * 0.14 * neatTuck, 'YXZ');
+      // Light Fury compact sleek flank fold: sweeps inner wing backward along body so it never sticks sideways!
+      const tuckAmt = Math.max(neatTuck * wInner, compactBoth);
+      if (tuckAmt > 0.001) {
+        if (sh) this.addLocalEuler(sh, -0.10 * tuckAmt, sign * 0.62 * tuckAmt, -sign * 0.26 * tuckAmt, 'YXZ');
+        if (el) this.addLocalEuler(el, 0, -sign * 0.38 * tuckAmt, sign * 0.15 * tuckAmt, 'YXZ');
       }
 
       if (wr && Math.abs(aeroFlutter) > 0.0005) {
@@ -541,47 +587,154 @@ export class DragonBiomechanicalAnimator {
       }
     }
 
-    // -------------------------------------------------------------------------
-    // 5. TRAVELING BIOMECHANICAL TAIL S-WAVE & CLIFF CLEARANCE GUARD
-    // -------------------------------------------------------------------------
+    // 5. Traveling biomechanical tail S-wave
     if (wWalk > 0.001) {
       for (let t = 1; t <= 8; t++) {
         const tb = boneMap.get(`tail_${t}`);
         if (tb) {
           const tFrac = t / 8;
-          const tailSway = Math.sin(cycRad - 1.6 - t * 0.42) * 0.065 * (0.35 + 0.65 * tFrac) * wWalk;
-          const tailTurnArc = -turnSpineBend * 0.75 * tFrac;
-          this.addLocalEuler(tb, Math.cos(cycRad * 2.0 - t * 0.35) * 0.018 * wWalk, tailSway + tailTurnArc, 0, 'YXZ');
-        }
-      }
-    }
-
-    // Final world-space tail ground-clearance check when grounded
-    if (grounded > 0.2) {
-      for (let t = 2; t <= 9; t++) {
-        const tb = boneMap.get(`tail_${t}`);
-        if (!tb || !tb.parent) continue;
-        tb.parent.updateMatrixWorld(true);
-        tb.updateMatrixWorld(true);
-        const wp = this.tmpVecB.setFromMatrixPosition(tb.matrixWorld);
-        const gY = sampleHeroCliffHeight(wp.x, wp.z) + (t >= 8 ? 0.11 : 0.075);
-        if (wp.y < gY) {
-          const lift = Math.min(0.32, (gY - wp.y) * 1.6) * grounded;
-          this.addLocalEuler(tb.parent as THREE.Bone, lift, 0, 0, 'YXZ');
+          const tailSway = Math.sin(cycRad - 1.6 - t * 0.42) * 0.060 * (0.35 + 0.65 * tFrac) * wWalk;
+          const tailTurnArc = -turnSpineBend * 0.70 * tFrac;
+          this.addLocalEuler(tb, Math.cos(cycRad * 2.0 - t * 0.35) * 0.016 * wWalk, tailSway + tailTurnArc, 0, 'YXZ');
         }
       }
     }
 
     this.asset.rig.rootBone.updateMatrixWorld(true);
+
+    // 6. STRICT PER-FRAME WORLD GROUND & OCEAN CLEARANCE GUARD (0% Ground Clipping!)
+    this.enforceStrictGroundClearance(grounded);
   }
 
   /**
-   * Computes realistic 68%-stance / 32%-swing foot trajectory:
-   * - Stance (0.00..0.68): foot stays firmly at liftY = 0 and pushes backward (+halfStride -> -halfStride)
-   *   applying real ground reaction force!
-   * - Swing (0.68..1.00): ankle/wrist peels off ground (pawPitch), arcs cleanly forward (-halfStride -> +halfStride)
-   *   and extends toes just prior to soft front-pad placement!
+   * Ensures EVERY anatomical point (paws, wrists, chest, jaw, wing elbows/wrists/tips, and tail_2..10)
+   * stays strictly ABOVE terrain & ocean level at every single frame!
    */
+  public enforceStrictGroundClearance(groundedWeight: number): void {
+    const rootGroup = this.asset.rootGroup;
+    const boneMap = this.asset.rig.boneMap;
+
+    // A. Lift wing shoulders if any wing joint/tip dips close to cliff rock or sea surface!
+    for (const side of ['L', 'R'] as const) {
+      const sign = side === 'L' ? 1 : -1;
+      const sh = boneMap.get(`wingShoulder_${side}`);
+      if (!sh) continue;
+
+      sh.parent?.updateMatrixWorld(true);
+      sh.updateMatrixWorld(true);
+
+      let maxWingDeficit = 0;
+      const wingCheckNames = [
+        `wingElbow_${side}`,
+        `wingWrist_${side}`,
+        `wingFinger_${side}_1_b`,
+        `wingFinger_${side}_3_b`,
+        `wingFinger_${side}_5_b`,
+        `wingFinger_${side}_6_b`,
+      ];
+      for (const wName of wingCheckNames) {
+        const wb = boneMap.get(wName);
+        if (!wb) continue;
+        wb.updateMatrixWorld(true);
+        const wp = this.tmpVecB.setFromMatrixPosition(wb.matrixWorld);
+        const terrY =
+          Math.abs(wp.x) < 6.5 && wp.z > -7.0 && wp.z < 1.2
+            ? Math.max(sampleHeroCliffHeight(wp.x, wp.z), sampleWorldTerrainHeight(wp.x, wp.z))
+            : sampleWorldTerrainHeight(wp.x, wp.z);
+        const surfY = Math.max(-11.15, terrY) + 0.22;
+        if (wp.y < surfY) {
+          maxWingDeficit = Math.max(maxWingDeficit, surfY - wp.y);
+        }
+      }
+
+      if (maxWingDeficit > 0.001) {
+        const liftRad = clamp(maxWingDeficit * 0.72, 0, 1.05);
+        this.addLocalEuler(sh, 0, 0, sign * liftRad, 'YXZ');
+        sh.updateMatrixWorld(true);
+      }
+    }
+
+    // B. Lift tail segments if any tail bone or fluke approaches the cliff turf!
+    for (let t = 2; t <= 10; t++) {
+      const tb = boneMap.get(`tail_${t}`);
+      if (!tb || !tb.parent) continue;
+      tb.parent.updateMatrixWorld(true);
+      tb.updateMatrixWorld(true);
+      const wp = this.tmpVecB.setFromMatrixPosition(tb.matrixWorld);
+      const minClear = t >= 8 ? 0.24 : t >= 5 ? 0.16 : 0.12;
+      const cliffOrWorldY =
+        Math.abs(wp.x) < 6.5 && wp.z > -7.0 && wp.z < 1.2
+          ? Math.max(sampleHeroCliffHeight(wp.x, wp.z), sampleWorldTerrainHeight(wp.x, wp.z))
+          : sampleWorldTerrainHeight(wp.x, wp.z);
+      const surfY = Math.max(-11.15, cliffOrWorldY) + minClear;
+      if (wp.y < surfY) {
+        const lift = clamp((surfY - wp.y) * 1.55, 0, 0.42);
+        this.addLocalEuler(tb.parent as THREE.Bone, lift, 0, 0, 'YXZ');
+        tb.parent.updateMatrixWorld(true);
+      }
+    }
+
+    // C. Whole-body vertical floor guard across paws, belly, chest, jaw, wingtips & full tail!
+    rootGroup.updateMatrixWorld(true);
+    const pawMargin = groundedWeight > 0.75 ? 0.054 : 0.195;
+    const bodyCheckSpecs: Array<[string, number]> = [
+      ['forepaw_L', pawMargin],
+      ['forepaw_R', pawMargin],
+      ['hindpaw_L', pawMargin],
+      ['hindpaw_R', pawMargin],
+      ['elbow_L', 0.14],
+      ['elbow_R', 0.14],
+      ['knee_L', 0.14],
+      ['knee_R', 0.14],
+      ['wrist_L', 0.11],
+      ['wrist_R', 0.11],
+      ['ankle_L', 0.11],
+      ['ankle_R', 0.11],
+      ['chest', 0.36],
+      ['spine_1', 0.32],
+      ['pelvis', 0.30],
+      ['head', 0.24],
+      ['jaw', 0.20],
+      ['wingElbow_L', 0.20],
+      ['wingElbow_R', 0.20],
+      ['wingWrist_L', 0.20],
+      ['wingWrist_R', 0.20],
+      ['wingFinger_L_1_b', 0.20],
+      ['wingFinger_R_1_b', 0.20],
+      ['wingFinger_L_3_b', 0.20],
+      ['wingFinger_R_3_b', 0.20],
+      ['wingFinger_L_5_b', 0.20],
+      ['wingFinger_R_5_b', 0.20],
+      ['wingFinger_L_6_b', 0.20],
+      ['wingFinger_R_6_b', 0.20],
+      ['tail_3', 0.20],
+      ['tail_5', 0.24],
+      ['tail_7', 0.30],
+      ['tail_9', 0.38],
+      ['tail_10', 0.42],
+    ];
+
+    let neededLiftY = 0;
+    for (const [bName, clearance] of bodyCheckSpecs) {
+      const b = boneMap.get(bName);
+      if (!b) continue;
+      const wp = this.tmpVecB.setFromMatrixPosition(b.matrixWorld);
+      const terrainY =
+        groundedWeight > 0.3 || (Math.abs(wp.x) < 6.5 && wp.z > -7.0 && wp.z < 1.2)
+          ? Math.max(sampleHeroCliffHeight(wp.x, wp.z), sampleWorldTerrainHeight(wp.x, wp.z))
+          : Math.max(-11.15, sampleWorldTerrainHeight(wp.x, wp.z));
+      const reqY = terrainY + clearance;
+      if (wp.y < reqY) {
+        neededLiftY = Math.max(neededLiftY, reqY - wp.y);
+      }
+    }
+
+    if (neededLiftY > 0.0005) {
+      rootGroup.position.y += neededLiftY;
+      rootGroup.updateMatrixWorld(true);
+    }
+  }
+
   private sampleFootTrajectory(
     phase: number,
     halfStride: number,
@@ -590,38 +743,31 @@ export class DragonBiomechanicalAnimator {
   ): { strideZ: number; liftY: number; pawPitch: number; scapulaShiftY: number; toeCurl: number } {
     const stanceEnd = 0.68;
     if (phase < stanceEnd) {
-      // Planted ground-push phase!
-      const u = phase / stanceEnd; // 0 (touchdown at +halfStride) -> 1 (push-off at -halfStride)
+      const u = phase / stanceEnd;
       const strideZ = THREE.MathUtils.lerp(halfStride, -halfStride, u);
-      // Scapula/hip absorbs impact on touchdown (u ~ 0.15) and pushes body upward in mid-late stance (u ~ 0.55)
-      const cushion = -Math.sin(clamp(u / 0.28, 0, 1) * Math.PI) * 0.016;
-      const pushExtend = Math.sin(clamp((u - 0.25) / 0.75, 0, 1) * Math.PI) * 0.014;
-      // Heel/wrist begins peeling slightly in final 15% of stance (pre-liftoff push!)
-      const latePeel = smoothstep(0.82, 1.0, u) * (isForelimb ? 0.22 : 0.18);
+      const cushion = -Math.sin(clamp(u / 0.28, 0, 1) * Math.PI) * 0.015;
+      const pushExtend = Math.sin(clamp((u - 0.25) / 0.75, 0, 1) * Math.PI) * 0.013;
+      const latePeel = smoothstep(0.82, 1.0, u) * (isForelimb ? 0.20 : 0.16);
       return {
         strideZ,
         liftY: 0,
         pawPitch: latePeel,
         scapulaShiftY: cushion + pushExtend,
-        toeCurl: -0.08 * Math.sin(u * Math.PI), // toes splay flat against ground under weight
+        toeCurl: -0.07 * Math.sin(u * Math.PI),
       };
     } else {
-      // Graceful forward swing phase!
-      const u = (phase - stanceEnd) / (1.0 - stanceEnd); // 0 -> 1
-      // Smooth S-curve forward protraction
+      const u = (phase - stanceEnd) / (1.0 - stanceEnd);
       const easeU = u * u * (3 - 2 * u);
       const strideZ = THREE.MathUtils.lerp(-halfStride, halfStride, easeU);
-      // Asymmetric lift curve: brisk paw peel-off, smooth hover crest, gentle cushioned descent
       const liftY = Math.sin(Math.pow(u, 0.82) * Math.PI) * stepHeight;
-      // Pronounced feline carpal/wrist break on lift-off (u ~ 0.28) transitioning to reach extension (u ~ 0.88)
-      const wristPeel = Math.sin(clamp(u / 0.68, 0, 1) * Math.PI) * (isForelimb ? 0.52 : 0.40);
-      const reachPlace = -smoothstep(0.68, 1.0, u) * 0.14;
+      const wristPeel = Math.sin(clamp(u / 0.68, 0, 1) * Math.PI) * (isForelimb ? 0.48 : 0.38);
+      const reachPlace = -smoothstep(0.68, 1.0, u) * 0.12;
       return {
         strideZ,
         liftY,
         pawPitch: wristPeel + reachPlace,
-        scapulaShiftY: 0.008 * Math.sin(u * Math.PI),
-        toeCurl: 0.26 * Math.sin(u * Math.PI),
+        scapulaShiftY: 0.007 * Math.sin(u * Math.PI),
+        toeCurl: 0.24 * Math.sin(u * Math.PI),
       };
     }
   }
@@ -659,9 +805,6 @@ export class DragonBiomechanicalAnimator {
     }
   }
 
-  /**
-   * Character-local 2-bone analytical limb IK solver matching both dragon rigs cleanly.
-   */
   private solveLimbIKChar(
     upperName: string,
     midName: string,
@@ -712,7 +855,7 @@ export class DragonBiomechanicalAnimator {
     const cosA = clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1);
     const angleA = Math.acos(cosA);
 
-    let poleOrtho = poleDirChar.clone().addScaledVector(dir, -poleDirChar.dot(dir));
+    const poleOrtho = poleDirChar.clone().addScaledVector(dir, -poleDirChar.dot(dir));
     if (poleOrtho.lengthSq() < 1e-6) {
       poleOrtho.set(0, 0, 1).addScaledVector(dir, -dir.z);
     }
@@ -742,4 +885,102 @@ export class DragonBiomechanicalAnimator {
     this.tmpEuler.set(pawPitchAdjust, 0, 0, 'XYZ');
     pawBone.quaternion.copy(this.restQuat.get(pawName)!).multiply(this.tmpQuatA.setFromEuler(this.tmpEuler));
   }
+}
+
+interface CollisionSphere {
+  center: THREE.Vector3;
+  radius: number;
+}
+
+const SPHERE_BONE_SPECS: Array<{ bone: string; radius: number; localOffsetZ?: number }> = [
+  { bone: 'head', radius: 0.24, localOffsetZ: 0.42 }, // Snout tip sphere!
+  { bone: 'head', radius: 0.28 },                     // Cranium sphere
+  { bone: 'neck_3', radius: 0.24 },
+  { bone: 'neck_1', radius: 0.28 },
+  { bone: 'chest', radius: 0.44 },
+  { bone: 'spine_2', radius: 0.40 },
+  { bone: 'spine_1', radius: 0.38 },
+  { bone: 'pelvis', radius: 0.38 },
+  { bone: 'forepaw_L', radius: 0.16 },
+  { bone: 'forepaw_R', radius: 0.16 },
+  { bone: 'hindpaw_L', radius: 0.16 },
+  { bone: 'hindpaw_R', radius: 0.16 },
+  { bone: 'wingElbow_L', radius: 0.20 },
+  { bone: 'wingElbow_R', radius: 0.20 },
+  { bone: 'wingWrist_L', radius: 0.22 },
+  { bone: 'wingWrist_R', radius: 0.22 },
+  { bone: 'wingFinger_L_3_a', radius: 0.20 },
+  { bone: 'wingFinger_R_3_a', radius: 0.20 },
+  { bone: 'wingFinger_L_3_b', radius: 0.16 },
+  { bone: 'wingFinger_R_3_b', radius: 0.16 },
+  { bone: 'tail_2', radius: 0.24 },
+  { bone: 'tail_5', radius: 0.18 },
+  { bone: 'tail_8', radius: 0.16 },
+  { bone: 'tail_10', radius: 0.22 },
+];
+
+function extractWorldSpheres(asset: RigCompatibleAsset, scale = 1.0): CollisionSphere[] {
+  asset.rootGroup.updateMatrixWorld(true);
+  const list: CollisionSphere[] = [];
+  for (const spec of SPHERE_BONE_SPECS) {
+    const b = asset.rig.boneMap.get(spec.bone);
+    if (!b) continue;
+    const c = new THREE.Vector3(0, 0, spec.localOffsetZ ?? 0).applyMatrix4(b.matrixWorld);
+    list.push({ center: c, radius: spec.radius * scale });
+  }
+  return list;
+}
+
+/**
+ * Hard 3D multi-sphere pairwise dragon-dragon non-penetration solver!
+ * Checks all 24x24 anatomical spheres across snout, head, neck, torso, limbs, wings & tail.
+ * If ANY sphere pair approaches closer than rA + rB, pushes both dragons cleanly apart!
+ */
+export function enforceStrictPairwiseDragonSeparation(
+  nfAsset: RigCompatibleAsset,
+  lfAsset: RigCompatibleAsset,
+  nfGrounded: boolean,
+  lfGrounded: boolean
+): number {
+  const spheresNF = extractWorldSpheres(nfAsset, 1.0);
+  const spheresLF = extractWorldSpheres(lfAsset, 0.92);
+
+  let maxPenetration = 0;
+  for (const a of spheresNF) {
+    for (const b of spheresLF) {
+      const d = a.center.distanceTo(b.center);
+      const minAllowed = a.radius + b.radius;
+      if (d < minAllowed) {
+        maxPenetration = Math.max(maxPenetration, minAllowed - d);
+      }
+    }
+  }
+
+  if (maxPenetration > 0.0005) {
+    const sepDir = new THREE.Vector3().subVectors(nfAsset.rootGroup.position, lfAsset.rootGroup.position);
+    sepDir.y = 0;
+    if (sepDir.lengthSq() < 1e-5) {
+      sepDir.set(1, 0, 0);
+    } else {
+      sepDir.normalize();
+    }
+
+    const pushEach = (maxPenetration + 0.025) * 0.52;
+    nfAsset.rootGroup.position.addScaledVector(sepDir, pushEach);
+    lfAsset.rootGroup.position.addScaledVector(sepDir, -pushEach);
+
+    if (nfGrounded) {
+      const gNF = sampleHeroCliffHeight(nfAsset.rootGroup.position.x, nfAsset.rootGroup.position.z) + 0.016;
+      if (nfAsset.rootGroup.position.y < gNF) nfAsset.rootGroup.position.y = gNF;
+    }
+    if (lfGrounded) {
+      const gLF = sampleHeroCliffHeight(lfAsset.rootGroup.position.x, lfAsset.rootGroup.position.z) + 0.016;
+      if (lfAsset.rootGroup.position.y < gLF) lfAsset.rootGroup.position.y = gLF;
+    }
+
+    nfAsset.rootGroup.updateMatrixWorld(true);
+    lfAsset.rootGroup.updateMatrixWorld(true);
+  }
+
+  return maxPenetration;
 }

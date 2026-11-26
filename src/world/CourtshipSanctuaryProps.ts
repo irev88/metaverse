@@ -1,14 +1,13 @@
 import * as THREE from 'three';
 import { sampleHeroCliffHeight } from './NordicCliffWorld';
 
-export const SANCTUARY_CENTER_Z = -2.25;
+export const SANCTUARY_CENTER_Z = -1.85;
 
 export interface CourtshipSanctuaryController {
   group: THREE.Group;
   setEtchProgress: (progress: number) => void;
   setAcceptanceGlow: (glow: number) => void;
   setWildflowerBloom: (bloom: number) => void;
-  /** 0..1 post-"Yes" radial wave spawning hundreds of brand-new celebration blossoms near the dragons! */
   setCelebrationFlowerWave: (wave: number) => void;
   setFadeOut: (fade: number) => void;
   triggerResonanceWave: (origin?: THREE.Vector3) => void;
@@ -22,17 +21,46 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
   group.name = 'CourtshipSanctuaryProps';
 
   // ==========================================================================
-  // 1. TERRAIN-CONFORMING ETCHABLE VOLCANIC SAND-HEART SIGIL (Safe Plateau z=-2.25)
+  // 1. ORGANIC CIRCULAR TERRAIN-CONFORMING SAND-HEART & FAIRY-RING DISC
+  //    (Uses a radially subdivided circular mesh + soft organic radial fade
+  //     so there is NEVER any artificial rectangular boundary!)
   // ==========================================================================
-  const sandGeo = new THREE.PlaneGeometry(2.75, 2.50, 40, 40);
-  sandGeo.rotateX(-Math.PI * 0.5);
-  const sPos = sandGeo.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < sPos.count; i++) {
-    const lx = sPos.getX(i);
-    const lz = sPos.getZ(i) + SANCTUARY_CENTER_Z;
-    const gy = sampleHeroCliffHeight(lx, lz);
-    sPos.setXYZ(i, lx, gy + 0.022, lz);
+  const DISC_RADIUS = 3.15;
+  const RADIAL_SEGS = 84;
+  const RING_SEGS = 28;
+  const discPositions: number[] = [];
+  const discUvs: number[] = [];
+  const discIndices: number[] = [];
+
+  for (let r = 0; r <= RING_SEGS; r++) {
+    const rFrac = r / RING_SEGS;
+    const rad = rFrac * DISC_RADIUS;
+    for (let s = 0; s <= RADIAL_SEGS; s++) {
+      const theta = (s / RADIAL_SEGS) * Math.PI * 2;
+      const lx = Math.cos(theta) * rad;
+      const lzLocal = Math.sin(theta) * rad;
+      const wz = lzLocal + SANCTUARY_CENTER_Z;
+      const gy = sampleHeroCliffHeight(lx, wz);
+      discPositions.push(lx, gy + 0.022, wz);
+      discUvs.push(0.5 + (lx / (DISC_RADIUS * 2.0)), 0.5 + (lzLocal / (DISC_RADIUS * 2.0)));
+    }
   }
+
+  const stride = RADIAL_SEGS + 1;
+  for (let r = 0; r < RING_SEGS; r++) {
+    for (let s = 0; s < RADIAL_SEGS; s++) {
+      const a = r * stride + s;
+      const b = a + stride;
+      const c = a + 1;
+      const d = b + 1;
+      discIndices.push(a, b, c, c, b, d);
+    }
+  }
+
+  const sandGeo = new THREE.BufferGeometry();
+  sandGeo.setAttribute('position', new THREE.Float32BufferAttribute(discPositions, 3));
+  sandGeo.setAttribute('uv', new THREE.Float32BufferAttribute(discUvs, 2));
+  sandGeo.setIndex(discIndices);
   sandGeo.computeVertexNormals();
 
   const sandUniforms = {
@@ -46,6 +74,7 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
     uniforms: sandUniforms,
     transparent: true,
     depthWrite: false,
+    fog: false,
     blending: THREE.AdditiveBlending,
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -61,11 +90,37 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
       uniform float uFade;
       varying vec2 vUv;
 
+      float hash21(vec2 p) {
+        p = fract(p * vec2(234.34, 435.345));
+        p += dot(p, p + 34.23);
+        return fract(p.x * p.y);
+      }
+
+      float valueNoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = hash21(i);
+        float b = hash21(i + vec2(1.0, 0.0));
+        float c = hash21(i + vec2(0.0, 1.0));
+        float d = hash21(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+      }
+
       void main() {
         if (uEtchProgress <= 0.001) discard;
 
-        vec2 p = (vUv - 0.5) * vec2(2.8, -2.7);
-        p.y += 0.18;
+        // Normalized disc space (-1 .. +1), guaranteed circular fade to exact 0 well inside rim!
+        vec2 centered = (vUv - 0.5) * 2.0;
+        float rNorm = length(centered);
+        if (rNorm >= 0.96) discard;
+
+        float nWarp = (valueNoise(centered * 4.5 + uTime * 0.08) - 0.5) * 0.14;
+        float circularFeather = smoothstep(0.95, 0.46, rNorm + nWarp);
+
+        // Heart coordinates scaled gracefully inside the center of the circular glade
+        vec2 p = centered * vec2(2.35, -2.25);
+        p.y += 0.16;
 
         float minDist = 99.0;
         float bestFrac = 0.0;
@@ -77,9 +132,9 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
           float sa = sin(a);
           float hx = 16.0 * sa * sa * sa;
           float hy = 13.0 * cos(a) - 5.0 * cos(2.0 * a) - 2.0 * cos(3.0 * a) - cos(4.0 * a);
-          vec2 hp = vec2(hx, hy) * 0.064;
-          hp.x += sin(a * 5.0) * 0.015;
-          hp.y += cos(a * 4.0) * 0.013;
+          vec2 hp = vec2(hx, hy) * 0.056;
+          hp.x += sin(a * 5.0) * 0.012;
+          hp.y += cos(a * 4.0) * 0.011;
           float d = length(p - hp);
           if (d < minDist) {
             minDist = d;
@@ -87,18 +142,28 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
           }
         }
 
-        float grooveCore = smoothstep(0.068, 0.012, minDist);
-        float grooveHalo = smoothstep(0.24, 0.0, minDist) * (0.36 + 0.64 * uAcceptanceGlow);
-        float tipSpark = smoothstep(0.08, 0.0, abs(bestFrac - uEtchProgress)) * smoothstep(0.13, 0.0, minDist);
-        float pulse = 0.85 + 0.15 * sin(uTime * 2.6 - bestFrac * 12.56);
+        float grooveCore = smoothstep(0.058, 0.010, minDist);
+        float grooveHalo = smoothstep(0.20, 0.0, minDist) * (0.32 + 0.68 * uAcceptanceGlow);
+        float tipSpark = smoothstep(0.08, 0.0, abs(bestFrac - uEtchProgress)) * smoothstep(0.12, 0.0, minDist);
 
-        vec3 etchCyan = vec3(0.26, 0.80, 1.0);
-        vec3 warmRoseGold = mix(vec3(1.0, 0.56, 0.78), vec3(1.0, 0.86, 0.50), 0.5 + 0.5 * sin(bestFrac * 6.283 + uTime * 1.4));
+        // Soft organic circular fairy-ring stardust wreath around the heart
+        float wreathRing = exp(-pow((rNorm - 0.62 + nWarp * 0.45) * 7.5, 2.0)) * valueNoise(centered * 9.0 - uTime * 0.2);
+        float wreathGlow = wreathRing * 0.28 * (0.35 + 0.65 * uAcceptanceGlow) * smoothstep(0.2, 1.0, uEtchProgress);
+
+        float pulse = 0.86 + 0.14 * sin(uTime * 2.5 - bestFrac * 12.56);
+
+        vec3 etchCyan = vec3(0.28, 0.82, 1.0);
+        vec3 warmRoseGold = mix(
+          vec3(1.0, 0.36, 0.66),
+          vec3(1.0, 0.86, 0.48),
+          0.5 + 0.5 * sin(bestFrac * 6.283 + uTime * 1.4)
+        );
         vec3 col = mix(etchCyan, warmRoseGold, uAcceptanceGlow);
-        col += vec3(0.85, 0.96, 1.0) * tipSpark * (1.0 - smoothstep(0.96, 1.0, uEtchProgress)) * 1.5;
+        col += vec3(0.88, 0.97, 1.0) * tipSpark * (1.0 - smoothstep(0.96, 1.0, uEtchProgress)) * 1.45;
 
-        float alpha = (grooveCore * (0.72 + 0.48 * uAcceptanceGlow) + grooveHalo * 0.60 + tipSpark * 0.9) * pulse * uFade;
-        if (alpha < 0.004) discard;
+        float alpha = (grooveCore * (0.76 + 0.44 * uAcceptanceGlow) + grooveHalo * 0.55 + tipSpark * 0.88 + wreathGlow)
+          * pulse * circularFeather * uFade;
+        if (alpha < 0.003) discard;
         gl_FragColor = vec4(col * alpha, alpha);
       }
     `,
@@ -109,31 +174,30 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
   group.add(sandMesh);
 
   // ==========================================================================
-  // 2. 520 BIOLUMINESCENT CLIFF FLOWERS (180 Ambient + 340 NEW Post-"Yes" Blossoms!)
+  // 2. 560 ORGANIC CIRCULAR FAIRY-RING & WILDFLOWER CLUSTERS
+  //    (Golden-angle phyllotaxis + natural wavy circular lobes — ZERO rectangular clamping!)
   // ==========================================================================
-  const AMBIENT_FLOWERS = 180;
-  const CELEBRATION_FLOWERS = 340;
+  const AMBIENT_FLOWERS = 200;
+  const CELEBRATION_FLOWERS = 360;
   const FLOWER_COUNT = AMBIENT_FLOWERS + CELEBRATION_FLOWERS;
 
-  // Multi-petal star-cup blossom geometry with stem & twin leaves!
   const petalParts: THREE.BufferGeometry[] = [];
-  const stemGeo = new THREE.CylinderGeometry(0.008, 0.012, 0.14, 5);
-  stemGeo.translate(0, -0.065, 0);
+  const stemGeo = new THREE.CylinderGeometry(0.007, 0.011, 0.13, 5);
+  stemGeo.translate(0, -0.06, 0);
   petalParts.push(stemGeo);
 
   for (let p = 0; p < 6; p++) {
-    const pGeo = new THREE.ConeGeometry(0.052, 0.115, 4);
-    pGeo.scale(1.0, 0.35, 0.62);
+    const pGeo = new THREE.ConeGeometry(0.050, 0.112, 4);
+    pGeo.scale(1.0, 0.34, 0.62);
     pGeo.rotateX(Math.PI * 0.36);
-    pGeo.translate(0, 0.025, 0.048);
+    pGeo.translate(0, 0.025, 0.046);
     pGeo.rotateY((p / 6) * Math.PI * 2);
     petalParts.push(pGeo);
   }
-  const coreGeo = new THREE.OctahedronGeometry(0.032, 0);
+  const coreGeo = new THREE.OctahedronGeometry(0.030, 0);
   coreGeo.translate(0, 0.028, 0);
   petalParts.push(coreGeo);
 
-  // Merge lightweight sub-parts into one single draw-call geometry!
   let totalVerts = 0;
   for (const g of petalParts) {
     const nonIdx = g.index ? g.toNonIndexed() : g;
@@ -159,10 +223,10 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
 
   const flowerMat = new THREE.MeshStandardMaterial({
     color: 0xffffff,
-    emissive: 0xffe4f2,
-    emissiveIntensity: 0.72,
-    roughness: 0.32,
-    metalness: 0.05,
+    emissive: 0xffddee,
+    emissiveIntensity: 0.68,
+    roughness: 0.34,
+    metalness: 0.04,
     transparent: true,
     opacity: 0.98,
   });
@@ -183,72 +247,91 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
   }
   const flowerSeeds: FlowerSeed[] = [];
   const palette = [
-    new THREE.Color(0x8ae8ff), // Aurora cyan
-    new THREE.Color(0xff92c2), // Wild rose-pink
-    new THREE.Color(0xffe082), // Golden lotus
+    new THREE.Color(0xff4d8d), // Vivid wild rose-pink
+    new THREE.Color(0xff92c2), // Soft cherry petal
+    new THREE.Color(0xffe082), // Golden buttercup-lotus
+    new THREE.Color(0x8ae8ff), // Aurora forget-me-not cyan
     new THREE.Color(0xd2a8ff), // Starlight orchid
-    new THREE.Color(0xffb8d9), // Dawn cherry blossom
+    new THREE.Color(0xff2e63), // Shocking crimson-ruby blossom
     new THREE.Color(0x9fffe0), // Seafoam starflower
   ];
 
-  let rng = 1337;
+  let rng = 27927;
   const rand = () => {
     rng = (rng * 16807) % 2147483647;
     return (rng - 1) / 2147483646;
   };
 
+  // Organic circular & botanical clump placement (guaranteed circular/petal contour, ZERO straight edges!)
+  const GOLDEN_ANGLE = 2.39996323;
   for (let i = 0; i < FLOWER_COUNT; i++) {
     const isCelebrationOnly = i >= AMBIENT_FLOWERS;
-    const angle = rand() * Math.PI * 2;
-    // Celebration flowers cluster richly right around the dragons & sand-heart (r = 0.85m .. 4.35m)!
-    const radius = isCelebrationOnly
-      ? 0.82 + Math.pow(rand(), 0.72) * 3.55
-      : 1.45 + Math.pow(rand(), 0.80) * 3.90;
+    const idxNorm = isCelebrationOnly
+      ? (i - AMBIENT_FLOWERS) / CELEBRATION_FLOWERS
+      : i / AMBIENT_FLOWERS;
 
-    const fx = Math.cos(angle) * radius * 1.15;
-    const fz = SANCTUARY_CENTER_Z + Math.sin(angle) * radius * 0.85;
+    // Combine golden-angle spiral with organic angular clustering so flowers form natural meadow tufts
+    const baseAngle = i * GOLDEN_ANGLE + (rand() - 0.5) * 0.42;
+    // Wavy natural circular meadow contour (radius varies organically by angle, max ~2.80m so z stays <= +0.95m!)
+    const organicRimMod =
+      1.0 +
+      0.13 * Math.sin(baseAngle * 3.0 + 0.7) +
+      0.09 * Math.cos(baseAngle * 5.0 - 1.2) +
+      0.06 * Math.sin(baseAngle * 7.0 + 2.1);
 
-    // Keep strictly on safe cliff turf away from the +1.05m drop-off
-    const clampedX = THREE.MathUtils.clamp(fx, -4.6, 4.6);
-    const clampedZ = THREE.MathUtils.clamp(fz, -5.1, 0.55);
-    const fy = sampleHeroCliffHeight(clampedX, clampedZ);
-    const distFromHeart = Math.hypot(clampedX, clampedZ - SANCTUARY_CENTER_Z);
+    let r: number;
+    if (!isCelebrationOnly) {
+      // Soft circular fairy-ring wreath framing the clearing (r = 1.15m .. 2.72m) with feathered outer fringe
+      const ringBias = rand() < 0.55
+        ? 1.18 + Math.pow(rand(), 0.75) * 0.95
+        : 1.55 + Math.sqrt(idxNorm) * 1.18;
+      r = ringBias * organicRimMod;
+    } else {
+      // Lush post-"Yes" celebration blossoms filling the circular glade & outer meadow tufts (r = 0.78m .. 2.85m)
+      r = (0.78 + Math.pow(rand(), 0.68) * 1.98) * organicRimMod;
+    }
+
+    const fx = Math.cos(baseAngle) * r * 1.08;
+    const fz = SANCTUARY_CENTER_Z + Math.sin(baseAngle) * r * 0.92;
+    const fy = sampleHeroCliffHeight(fx, fz);
+    const distFromHeart = Math.hypot(fx, fz - SANCTUARY_CENTER_Z);
+
+    // Taper scale slightly near the outermost circular feather so the meadow edge blends seamlessly into grass!
+    const edgeFeather = 1.0 - THREE.MathUtils.smoothstep(r, 2.35, 3.15) * 0.42;
 
     flowerSeeds.push({
-      x: clampedX,
-      y: fy + 0.055,
-      z: clampedZ,
+      x: fx,
+      y: fy + 0.052,
+      z: fz,
       distFromHeart,
-      scale: isCelebrationOnly ? 0.95 + rand() * 0.85 : 0.65 + rand() * 0.58,
+      scale: (isCelebrationOnly ? 0.88 + rand() * 0.82 : 0.62 + rand() * 0.56) * edgeFeather,
       phase: rand() * Math.PI * 2,
       yaw: rand() * Math.PI * 2,
       isCelebrationOnly,
     });
 
-    const colIdx = isCelebrationOnly ? 1 + (i % (palette.length - 1)) : i % palette.length;
+    const colIdx = isCelebrationOnly ? i % palette.length : (i * 3) % palette.length;
     flowerMesh.setColorAt(i, palette[colIdx]);
   }
   if (flowerMesh.instanceColor) flowerMesh.instanceColor.needsUpdate = true;
   group.add(flowerMesh);
 
-  let wildflowerBloom = 0.25;
+  let wildflowerBloom = 0.15;
   let celebrationFlowerWave = 0.0;
   let fadeFactor = 1.0;
 
   // ==========================================================================
-  // 3. SHOCKING MULTI-LAYER RESONANCE HALO: AURORA DOME + 3 SHOCKWAVE RINGS
-  //    + SKY LIGHT PILLAR + DYNAMIC SANCTUARY RADIANCE LIGHT (FIXES ISSUE #10!)
+  // 3. SHOCKING MULTI-LAYER RESONANCE HALO: 58m AURORA DOME + 3 SHOCKWAVE RINGS
+  //    + SKY LIGHT PILLAR + SANCTUARY RADIANCE LIGHT
   // ==========================================================================
   let waveActive = false;
   let waveElapsed = 0;
   const waveOrigin = new THREE.Vector3(0, 1.1, SANCTUARY_CENTER_Z);
 
-  // 3A. Dynamic HDR PointLight illuminating dragons, flowers & cliff during the Resonance Wave!
-  const resonanceLight = new THREE.PointLight(0xffb8e2, 0, 42, 1.35);
+  const resonanceLight = new THREE.PointLight(0xff98d0, 0, 44, 1.35);
   resonanceLight.position.set(0, 2.2, SANCTUARY_CENTER_Z);
   group.add(resonanceLight);
 
-  // 3B. Expanding 3D Iridescent Aurora Resonance Dome
   const domeUniforms = {
     uProgress: { value: 0 },
     uOpacity: { value: 0 },
@@ -259,6 +342,7 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
     uniforms: domeUniforms,
     transparent: true,
     depthWrite: false,
+    fog: false,
     side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
     vertexShader: /* glsl */ `
@@ -283,21 +367,19 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
 
       void main() {
         if (uOpacity <= 0.002) discard;
-        // Crisp shockwave rim via Fresnel + equatorial & latitude aurora ripples
         float ndv = abs(dot(normalize(vWorldNormal), normalize(vViewDir)));
         float fresnelRim = pow(1.0 - ndv, 2.15);
         float latBand = sin(vLocalPos.y * 14.0 - uTime * 5.0) * 0.5 + 0.5;
         float equatorGlow = exp(-abs(vLocalPos.y) * 3.8);
 
         vec3 cyanCol = vec3(0.32, 0.90, 1.0);
-        vec3 roseCol = vec3(1.0, 0.52, 0.82);
+        vec3 roseCol = vec3(1.0, 0.30, 0.68);
         vec3 goldCol = vec3(1.0, 0.88, 0.52);
 
         vec3 col = mix(cyanCol, roseCol, clamp(vLocalPos.y * 0.8 + 0.5, 0.0, 1.0));
         col = mix(col, goldCol, equatorGlow * 0.65 + latBand * 0.25);
 
         float alpha = (fresnelRim * 0.88 + equatorGlow * 0.42 + latBand * fresnelRim * 0.35) * uOpacity;
-        // Fade cleanly below cliff ground
         alpha *= smoothstep(-0.35, 0.05, vLocalPos.y);
         if (alpha <= 0.003) discard;
         gl_FragColor = vec4(col * alpha * 1.45, alpha);
@@ -309,8 +391,7 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
   resonanceDome.renderOrder = 7;
   group.add(resonanceDome);
 
-  // 3C. Three Staggered Ground & Air Shockwave Halo Rings (Cyan, Rose-Gold, Starlight-Gold)
-  const ringColors = [0x7ceeff, 0xff85c8, 0xffe28a];
+  const ringColors = [0xff3b8d, 0x7ceeff, 0xffe28a];
   const haloRings: THREE.Mesh[] = [];
   const haloMats: THREE.MeshBasicMaterial[] = [];
   const ringBaseGeo = new THREE.RingGeometry(0.84, 1.0, 72);
@@ -321,6 +402,7 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
       color: ringColors[r],
       transparent: true,
       opacity: 0,
+      fog: false,
       side: THREE.DoubleSide,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -333,7 +415,6 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
     haloMats.push(rMat);
   }
 
-  // 3D. Towering Celestial Sky-Pillar Beam shooting straight upward from their nuzzle!
   const pillarGeo = new THREE.CylinderGeometry(0.18, 1.35, 28.0, 28, 1, true);
   pillarGeo.translate(0, 14.0, 0);
   const pillarUniforms = {
@@ -344,6 +425,7 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
     uniforms: pillarUniforms,
     transparent: true,
     depthWrite: false,
+    fog: false,
     side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
     vertexShader: /* glsl */ `
@@ -361,7 +443,7 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
         if (uOpacity <= 0.002) discard;
         float vFade = (1.0 - smoothstep(0.15, 1.0, vUv.y)) * smoothstep(0.0, 0.08, vUv.y);
         float ribbons = 0.65 + 0.35 * sin(vUv.x * 37.699 + uTime * 4.5 - vUv.y * 8.0);
-        vec3 col = mix(vec3(1.0, 0.72, 0.88), vec3(0.45, 0.92, 1.0), vUv.y);
+        vec3 col = mix(vec3(1.0, 0.48, 0.78), vec3(0.45, 0.92, 1.0), vUv.y);
         float a = vFade * ribbons * uOpacity;
         gl_FragColor = vec4(col * a * 1.35, a);
       }
@@ -391,6 +473,7 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
   const sporeMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
+    fog: false,
     blending: THREE.AdditiveBlending,
     vertexColors: true,
     vertexShader: /* glsl */ `
@@ -451,7 +534,7 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
 
   for (let i = 0; i < 120; i++) {
     const a = rand() * Math.PI * 2;
-    const rad = 0.8 + rand() * 5.2;
+    const rad = 0.8 + rand() * 3.8;
     const sx = Math.cos(a) * rad;
     const sz = SANCTUARY_CENTER_Z + Math.sin(a) * rad;
     const sy = sampleHeroCliffHeight(sx, sz) + 0.18 + rand() * 2.4;
@@ -496,7 +579,6 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
         haloRings[r].visible = true;
       }
 
-      // Massive spiraling golden-rose & plasma-cyan celebration vortex!
       for (let i = 0; i < 190; i++) {
         const a = (i / 190) * Math.PI * 10.0;
         const speed = 1.6 + Math.random() * 5.8;
@@ -509,8 +591,8 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
           0.9 + Math.random() * 3.8,
           Math.sin(a) * speed,
           isWarm ? 1.0 : 0.45,
-          isWarm ? 0.68 : 0.92,
-          isWarm ? 0.88 : 1.0,
+          isWarm ? 0.48 : 0.92,
+          isWarm ? 0.78 : 1.0,
           0.28 + Math.random() * 0.28,
           2.2 + Math.random() * 2.4
         );
@@ -529,8 +611,8 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
           Math.abs(Math.cos(phi)) * spd + 0.5,
           Math.sin(phi) * Math.sin(theta) * spd,
           warmRose ? 1.0 : 0.48,
-          warmRose ? 0.72 : 0.90,
-          warmRose ? 0.88 : 1.0,
+          warmRose ? 0.62 : 0.90,
+          warmRose ? 0.85 : 1.0,
           0.22 + Math.random() * 0.20,
           1.4 + Math.random() * 1.5
         );
@@ -559,26 +641,23 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
       domeUniforms.uTime.value = elapsedSec;
       pillarUniforms.uTime.value = elapsedSec;
 
-      // 1. Animate 520 Wildflowers + Radial Post-"Yes" Celebration Flower Blooming Wave!
-      const waveRadius = celebrationFlowerWave * 6.2; // Expands 0 -> 6.2m outward from heart!
-      flowerMat.emissiveIntensity = (0.45 + 0.85 * Math.max(wildflowerBloom, celebrationFlowerWave)) * fadeFactor;
+      const waveRadius = celebrationFlowerWave * 4.2;
+      flowerMat.emissiveIntensity = (0.42 + 0.88 * Math.max(wildflowerBloom, celebrationFlowerWave)) * fadeFactor;
 
       for (let i = 0; i < FLOWER_COUNT; i++) {
         const s = flowerSeeds[i];
         let localScale = 0;
 
         if (s.isCelebrationOnly) {
-          // Brand-new post-"Yes" blossoms sprout dynamically as the resonance wave passes over them!
           if (celebrationFlowerWave > 0.005) {
-            const sproutT = THREE.MathUtils.clamp((waveRadius - s.distFromHeart + 0.65) / 1.15, 0, 1);
-            // Elastic spring overshoot so blossoms visibly pop open with life!
+            const sproutT = THREE.MathUtils.clamp((waveRadius - s.distFromHeart + 0.55) / 1.05, 0, 1);
             const springPop = sproutT < 1.0
               ? Math.sin(sproutT * Math.PI * 0.5) + Math.sin(sproutT * Math.PI) * 0.24
               : 1.0 + 0.05 * Math.sin(elapsedSec * 2.4 + s.phase);
             localScale = s.scale * springPop * fadeFactor;
           }
         } else {
-          const baseScale = s.scale * (0.28 + 0.72 * wildflowerBloom);
+          const baseScale = s.scale * (0.24 + 0.76 * wildflowerBloom);
           const boost = celebrationFlowerWave * 0.42 * s.scale;
           localScale = (baseScale + boost) * fadeFactor;
         }
@@ -598,7 +677,6 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
       }
       flowerMesh.instanceMatrix.needsUpdate = true;
 
-      // 2. Shocking Multi-Layer Resonance Halo Expansion (4.4 seconds of dramatic awe!)
       if (waveActive) {
         waveElapsed += dt;
         const duration = 4.4;
@@ -611,23 +689,19 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
           resonanceLight.intensity = 0;
           for (const rMesh of haloRings) rMesh.visible = false;
         } else {
-          // 3D Iridescent Aurora Dome expands from 0.6m -> 58m across the entire cliff & sea!
           const domeEase = 1.0 - Math.pow(1.0 - t, 2.6);
           const domeRadius = 0.6 + domeEase * 58.0;
           resonanceDome.scale.setScalar(domeRadius);
           domeUniforms.uProgress.value = t;
           domeUniforms.uOpacity.value = Math.pow(1.0 - t, 1.55) * 0.92 * fadeFactor;
 
-          // Sky Pillar flares brightly in first 2.6s then dissolves into starlight
           const pillarT = THREE.MathUtils.clamp(t / 0.62, 0, 1);
           const pillarExpand = 0.55 + Math.sin(Math.min(1, pillarT * 1.8) * Math.PI * 0.5) * 1.65;
           skyPillar.scale.set(pillarExpand, 1.0 + t * 0.6, pillarExpand);
           pillarUniforms.uOpacity.value = (1.0 - pillarT) * (1.0 - pillarT) * 0.85 * fadeFactor;
 
-          // Dynamic Sanctuary Radiance Light bathes both dragons & meadow
           resonanceLight.intensity = Math.sin(Math.pow(1.0 - t, 1.8) * Math.PI * 0.5) * 14.5 * fadeFactor;
 
-          // 3 Staggered Concentric Shockwave Rings
           for (let r = 0; r < haloRings.length; r++) {
             const delay = r * 0.11;
             const rt = THREE.MathUtils.clamp((t - delay) / (1.0 - delay), 0, 1);
@@ -643,10 +717,9 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
         }
       }
 
-      // 3. Ambient + Celebration Lantern Spores
       if (Math.random() < (0.35 + celebrationFlowerWave * 0.55) * fadeFactor) {
         const a = Math.random() * Math.PI * 2;
-        const rad = 0.7 + Math.random() * 4.5;
+        const rad = 0.6 + Math.random() * 2.8;
         const sx = Math.cos(a) * rad;
         const sz = SANCTUARY_CENTER_Z + Math.sin(a) * rad;
         const sy = sampleHeroCliffHeight(sx, sz) + 0.12;
@@ -659,8 +732,8 @@ export function createCourtshipSanctuaryProps(): CourtshipSanctuaryController {
           0.24 + Math.random() * 0.45,
           (Math.random() - 0.5) * 0.25,
           warm ? 1.0 : 0.52,
-          warm ? 0.76 : 0.90,
-          warm ? 0.88 : 1.0,
+          warm ? 0.62 : 0.90,
+          warm ? 0.84 : 1.0,
           0.18 + Math.random() * 0.16,
           2.8 + Math.random() * 2.6
         );
