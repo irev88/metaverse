@@ -1,0 +1,27 @@
+{
+  "name": "toothless-hidden-world-webgl",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Photorealistic, fully rigged web-native 3D model of Toothless (The Hidden World x Live-Action Hybrid) in Three.js WebGL2",
+  "type": "module",
+  "scripts": {
+    "dev": "VITE_APP_MODE=developer vite --host 0.0.0.0 --port 5173",
+    "dev:user": "VITE_APP_MODE=user vite --host 0.0.0.0 --port 5174",
+    "build": "tsc --noEmit && vite build",
+    "build:user": "VITE_APP_MODE=user npm run build",
+    "build:dev": "VITE_APP_MODE=developer npm run build",
+    "build:vercel": "if [ \"$VITE_APP_MODE\" = \"developer\" ]; then VITE_APP_MODE=developer npm run build; else tsc --noEmit && VITE_APP_MODE=user vite build --outDir dist && VITE_APP_MODE=developer vite build --outDir dist/dev; fi",
+    "sync:docs": "tsc --noEmit && VITE_APP_MODE=user vite build --outDir dist-user && VITE_APP_MODE=developer vite build --outDir dist-dev && rm -rf docs/assets docs/dev && cp -r dist-user/* docs/ && mkdir -p docs/dev && cp -r dist-dev/* docs/dev/ && touch docs/.nojekyll",
+    "preview": "vite preview --host 0.0.0.0 --port 4173"
+  },
+  "dependencies": {
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "@fontsource/plus-jakarta-sans": "^5.3.0",
+    "three": "^0.174.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.174.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0"
+  }
+}

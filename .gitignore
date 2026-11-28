@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-user/
+dist-dev/
+.vite/
+.cache/
+*.local
+*.log
+.DS_Store
